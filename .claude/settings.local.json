@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(git -C \"D:\\\\VPP in Ancillary market\" log -5 --oneline)",
+      "Bash(git -C:*)"
+    ]
+  }
+}
