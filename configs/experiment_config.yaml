@@ -1,0 +1,17 @@
+artifacts:
+  checkpoints: artifacts/checkpoints
+  logs: artifacts/logs
+  results: artifacts/results
+
+paths:
+  layer0_zone_prices: data/oedisi-ieee123-main/profiles/layer0_hourly/layer0_zone_prices.csv
+  layer1_pref: data/oedisi-ieee123-main/profiles/layer1_vpp/layer1_pref.csv
+
+experiments:
+  train_name: mappo_ieee123
+  eval_episodes: 3
+  random_seed: 42
+  benchmark_baselines:
+    - rule_based
+    - random
+    - no_gnn_placeholder

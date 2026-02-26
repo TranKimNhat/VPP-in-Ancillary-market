@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 import argparse
@@ -9,6 +10,7 @@ import logging
 import re
 import sys
 import warnings
+from typing import Mapping, Sequence
 
 if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parents[2]))
@@ -187,6 +189,221 @@ def partition_zones(
 
 
 @dataclass(frozen=True)
+class ZoneScoringConfig:
+    min_buses_per_zone: int = 8
+    max_buses_per_zone: int = 25
+    max_bus_imbalance_ratio: float = 2.5
+    min_load_buses_per_zone: int = 5
+    min_load_share: float = 0.08
+    max_load_share: float = 0.35
+    max_load_imbalance_ratio: float = 3.0
+    min_der_penetration: float = 0.10
+    max_der_penetration: float = 0.60
+    max_boundary_edges_per_zone: int = 3
+    weights: Mapping[str, float] = (
+        ("connectivity", 20.0),
+        ("bus_size", 15.0),
+        ("load_balance", 20.0),
+        ("der_penetration", 15.0),
+        ("load_bus_count", 10.0),
+        ("boundary_cut", 10.0),
+        ("zone_count", 10.0),
+    )
+
+
+@dataclass(frozen=True)
+class ZoneScoreResult:
+    total_score: float
+    metrics: dict[str, float]
+    penalties: dict[str, float]
+
+
+def _linear_score(value: float, low: float, high: float) -> float:
+    if low > high:
+        low, high = high, low
+    if low <= value <= high:
+        return 1.0
+    if value < low:
+        scale = max(abs(low), 1e-9)
+        return max(0.0, 1.0 - (low - value) / scale)
+    scale = max(abs(high), 1e-9)
+    return max(0.0, 1.0 - (value - high) / scale)
+
+
+def _build_bus_adjacency(net: pp.pandapowerNet) -> dict[int, set[int]]:
+    adjacency: dict[int, set[int]] = {int(bus): set() for bus in net.bus.index}
+
+    if not net.line.empty:
+        for _, row in net.line.iterrows():
+            u = int(row["from_bus"])
+            v = int(row["to_bus"])
+            adjacency.setdefault(u, set()).add(v)
+            adjacency.setdefault(v, set()).add(u)
+
+    if not net.switch.empty:
+        for _, row in net.switch.iterrows():
+            if str(row.get("et", "")) != "b":
+                continue
+            if not bool(row.get("closed", True)):
+                continue
+            u = int(row["bus"])
+            v = int(row["element"])
+            adjacency.setdefault(u, set()).add(v)
+            adjacency.setdefault(v, set()).add(u)
+
+    return adjacency
+
+
+def _zone_bus_groups(zone_map: Mapping[int, int]) -> dict[int, list[int]]:
+    groups: dict[int, list[int]] = defaultdict(list)
+    for bus, zone in zone_map.items():
+        groups[int(zone)].append(int(bus))
+    return dict(groups)
+
+
+def _connected_fraction(buses: Sequence[int], adjacency: Mapping[int, set[int]]) -> float:
+    bus_set = {int(bus) for bus in buses}
+    if not bus_set:
+        return 0.0
+    visited: set[int] = set()
+    stack = [next(iter(bus_set))]
+    while stack:
+        node = stack.pop()
+        if node in visited:
+            continue
+        visited.add(node)
+        for nbr in adjacency.get(node, set()):
+            if nbr in bus_set and nbr not in visited:
+                stack.append(nbr)
+    return float(len(visited)) / float(len(bus_set))
+
+
+def score_zone_partition(
+    net: pp.pandapowerNet,
+    zone_map: Mapping[int, int],
+    config: ZoneScoringConfig | None = None,
+) -> ZoneScoreResult:
+    cfg = config or ZoneScoringConfig()
+    zone_groups = _zone_bus_groups(zone_map)
+    if not zone_groups:
+        return ZoneScoreResult(total_score=0.0, metrics={}, penalties={"empty_partition": 1.0})
+
+    adjacency = _build_bus_adjacency(net)
+
+    load_by_bus: dict[int, float] = defaultdict(float)
+    if not net.load.empty:
+        for _, row in net.load.iterrows():
+            load_by_bus[int(row["bus"])] += float(row.get("p_mw", 0.0))
+
+    der_by_bus: dict[int, float] = defaultdict(float)
+    if not net.sgen.empty:
+        for _, row in net.sgen.iterrows():
+            der_by_bus[int(row["bus"])] += max(float(row.get("p_mw", 0.0)), 0.0)
+    if not net.gen.empty:
+        for _, row in net.gen.iterrows():
+            der_by_bus[int(row["bus"])] += max(float(row.get("p_mw", 0.0)), 0.0)
+
+    zone_bus_counts = np.array([len(buses) for buses in zone_groups.values()], dtype=float)
+    zone_loads = np.array([sum(load_by_bus.get(bus, 0.0) for bus in buses) for buses in zone_groups.values()], dtype=float)
+    zone_ders = np.array([sum(der_by_bus.get(bus, 0.0) for bus in buses) for buses in zone_groups.values()], dtype=float)
+    zone_load_bus_counts = np.array([
+        sum(1 for bus in buses if load_by_bus.get(bus, 0.0) > 1e-9) for buses in zone_groups.values()
+    ], dtype=float)
+
+    total_load = float(np.sum(zone_loads))
+    load_shares = zone_loads / total_load if total_load > 1e-9 else np.zeros_like(zone_loads)
+    der_penetration = np.divide(zone_ders, np.maximum(zone_loads, 1e-9))
+
+    boundary_edges: dict[int, int] = defaultdict(int)
+    for bus, nbrs in adjacency.items():
+        zone_u = int(zone_map.get(bus, -1))
+        for nbr in nbrs:
+            if bus >= nbr:
+                continue
+            zone_v = int(zone_map.get(nbr, -1))
+            if zone_u != zone_v:
+                boundary_edges[zone_u] += 1
+                boundary_edges[zone_v] += 1
+
+    connectivity_scores = [
+        _connected_fraction(buses, adjacency)
+        for buses in zone_groups.values()
+    ]
+
+    bus_ratio = float(np.max(zone_bus_counts) / max(np.min(zone_bus_counts), 1.0))
+    load_ratio = float(np.max(zone_loads) / max(np.min(zone_loads[zone_loads > 1e-9], default=1.0), 1e-9))
+
+    metrics = {
+        "n_zones": float(len(zone_groups)),
+        "bus_count_min": float(np.min(zone_bus_counts)),
+        "bus_count_max": float(np.max(zone_bus_counts)),
+        "bus_imbalance_ratio": bus_ratio,
+        "load_share_min": float(np.min(load_shares)) if load_shares.size else 0.0,
+        "load_share_max": float(np.max(load_shares)) if load_shares.size else 0.0,
+        "load_imbalance_ratio": load_ratio,
+        "der_penetration_min": float(np.min(der_penetration)) if der_penetration.size else 0.0,
+        "der_penetration_max": float(np.max(der_penetration)) if der_penetration.size else 0.0,
+        "load_bus_count_min": float(np.min(zone_load_bus_counts)) if zone_load_bus_counts.size else 0.0,
+        "boundary_edges_max": float(max(boundary_edges.values()) if boundary_edges else 0.0),
+        "connectivity_min": float(min(connectivity_scores) if connectivity_scores else 0.0),
+    }
+
+    weight_map = dict(cfg.weights)
+
+    components = {
+        "connectivity": metrics["connectivity_min"],
+        "bus_size": float(np.mean([
+            _linear_score(v, cfg.min_buses_per_zone, cfg.max_buses_per_zone)
+            for v in zone_bus_counts
+        ])),
+        "load_balance": float(np.mean([
+            _linear_score(v, cfg.min_load_share, cfg.max_load_share)
+            for v in load_shares
+        ])) * _linear_score(metrics["load_imbalance_ratio"], 1.0, cfg.max_load_imbalance_ratio),
+        "der_penetration": float(np.mean([
+            _linear_score(v, cfg.min_der_penetration, cfg.max_der_penetration)
+            for v in der_penetration
+        ])),
+        "load_bus_count": float(np.mean([
+            _linear_score(v, cfg.min_load_buses_per_zone, max(cfg.min_load_buses_per_zone, v))
+            for v in zone_load_bus_counts
+        ])),
+        "boundary_cut": _linear_score(metrics["boundary_edges_max"], 0.0, cfg.max_boundary_edges_per_zone),
+        "zone_count": _linear_score(float(len(zone_groups)), max(2.0, float(cfg.min_buses_per_zone // 4)), 8.0),
+    }
+
+    penalties = {
+        "bus_imbalance_penalty": 1.0 - _linear_score(metrics["bus_imbalance_ratio"], 1.0, cfg.max_bus_imbalance_ratio),
+        "load_imbalance_penalty": 1.0 - _linear_score(metrics["load_imbalance_ratio"], 1.0, cfg.max_load_imbalance_ratio),
+    }
+
+    total_weight = float(sum(weight_map.get(k, 0.0) for k in components))
+    weighted_sum = sum(weight_map.get(k, 0.0) * components[k] for k in components)
+    total_score = 100.0 * (weighted_sum / total_weight) if total_weight > 0 else 0.0
+    total_score *= max(0.0, 1.0 - 0.5 * penalties["bus_imbalance_penalty"] - 0.5 * penalties["load_imbalance_penalty"])
+
+    return ZoneScoreResult(
+        total_score=float(np.clip(total_score, 0.0, 100.0)),
+        metrics=metrics,
+        penalties=penalties,
+    )
+
+
+def select_best_zone_partition(
+    net: pp.pandapowerNet,
+    candidate_zone_maps: Sequence[Mapping[int, int]],
+    config: ZoneScoringConfig | None = None,
+) -> tuple[dict[int, int], ZoneScoreResult, list[ZoneScoreResult]]:
+    if not candidate_zone_maps:
+        raise ValueError("candidate_zone_maps must not be empty.")
+
+    scored = [score_zone_partition(net, zone_map=candidate, config=config) for candidate in candidate_zone_maps]
+    best_idx = int(np.argmax([result.total_score for result in scored]))
+    best_map = {int(bus): int(zone) for bus, zone in candidate_zone_maps[best_idx].items()}
+    return best_map, scored[best_idx], scored
+
+
+@dataclass(frozen=True)
 class Layer0Result:
     lambda_dlmp: dict[int, float]
     alpha_star: dict[int, int]
@@ -254,6 +471,7 @@ def run_layer0_dso(
     soc_relax: float = 1.001,
     soc_slack_cap: float = 0.0,
     voltage_drop_slack_cap: float = 0.0,
+    voltage_reference_upper_band: float = 0.01,
 ) -> Layer0Result:
     if net is None:
         net = build_ieee123_net(
@@ -288,6 +506,7 @@ def run_layer0_dso(
         soc_relax=soc_relax,
         soc_slack_cap=soc_slack_cap,
         voltage_drop_slack_cap=voltage_drop_slack_cap,
+        voltage_reference_upper_band=voltage_reference_upper_band,
     )
     validation = validate_socp_against_ac(
         net,
@@ -337,21 +556,30 @@ def _apply_hourly_profiles(
     bess_energy_hours: float = 4.0,
     bess_efficiency: float = 0.9,
     ramp_fraction: float = 0.1,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     def _safe_nameplate(row: pd.Series) -> float:
-        raw = row.get("sn_mva", row.get("p_mw", 0.0))
+        p_raw = row.get("p_mw", 0.0)
+        try:
+            p_fallback = float(p_raw)
+        except (TypeError, ValueError):
+            p_fallback = 0.0
+        if np.isnan(p_fallback):
+            p_fallback = 0.0
+
+        raw = row.get("sn_mva", p_fallback)
         try:
             value = float(raw)
         except (TypeError, ValueError):
-            value = float(row.get("p_mw", 0.0) or 0.0)
-        if np.isnan(value):
-            value = float(row.get("p_mw", 0.0) or 0.0)
+            value = p_fallback
+        if np.isnan(value) or value <= 0.0:
+            value = p_fallback
         if np.isnan(value):
             return 0.0
         return abs(value)
 
     updated_loads = 0
     updated_sgens = 0
+    pv_total = 0
     if not net.load.empty:
         for idx, row in net.load.iterrows():
             name = str(row.get("name", ""))
@@ -385,6 +613,8 @@ def _apply_hourly_profiles(
     if not net.sgen.empty:
         for idx, row in net.sgen.iterrows():
             sgen_type = str(row.get("type", "")).lower()
+            if sgen_type == "pv":
+                pv_total += 1
             nameplate = _safe_nameplate(row)
             if sgen_type == "pv":
                 if not pv_profiles:
@@ -483,7 +713,7 @@ def _apply_hourly_profiles(
             if thermal_prev is not None:
                 thermal_prev[idx] = thermal_setpoint
 
-    return updated_loads, updated_sgens
+    return updated_loads, updated_sgens, pv_total
 
 
 def _build_profile_name_map(
@@ -663,6 +893,7 @@ def run_layer0_dso_hourly(
     soc_relax: float = 1.001,
     soc_slack_cap: float = 0.0,
     voltage_drop_slack_cap: float = 0.0,
+    voltage_reference_upper_band: float = 0.01,
 ) -> list[Layer0HourlyResult]:
     if pricing_method not in PRICING_METHODS:
         raise ValueError(f"pricing_method must be one of {sorted(PRICING_METHODS)}")
@@ -677,7 +908,7 @@ def run_layer0_dso_hourly(
     slice_ = day_slice(day_index)
     for hour_offset, hour_index in enumerate(range(slice_.start, slice_.stop)):
         hour_net = copy.deepcopy(base_net)
-        updated_loads, updated_sgens = _apply_hourly_profiles(
+        updated_loads, updated_sgens, pv_total = _apply_hourly_profiles(
             hour_net,
             load_profiles,
             pv_profiles,
@@ -689,11 +920,8 @@ def run_layer0_dso_hourly(
             thermal_prev=thermal_prev,
         )
         _warn_if_profile_mismatch(updated_loads, len(hour_net.load), f"{day_label} hour {hour_offset}", "load")
-        pv_count = 0
-        if not hour_net.sgen.empty and "type" in hour_net.sgen.columns:
-            pv_count = int(hour_net.sgen["type"].astype(str).str.lower().eq("pv").sum())
         if pv_profiles is not None:
-            _warn_if_profile_mismatch(updated_sgens, pv_count, f"{day_label} hour {hour_offset}", "pv")
+            _warn_if_profile_mismatch(updated_sgens, pv_total, f"{day_label} hour {hour_offset}", "pv")
         if drop_isolated_loads:
             _drop_isolated_loads(hour_net)
         reconfig_result = run_reconfiguration_detailed(
@@ -711,6 +939,7 @@ def run_layer0_dso_hourly(
             soc_relax=soc_relax,
             soc_slack_cap=soc_slack_cap,
             voltage_drop_slack_cap=voltage_drop_slack_cap,
+            voltage_reference_upper_band=voltage_reference_upper_band,
         )
         validation = validate_socp_against_ac(
             hour_net,
@@ -762,6 +991,7 @@ def run_layer0_pipeline(
     soc_relax: float = 1.001,
     soc_slack_cap: float = 0.0,
     voltage_drop_slack_cap: float = 0.0,
+    voltage_reference_upper_band: float = 0.01,
     diagnostics_only_on_fail: bool = True,
 ) -> Layer0CsvBundle:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -815,6 +1045,7 @@ def run_layer0_pipeline(
                 soc_relax=soc_relax,
                 soc_slack_cap=soc_slack_cap,
                 voltage_drop_slack_cap=voltage_drop_slack_cap,
+                voltage_reference_upper_band=voltage_reference_upper_band,
             )
         )
 

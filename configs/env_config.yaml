@@ -1,0 +1,13 @@
+max_steps: 96
+voltage_tolerance: 0.05
+action_scale_p: 0.2
+action_scale_q: 0.2
+
+signals:
+  layer1_pref_csv: data/oedisi-ieee123-main/profiles/layer1_vpp/layer1_pref.csv
+  market_signal_csv: data/oedisi-ieee123-main/profiles/layer0_hourly/layer0_zone_prices.csv
+
+reward_weights:
+  tracking: 1.0
+  voltage: 10.0
+  curtailment: 1.0

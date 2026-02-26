@@ -1,0 +1,32 @@
+seed: 42
+updates: 20
+rollout_steps: 128
+eval_interval: 5
+save_interval: 5
+checkpoint_dir: artifacts/checkpoints
+log_path: artifacts/logs/train_metrics.csv
+
+policy:
+  action_low: -1.0
+  action_high: 1.0
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_ratio: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  learning_rate: 0.0003
+  max_grad_norm: 0.5
+  update_epochs: 4
+  minibatch_size: 256
+
+model:
+  in_dim: 6
+  hidden_dim: 32
+  output_dim: 64
+  heads_l1: 4
+  dropout: 0.1
+  local_state_dim: 6
+  global_state_dim: 2
+  action_dim: 2
+  actor_hidden: [128, 64]
+  critic_hidden: [256, 128]

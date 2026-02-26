@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable
+import copy
 
 REACTIVE_CONTROL_TYPES = {"wind", "bess", "storage"}
 REACTIVE_PF = 0.95
@@ -131,6 +132,51 @@ def _edge_max_i_ka(line: pp.Series) -> float:
     return float(value)
 
 
+def _safe_float(value: object, default: float = 0.0) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not np.isfinite(result):
+        return default
+    return result
+
+
+def _trafo_tap_ratio(trafo: pp.Series, vn_bus_hv: float, vn_bus_lv: float) -> float:
+    vn_hv_kv = _safe_float(trafo.get("vn_hv_kv", 0.0), default=0.0)
+    vn_lv_kv = _safe_float(trafo.get("vn_lv_kv", 0.0), default=0.0)
+    if vn_hv_kv <= 0.0 or vn_lv_kv <= 0.0 or vn_bus_hv <= 0.0 or vn_bus_lv <= 0.0:
+        return 1.0
+
+    tap_step_percent = _safe_float(trafo.get("tap_step_percent", 0.0), default=0.0)
+    tap_pos = _safe_float(trafo.get("tap_pos", 0.0), default=0.0)
+    tap_neutral = _safe_float(trafo.get("tap_neutral", 0.0), default=0.0)
+    tap_side = str(trafo.get("tap_side", "")).lower()
+    if tap_side not in {"hv", "lv"}:
+        tap_side = "hv"
+
+    tap_factor = 1.0 + ((tap_pos - tap_neutral) * tap_step_percent / 100.0)
+    if tap_factor <= 0.0:
+        tap_factor = 1.0
+
+    effective_vn_hv = vn_hv_kv
+    effective_vn_lv = vn_lv_kv
+    if tap_side == "hv":
+        effective_vn_hv = vn_hv_kv * tap_factor
+    else:
+        effective_vn_lv = vn_lv_kv * tap_factor
+
+    if effective_vn_hv <= 0.0 or effective_vn_lv <= 0.0:
+        return 1.0
+
+    nominal_ratio = effective_vn_hv / effective_vn_lv
+    bus_ratio = vn_bus_hv / vn_bus_lv
+    tap_ratio = nominal_ratio / bus_ratio
+    if not np.isfinite(tap_ratio) or tap_ratio <= 0.0:
+        return 1.0
+    return float(tap_ratio)
+
+
 def extract_network_data(net: pp.pandapowerNet) -> NetworkData:
     buses = [int(bus) for bus in net.bus.index]
     slack_buses = _slack_buses(net)
@@ -181,14 +227,15 @@ def extract_network_data(net: pp.pandapowerNet) -> NetworkData:
         for _, trafo in net.trafo.iterrows():
             hv_bus = int(trafo["hv_bus"])
             lv_bus = int(trafo["lv_bus"])
-            sn_mva = float(trafo.get("sn_mva", 0.0) or 0.0)
-            vn_hv_kv = float(trafo.get("vn_hv_kv", 0.0) or 0.0)
-            vn_lv_kv = float(trafo.get("vn_lv_kv", 0.0) or 0.0)
-            vk_percent = float(trafo.get("vk_percent", 0.0) or 0.0)
-            vkr_percent = float(trafo.get("vkr_percent", 0.0) or 0.0)
-            z_pu_nameplate = vk_percent / 100.0
-            r_pu_nameplate = vkr_percent / 100.0
-            x_pu_nameplate = (max(z_pu_nameplate**2 - r_pu_nameplate**2, 0.0)) ** 0.5
+            sn_mva = _safe_float(trafo.get("sn_mva", 0.0), default=0.0)
+            vn_hv_kv = _safe_float(trafo.get("vn_hv_kv", 0.0), default=0.0)
+            vk_percent = _safe_float(trafo.get("vk_percent", 0.0), default=0.0)
+            vkr_percent = _safe_float(trafo.get("vkr_percent", 0.0), default=0.0)
+
+            z_pu_nameplate = max(vk_percent / 100.0, 0.0)
+            r_pu_nameplate = max(vkr_percent / 100.0, 0.0)
+            x_sq = max(z_pu_nameplate**2 - r_pu_nameplate**2, 0.0)
+            x_pu_nameplate = x_sq**0.5
             if sn_mva > 0.0:
                 scale = base_mva / sn_mva
                 r_pu = r_pu_nameplate * scale
@@ -201,13 +248,9 @@ def extract_network_data(net: pp.pandapowerNet) -> NetworkData:
             r_ohm = r_pu * z_base_hv
             x_ohm = x_pu * z_base_hv
 
-            vn_bus_hv = float(net.bus.at[hv_bus, "vn_kv"])
-            vn_bus_lv = float(net.bus.at[lv_bus, "vn_kv"])
-            tap_ratio = 1.0
-            if vn_bus_hv > 0.0 and vn_bus_lv > 0.0 and vn_hv_kv > 0.0 and vn_lv_kv > 0.0:
-                tap_ratio = (vn_hv_kv / vn_lv_kv) / (vn_bus_hv / vn_bus_lv)
-                if not np.isfinite(tap_ratio) or tap_ratio <= 0.0:
-                    tap_ratio = 1.0
+            vn_bus_hv = _safe_float(net.bus.at[hv_bus, "vn_kv"], default=0.0)
+            vn_bus_lv = _safe_float(net.bus.at[lv_bus, "vn_kv"], default=0.0)
+            tap_ratio = _trafo_tap_ratio(trafo, vn_bus_hv, vn_bus_lv)
 
             max_i_ka = 0.0
             if sn_mva > 0.0 and vn_bus_hv > 0.0:
@@ -284,6 +327,17 @@ def switch_edge_map(net: pp.pandapowerNet) -> dict[int, dict[str, int]]:
     }
 
 
+def _apply_switch_solution(net: pp.pandapowerNet, data: NetworkData, alpha_star: dict[int, int]) -> pp.pandapowerNet:
+    switched = copy.deepcopy(net)
+    for edge in data.edges:
+        if not edge.is_switch or edge.switch_index is None:
+            continue
+        if edge.edge_id not in alpha_star:
+            continue
+        switched.switch.at[edge.switch_index, "closed"] = bool(alpha_star[edge.edge_id])
+    return switched
+
+
 def build_misocp_model(
     data: NetworkData,
     weights: ModelWeights,
@@ -295,6 +349,8 @@ def build_misocp_model(
     trafo_voltage_drop_slack_weight: float = 200000.0,
     soc_slack_cap: float = 0.0,
     voltage_drop_slack_cap: float = 0.0,
+    soc_reference_v2: dict[int, float] | None = None,
+    voltage_reference_upper_band: float = 0.01,
     fix_switch_status: bool = False,
     fixed_switch_indices: set[int] | None = None,
     switch_initial: dict[int, int] | None = None,
@@ -530,12 +586,48 @@ def build_misocp_model(
     model.SwitchChangeNeg = pyo.Constraint(model.SWITCH, rule=_switch_change_neg_rule)
 
     default_v2_max = max((bounds[1] for bounds in bus_voltage_bounds.values()), default=1.5**2)
+    default_soc_reference_v2 = {int(bus): bus_voltage_bounds.get(int(bus), (0.0, default_v2_max))[1] for bus in bus_set}
+    calibration_bounds: dict[int, tuple[float, float]] = {}
+    if soc_reference_v2:
+        band = max(float(voltage_reference_upper_band), 0.0)
+        band_upper = (1.0 + band) ** 2
+        band_lower = (max(1.0 - band, 1e-3)) ** 2
+        for bus, value in soc_reference_v2.items():
+            bus_i = int(bus)
+            if bus_i not in default_soc_reference_v2:
+                continue
+            try:
+                v2_ref = float(value)
+            except (TypeError, ValueError):
+                continue
+            if not np.isfinite(v2_ref) or v2_ref <= 0.0:
+                continue
+            default_soc_reference_v2[bus_i] = min(default_soc_reference_v2[bus_i], v2_ref)
+            base_lower, base_upper = bus_voltage_bounds.get(bus_i, (0.0, default_v2_max))
+            cal_lower = max(base_lower, v2_ref * band_lower)
+            cal_upper = min(base_upper, v2_ref * band_upper)
+            if cal_upper >= cal_lower:
+                calibration_bounds[bus_i] = (cal_lower, cal_upper)
+
+    model._soc_reference_v2 = copy.deepcopy(default_soc_reference_v2)
+
+    if calibration_bounds:
+        def _reference_voltage_band_rule(m: pyo.ConcreteModel, bus: int) -> pyo.Constraint:
+            bounds = calibration_bounds.get(int(bus))
+            if bounds is None:
+                return pyo.Constraint.Skip
+            return pyo.inequality(bounds[0], m.V2[bus], bounds[1])
+
+        model.ReferenceVoltageBand = pyo.Constraint(model.BUS, rule=_reference_voltage_band_rule)
 
     def _soc_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
         edge = edge_map[edge_id]
         tap_sq = edge.tap_ratio**2 if edge.tap_ratio > 0 else 1.0
-        v2_from_max = bus_voltage_bounds.get(int(edge.from_bus), (0.0, default_v2_max))[1]
-        return m.P[edge_id] ** 2 + m.Q[edge_id] ** 2 <= soc_relax * tap_sq * v2_from_max * m.I2[edge_id] + m.SOCSlack[edge_id]
+        v2_from_ref = default_soc_reference_v2.get(int(edge.from_bus), default_v2_max)
+        v2_to_ref = default_soc_reference_v2.get(int(edge.to_bus), default_v2_max)
+        current_side_v2_ref = min(tap_sq * v2_from_ref, v2_to_ref)
+        current_side_v2_ref = max(float(current_side_v2_ref), 1e-6)
+        return m.P[edge_id] ** 2 + m.Q[edge_id] ** 2 <= soc_relax * current_side_v2_ref * m.I2[edge_id] + m.SOCSlack[edge_id]
 
     model.SOC = pyo.Constraint(model.EDGE, rule=_soc_rule)
 
@@ -677,6 +769,8 @@ def run_reconfiguration_detailed(
     soc_relax: float = 1.001,
     soc_slack_cap: float = 0.0,
     voltage_drop_slack_cap: float = 0.0,
+    soc_reference_iterations: int = 4,
+    voltage_reference_upper_band: float = 0.01,
 ) -> ReconfigurationResult:
     weights = weights or ModelWeights()
 
@@ -723,24 +817,6 @@ def run_reconfiguration_detailed(
             for edge in data.edges
             if edge.is_switch
         }
-
-    model, balance_constraints = build_misocp_model(
-        data,
-        weights=weights,
-        switch_cost=switch_cost,
-        voltage_bounds=voltage_bounds,
-        soc_relax=soc_relax,
-        soc_slack_weight=1000.0,
-        voltage_drop_slack_weight=10000.0,
-        trafo_voltage_drop_slack_weight=200000.0,
-        soc_slack_cap=soc_slack_cap,
-        voltage_drop_slack_cap=voltage_drop_slack_cap,
-        fix_switch_status=fix_switch_status,
-        fixed_switch_indices=set(fixed_indices),
-        switch_initial=switch_initial,
-        enforce_radiality=enforce_radiality,
-        radiality_slack=radiality_slack,
-    )
 
     debug_context = None
     if debug:
@@ -804,13 +880,62 @@ def run_reconfiguration_detailed(
             "base_kv": data.base_kv,
         }
 
-    solve_result = run_dlmp_calculation(
-        model,
-        balance_constraints,
-        solver_opts=solver_opts,
-        debug=debug,
-        debug_context=debug_context,
-    )
+    soc_reference_v2: dict[int, float] | None = None
+    solve_result = None
+    model = None
+    balance_constraints = None
+
+    total_iterations = max(int(soc_reference_iterations), 1)
+    for iteration in range(total_iterations):
+        model, balance_constraints = build_misocp_model(
+            data,
+            weights=weights,
+            switch_cost=switch_cost,
+            voltage_bounds=voltage_bounds,
+            soc_relax=soc_relax,
+            soc_slack_weight=1000.0,
+            voltage_drop_slack_weight=10000.0,
+            trafo_voltage_drop_slack_weight=200000.0,
+            soc_slack_cap=soc_slack_cap,
+            voltage_drop_slack_cap=voltage_drop_slack_cap,
+            soc_reference_v2=soc_reference_v2,
+            voltage_reference_upper_band=voltage_reference_upper_band,
+            fix_switch_status=fix_switch_status,
+            fixed_switch_indices=set(fixed_indices),
+            switch_initial=switch_initial,
+            enforce_radiality=enforce_radiality,
+            radiality_slack=radiality_slack,
+        )
+
+        solve_result = run_dlmp_calculation(
+            model,
+            balance_constraints,
+            solver_opts=solver_opts,
+            debug=debug,
+            debug_context=debug_context,
+        )
+
+        if iteration >= total_iterations - 1:
+            break
+
+        try:
+            ac_net = _apply_switch_solution(net, data, solve_result.alpha_star)
+            pp.runpp(ac_net, algorithm="nr", init="auto", calculate_voltage_angles=False)
+            updated_reference: dict[int, float] = {}
+            for bus in data.buses:
+                if bus not in ac_net.res_bus.index:
+                    continue
+                vm = float(ac_net.res_bus.at[bus, "vm_pu"])
+                if not np.isfinite(vm) or vm <= 0.0:
+                    continue
+                updated_reference[int(bus)] = vm**2
+            if updated_reference:
+                soc_reference_v2 = updated_reference
+        except Exception:
+            break
+
+    if solve_result is None or model is None:
+        raise RuntimeError("Failed to solve reconfiguration model.")
 
     soc_slack_values = [float(pyo.value(model.SOCSlack[e])) for e in model.EDGE]
     voltage_drop_slack_values = [float(pyo.value(model.VoltageDropSlack[e])) for e in model.EDGE]
