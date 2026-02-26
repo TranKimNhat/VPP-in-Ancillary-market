@@ -8,147 +8,130 @@
 
 ## 1. Executive Summary
 
-Dự án phát triển một khung điều khiển phân cấp 3 lớp (Tri-Level Hierarchical Framework) cho sự phối hợp giữa Nhà vận hành lưới phân phối (DSO) và Nhà máy điện ảo (VPP), trong đó **đóng góp chính (main contribution)** là thuật toán điều khiển điện áp thời gian thực tại Layer 2 sử dụng **Graph Attention Network - Multi-Agent Proximal Policy Optimization (GAT-MAPPO)**.
+Dự án phát triển một khung điều khiển phân cấp 3 lớp (Tri-Level Hierarchical Framework) cho sự phối hợp giữa Nhà vận hành lưới phân phối (DSO) và Nhà máy điện ảo (VPP), trong đó **đóng góp chính (main contribution)** là thuật toán điều khiển điện áp thời gian thực tại Layer 2 sử dụng **Graph Attention Network - Multi-Agent Proximal Policy Optimization (GAT-MAPPO)**. Dynamic zone partitioning là hướng mở rộng đang được triển khai từng phần (hiện đã có scoring/selection API).
 
-### Tuyên bố Novelty (Novelty Claims)
+### Novelty Claims
 
 | # | Claim | Scope | Cơ sở |
 |---|-------|-------|-------|
-| **C1** | Kết hợp **network reconfiguration** như một layer chiến lược trong DSO-VPP coordination framework | Architectural | Không có bài báo nào (2022-2025) kết hợp reconfiguration switching với multi-level DSO-VPP market mechanism |
+| **C1** | Kết hợp **network reconfiguration** như một layer chiến lược trong DSO-VPP coordination framework | Architectural | Không có bài báo nào (2022–2025) kết hợp reconfiguration switching với multi-level DSO-VPP market mechanism |
 | **C2** | **GAT-MAPPO** cho distribution voltage control dưới dynamic topology | Algorithmic | GAT và MAPPO đã tồn tại riêng lẻ; combination cụ thể này cho voltage control chưa được published |
-| **C3** | **Honest evaluation** của zero-shot topology generalization cho GNN-based controllers | Empirical | Literature hiện tại (2024-2025) cho thấy 3-15% performance degradation trên unseen topology; chưa có evaluation có hệ thống trong bối cảnh DSO-VPP |
+| **C3** | **Honest evaluation** của zero-shot topology generalization cho GNN-based controllers | Empirical | Literature (2024–2025) cho thấy 3–15% degradation trên unseen topology; chưa có evaluation có hệ thống trong bối cảnh DSO-VPP |
+| **C4** | **Dynamic zone partitioning** thích ứng theo topology — zone boundaries tự động thay đổi khi DSO reconfigure lưới | Methodological (planned extension; partial implementation) | Các bài VPP zoning hiện tại dùng partition cố định; code hiện có scoring/selection API, dynamic re-partitioning theo từng chu kỳ đang in progress |
 
 ### Positioning vs. State-of-the-Art
 
 | Paper | Approach | Thiếu gì so với framework này |
 |-------|----------|-------------------------------|
-| Xue et al. (2024, *Applied Energy*) | Hierarchical Safe DRL cho DSO-VPP, đạt 1.46% of optimal | Không có reconfiguration, không dùng GNN |
+| Xue et al. (2024, *Applied Energy*) | Hierarchical Safe DRL cho DSO-VPP, đạt 1.46% of optimal | Không có reconfiguration, không dùng GNN, zone cố định |
 | Lin et al. (2025, *Applied Energy*) | Stackelberg-cooperative game DSO-VPP với shared energy storage | Không có topology adaptation, không real-time control |
 | Sun et al. (2024, *IET GTD*) | Multi-agent DRL + AC-OPF cho DSO-VPP | Không có graph-based architecture, topology cố định |
 | Mi et al. (2024, *SSRN*) | Tri-level VPP-Prosumer robust game | Không có reconfiguration, không có AI-based real-time layer |
 
----
+### Lưu ý quan trọng cho viết paper
 
-## 1.1 Current Implementation Status (Updated: 2026-02)
-
-Các thay đổi kỹ thuật đã được triển khai trong codebase hiện tại:
-
-- **Physics-first, fail-closed Layer 0 quality gate** đã bật mặc định:
-  - `enforce_radiality=True`, `radiality_slack=0`
-  - `ac_tolerance=0.01` (publish-grade default)
-  - Pipeline fail-closed: nếu AC validation không đạt thì không xuất dataset hợp lệ cho Layer 1.
-- **Bus-82 calibration fixes** đã được áp dụng ở Layer 0:
-  - Siết transformer tap handling và SOC reference logic.
-  - Thêm ràng buộc calibration theo `voltage_reference_upper_band` để neo điện áp SOCP quanh AC reference.
-  - Kết quả sau calibration trong diagnostics: `fails=0/288`, `max_gap≈0.00482 p.u.`.
-- **Bootstrap tri-layer path đã đồng bộ với cấu hình publish pass**:
-  - Trong `experiments/train_mappo.py`, bootstrap hiện dùng
-    - `ac_tolerance=0.01`
-    - `voltage_reference_upper_band=0.005`
-  - Tránh tình trạng bootstrap fail do threshold quá chặt không tương thích calibration.
-- **Zone partition scoring** đã được bổ sung ở Layer 0 để chọn partition học thuật tốt hơn:
-  - `ZoneScoringConfig`, `score_zone_partition(...)`, `select_best_zone_partition(...)`
-  - Chấm theo connectivity, bus/load balance, DER penetration, boundary cuts, và penalties mất cân bằng.
+> ⚠️ **KHÔNG claim** rằng "VPP topology blindness" là gap mới — đã có >10 bài bi-level DSO-VPP gần đây.
+>
+> ⚠️ **KHÔNG claim** rằng "DLMP is underexplored" — đây là mature field (Bai et al. 2022, *Proc. IEEE*, 155 refs).
+>
+> ⚠️ **KHÔNG claim** rằng "hybrid optimization-RL is novel" — đây là one of the most active areas in power systems AI.
+>
+> ✅ **NÊN claim**: Sự **kết hợp cụ thể** của reconfiguration + dynamic zoning + GAT-MAPPO trong framework thống nhất là chưa từng có; evaluation trung thực về topology generalization là contribution có giá trị.
 
 ---
 
 ## 2. Problem Statement & Research Gaps
 
-### Gap chính (Primary Gap): Topology-Adaptive Real-Time Control trong DSO-VPP Coordination
+### Primary Gap: Topology-Adaptive Real-Time Control trong DSO-VPP Coordination
 
-Các framework DSO-VPP hiện tại (bi-level hoặc tri-level) đều **giả định cấu trúc lưới cố định**. Khi DSO thực hiện network reconfiguration (đóng/cắt switch), các agent điều khiển real-time được train trên topology cũ sẽ **mất hiệu lực** — hiện tượng "topology distribution shift". Đây là khoảng trống cụ thể:
+Các framework DSO-VPP hiện tại (bi-level hoặc tri-level) đều **giả định cấu trúc lưới cố định**. Khi DSO thực hiện network reconfiguration (đóng/cắt switch), hai hệ quả chưa được giải quyết:
 
-> **Không có framework nào tích hợp network reconfiguration như biến quyết định chiến lược (Layer 0) với real-time voltage control topology-adaptive (Layer 2) thông qua cơ chế GNN nhận thức cấu trúc.**
+1. **Agent control failure:** Các RL agent được train trên topology cũ mất hiệu lực — "topology distribution shift".
+2. **Zone boundary invalidation:** Zone partition cố định có thể bị phá vỡ (zone mất tính liên thông) khi switch thay đổi.
 
-### Gap phụ (Supporting Gaps)
+> **Không có framework nào tích hợp: (a) network reconfiguration như biến quyết định chiến lược, (b) dynamic zone partitioning thích ứng theo topology, và (c) real-time voltage control topology-adaptive thông qua GNN.**
 
-**Gap A — Reconfiguration-embedded coordination:** Các bài reconfiguration (Jabr 2012, Qiao 2022) xử lý như bài toán single-agent DSO. Các bài DSO-VPP coordination (Xue 2024, Lin 2025) không xét reconfiguration. Chưa ai kết hợp cả hai trong một framework thống nhất.
+### Supporting Gaps
 
-**Gap B — Zonal pricing under reconfiguration:** DLMP là lĩnh vực trưởng thành (Bai et al. 2022 review trên *Proc. IEEE*, 155 references). Tuy nhiên, zonal pricing **thay đổi theo cấu hình lưới** (vì congestion pattern thay đổi khi switch topology) — khía cạnh này chưa được khai thác.
+**Gap A — Reconfiguration-embedded coordination:** Các bài reconfiguration (Jabr 2012, Qiao 2022) xử lý như bài toán single-agent DSO. Các bài DSO-VPP coordination (Xue 2024, Lin 2025) không xét reconfiguration. Chưa ai kết hợp cả hai.
 
-**Gap C — Honest zero-shot evaluation:** GNN-based controllers claim "zero-shot generalization" nhưng evidence gần đây cho thấy performance giảm đáng kể (de Jong et al. 2025; ACM e-Energy 2025). Cần evaluation có hệ thống trong bối cảnh cụ thể của DSO-VPP coordination.
+**Gap B — Dynamic zoning under reconfiguration:** DLMP là lĩnh vực trưởng thành (Bai et al. 2022). Tuy nhiên, khi topology thay đổi, congestion pattern thay đổi → zone boundaries tối ưu cũng thay đổi. Hiện tại mọi bài VPP zoning dùng partition cố định.
 
-### Lưu ý quan trọng cho viết paper
-
-> ⚠️ **KHÔNG claim** rằng "VPP topology blindness" là gap mới — đã có >10 bài bi-level DSO-VPP gần đây xử lý vấn đề này.
->
-> ⚠️ **KHÔNG claim** rằng "DLMP is underexplored" — đây là mature field.
->
-> ⚠️ **KHÔNG claim** rằng "hybrid optimization-RL is novel" — đây là one of the most active areas in power systems AI.
->
-> ✅ **NÊN claim**: Sự **kết hợp cụ thể** của reconfiguration + zonal pricing + GAT-MAPPO trong một framework thống nhất là chưa từng có, và evaluation trung thực về topology generalization là contribution có giá trị.
+**Gap C — Honest zero-shot evaluation:** GNN-based controllers claim "zero-shot generalization" nhưng evidence gần đây (de Jong et al. 2025; ACM e-Energy 2025) cho thấy 3–15% performance degradation. Cần evaluation có hệ thống trong bối cảnh DSO-VPP.
 
 ---
 
 ## 3. System Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    LAYER 0: DSO                      │
-│         "Market Maker & Grid Architect"              │
-│                                                      │
-│  Input:  Load forecast, DER forecast, grid state     │
-│  Solve:  MISOCP (Reconfiguration + OPF)              │
-│  Output: Topology A_t, Zonal prices Λ_t             │
-│  Cycle:  Every 15-60 minutes                         │
-│                                                      │
-│  ┌─────────────┐    ┌──────────────────┐            │
-│  │ Binary vars │───▶│ Fix topology     │            │
-│  │ (switches)  │    │ Solve LP → DLMP  │            │
-│  └─────────────┘    │ Aggregate → Zone │            │
-│                     └──────────────────┘            │
-└──────────────┬────────────────┬──────────────────────┘
-               │ Λ_t            │ A_t
-               ▼                ▼
-┌──────────────────────┐  ┌────────────────────────────┐
-│     LAYER 1: VPP     │  │       LAYER 2: LOCAL       │
-│  "Profit Maximizer"  │  │     "Grid Guardian"        │
-│                      │  │                            │
-│  Input:  Λ_t         │  │  Input:  P*_ref, A_t,      │
-│  Solve:  Wasserstein  │  │          V_i, SoC_i        │
-│          DRO          │  │  Solve:  GAT-MAPPO         │
-│  Output: P*_ref       │  │  Output: P_i, Q_i per node │
-│  Cycle:  15 min       │  │  Cycle:  <1 second         │
-│                      │  │                            │
-│  NO power flow       │  │  Topology-aware via GNN    │
-│  constraints         │  │  Safety: voltage clipping   │
-└──────────┬───────────┘  └────────────────────────────┘
-           │ P*_ref                ▲
-           └───────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                      LAYER 0: DSO                         │
+│           "Market Maker & Grid Architect"                 │
+│                                                           │
+│  Input:  Load forecast, DER forecast, grid state          │
+│  Solve:  MISOCP (Reconfiguration + OPF)                   │
+│          + Graph Partitioning (Dynamic Zoning)             │
+│  Output: Topology A_t, Zone partition Z_t, Prices Λ_t    │
+│  Cycle:  Every 15–60 minutes                              │
+│                                                           │
+│  ┌──────────┐   ┌──────────────┐   ┌────────────────┐   │
+│  │ MISOCP   │──▶│ Fix topology │──▶│ Re-partition   │   │
+│  │ (switch  │   │ Solve SOCP   │   │ zones on A_t*  │   │
+│  │  vars)   │   │ → DLMPs      │   │ (spectral/     │   │
+│  └──────────┘   └──────────────┘   │  scoring)      │   │
+│                                     └────────────────┘   │
+└────────────┬──────────────┬──────────────┬───────────────┘
+             │ Λ_t          │ A_t          │ Z_t
+             ▼              ▼              ▼
+┌────────────────────────┐  ┌──────────────────────────────┐
+│      LAYER 1: VPP      │  │        LAYER 2: LOCAL        │
+│   "Profit Maximizer"   │  │      "Grid Guardian"         │
+│                        │  │                              │
+│  Input:  Λ_t, Z_t     │  │  Input:  P*_ref, A_t, Z_t,  │
+│  Solve:  Wasserstein   │  │          V_i, SoC_i          │
+│          DRO           │  │  Solve:  GAT-MAPPO           │
+│  Output: P*_ref/zone   │  │  Output: P_i, Q_i per node  │
+│  Cycle:  15 min        │  │  Cycle:  < 1 second          │
+│                        │  │                              │
+│  NO power flow         │  │  Topology-aware via GAT      │
+│  constraints           │  │  Safety: droop fallback      │
+└────────────┬───────────┘  └──────────────────────────────┘
+             │ P*_ref                ▲
+             └───────────────────────┘
+             (Iterative feedback nếu curtail > 5%)
 ```
 
-### Luồng thông tin (Information Flow)
+### Information Flow
 
-1. **Top-down signals:** DSO → (prices Λ_t, topology A_t) → VPP & Local Controllers
-2. **Economic dispatch:** VPP → (reference power P\*_ref) → Local Controllers
+1. **Top-down:** DSO → (prices Λ_t, topology A_t, zone partition Z_t) → VPP & Local Controllers
+2. **Economic dispatch:** VPP → (reference power P\*_ref per zone) → Local Controllers
 3. **Real-time adjustment:** Local Controllers tự động curtail/adjust Q nếu phát hiện voltage violation
-4. **Feedback (optional iteration):** Nếu Layer 2 phải curtail quá nhiều → signal ngược lên Layer 1 để re-optimize
+4. **Iterative feedback:** Nếu Layer 2 phải curtail >5% P_ref → signal lên Layer 1 để re-optimize
 
-### Tần suất hoạt động
+### Operating Frequency
 
-| Layer | Cycle Time | Solver | Quyết định |
-|-------|-----------|--------|------------|
-| 0 | 15-60 min | Gurobi (MISOCP) | Switch states, zonal prices |
-| 1 | 15 min | Gurobi/CPLEX (DRO) | P_ref per zone |
-| 2 | 0.1-1 s | GAT-MAPPO (inference) | P_i, Q_i per inverter |
+| Layer | Cycle Time | Solver | Decision Variables |
+|-------|-----------|--------|-------------------|
+| 0 | 15–60 min | MOSEK (MISOCP) + graph partitioning | Switch states, zone boundaries, zonal prices |
+| 1 | 15 min | SciPy/HiGHS (LP/DRO) | P_ref per zone |
+| 2 | 0.1–1 s | GAT-MAPPO (inference) | P_i, Q_i per inverter |
 
 ---
 
 ## 4. Mathematical Formulation
 
-### 4.1 Layer 0: Co-Optimized Reconfiguration & Pricing
+### 4.1 Layer 0: Co-Optimized Reconfiguration, Zoning & Pricing
 
-#### Objective Function
+#### 4.1.1 Reconfiguration (MISOCP)
+
+**Objective:**
 
 $$\min_{P, Q, V, \alpha} \sum_{t \in \mathcal{T}} \left[ C_{loss} \cdot P_{loss,t} + C_{sw} \sum_{l \in \mathcal{L}_{sw}} |\alpha_{l,t} - \alpha_{l,t-1}| + C_{vuf} \cdot V_{idx,t} \right]$$
 
-Trong đó:
-- $\alpha_{l,t} \in \{0,1\}$: Trạng thái switch $l$ tại thời điểm $t$
-- $P_{loss,t}$: Tổn thất công suất tác dụng
-- $V_{idx,t}$: Chỉ số mất cân bằng điện áp (voltage unbalance index)
-- $C_{sw}$: Chi phí chuyển mạch (switching cost) — penalize thao tác switch quá nhiều
-
-#### Ràng buộc chính
+- $\alpha_{l,t} \in \{0,1\}$: Switch $l$ state at time $t$
+- $P_{loss,t}$: Active power losses
+- $V_{idx,t}$: Voltage unbalance index
+- $C_{sw}$: Switching cost penalty
 
 **Branch Flow Model (SOCP relaxation):**
 
@@ -156,23 +139,56 @@ $$P_{ij} = p_{ij} - r_{ij} l_{ij}, \quad Q_{ij} = q_{ij} - x_{ij} l_{ij}$$
 
 $$v_j = v_i - 2(r_{ij} p_{ij} + x_{ij} q_{ij}) + (r_{ij}^2 + x_{ij}^2) l_{ij}$$
 
-$$l_{ij} v_i \geq p_{ij}^2 + q_{ij}^2 \quad \text{(relaxed to SOC)}$$
+$$l_{ij} v_i \geq p_{ij}^2 + q_{ij}^2 \quad \text{(relaxed to SOC cone)}$$
 
-**Radiality constraints:**
+**Radiality:** $\sum_{l \in \mathcal{L}} \alpha_l = |\mathcal{N}| - 1$ (spanning tree)
 
-$$\sum_{l \in \mathcal{L}} \alpha_l = |\mathcal{N}| - 1 \quad \text{(spanning tree)}$$
+**Big-M switching:** $\alpha_l \cdot \underline{S}_l \leq |S_l| \leq \alpha_l \cdot \overline{S}_l$
 
-$$\alpha_l \cdot \underline{S}_l \leq |S_l| \leq \alpha_l \cdot \overline{S}_l \quad \text{(big-M for open switches)}$$
+**Voltage/thermal limits:** $\underline{V}^2 \leq v_i \leq \overline{V}^2$, $\;p_{ij}^2 + q_{ij}^2 \leq \overline{S}_{ij}^2 \cdot \alpha_{ij}$
 
-**Voltage limits:** $\underline{V}^2 \leq v_i \leq \overline{V}^2, \quad \forall i \in \mathcal{N}$
+**SOCP Exactness Verification:**
 
-**Thermal limits:** $p_{ij}^2 + q_{ij}^2 \leq \overline{S}_{ij}^2 \cdot \alpha_{ij}$
+> Sau mỗi lần solve MISOCP, chạy AC power flow (Newton-Raphson, Pandapower) để verify:
+> $$\|V^{SOCP} - V^{AC}\|_\infty < \epsilon_{tol} = 0.01 \text{ p.u.}$$
+> Pipeline **fail-closed**: nếu gap > threshold, không xuất output cho Layer 1.
+> Tolerance 0.01 p.u. ≈ 1% voltage error — chấp nhận được cho distribution-level studies; tighter tolerance (0.001) không đạt được ổn định trên IEEE 123-bus single-phase equivalent do SOCP relaxation gap at high-DER buses.
 
-#### Zonal Pricing Mechanism
+**Current calibration status:** Bus-82 calibration fix đã áp dụng (siết transformer tap handling + voltage reference band 0.005 p.u.), đạt `fails=0/288, max_gap≈0.00482 p.u.`.
 
-**Bước 1 — Fix topology, solve LP for DLMPs:**
+#### 4.1.2 Dynamic Zone Partitioning (NEW — C4)
 
-Sau khi cố định $\alpha^*$ (biến nhị phân), bài toán trở thành LP/SOCP liên tục. Dual variables tại ràng buộc power balance cho DLMPs:
+Sau khi cố định topology $A_t^*$, Layer 0 chạy **graph partitioning** trên lưới mới để tìm zone boundaries tối ưu.
+
+**Formulation — Spectral clustering trên weighted power-flow graph:**
+
+Cho graph $G_t = (\mathcal{N}, \mathcal{E}, W_t)$ với edge weight $w_{ij} = |P_{ij}| + |Q_{ij}|$ (power flow magnitude):
+
+$$\min_{\mathcal{Z}} \sum_{(i,j) \in \text{cut}(\mathcal{Z})} w_{ij,t}$$
+
+$$\text{s.t.} \quad \frac{\max_z |\mathcal{N}_z| - \min_z |\mathcal{N}_z|}{|\mathcal{N}|/K} \leq \delta_{bal} \quad \text{(size balance)}$$
+
+$$\sum_{i \in z} P_{DER,i} > 0 \quad \forall z \in \mathcal{Z} \quad \text{(mỗi zone có DER)}$$
+
+$$G[\mathcal{N}_z] \text{ is connected} \quad \forall z \in \mathcal{Z} \quad \text{(zone connectivity)}$$
+
+**Implementation:** Giải bằng spectral clustering (Laplacian eigenvectors) hoặc multi-criteria scoring:
+
+| Criterion | Weight | Description |
+|-----------|--------|-------------|
+| Connectivity | Mandatory | Mỗi zone phải là subgraph liên thông trên $A_t^*$ |
+| Bus/load balance | 0.25 | Cân bằng số bus và tổng tải giữa các zone |
+| DER penetration | 0.25 | Mỗi zone phải có DER; phân bố DER cân bằng |
+| Boundary cuts | 0.30 | Minimize inter-zone power flow (tight coupling → same zone) |
+| Imbalance penalty | 0.20 | Phạt zone quá lớn hoặc quá nhỏ |
+
+> **Key insight:** Khi DSO đóng/cắt switch, graph $G_t$ thay đổi → spectral clustering cho partition khác → zone boundaries **tự động thích ứng**. Đây là điểm khác biệt so với mọi bài VPP zoning hiện tại (zone cố định).
+
+**Recommended zone size:** 8–25 buses/zone cho IEEE 123-bus (tổng ~120 buses, 4–6 zones).
+
+#### 4.1.3 Zonal Pricing
+
+**Bước 1 — DLMP extraction:** Fix $\alpha^*$, solve SOCP → dual variables at power balance constraints:
 
 $$\lambda^{DLMP}_{i,t} = \lambda^{energy}_{i,t} + \lambda^{loss}_{i,t} + \lambda^{congestion}_{i,t} + \lambda^{voltage}_{i,t}$$
 
@@ -180,13 +196,13 @@ $$\lambda^{DLMP}_{i,t} = \lambda^{energy}_{i,t} + \lambda^{loss}_{i,t} + \lambda
 
 $$\lambda^{En}_{z,t} = \frac{\sum_{i \in z} P_{load,i} \cdot \lambda^{DLMP}_{i,t}}{\sum_{i \in z} P_{load,i}}$$
 
-> ⚠️ **Known limitation:** Load-weighted averaging phá hủy tín hiệu congestion/voltage cục bộ. Cần thực hiện **sensitivity analysis** so sánh:
-> - (a) Load-weighted average (baseline hiện tại)
+> ⚠️ **Known limitation:** Load-weighted averaging phá hủy tín hiệu congestion cục bộ. Sensitivity analysis cần so sánh:
+> - (a) Load-weighted average (baseline)
 > - (b) Max-DLMP trong zone (conservative)
-> - (c) Congestion-weighted average (proposed improvement)
-> - (d) Full nodal pricing (upper bound benchmark)
+> - (c) Congestion-weighted average
+> - (d) Full nodal pricing (upper bound)
 >
-> **TODO trong paper:** Quantify welfare loss từ aggregation bằng Price of Aggregation metric:
+> **Quantify bằng Price of Aggregation:**
 > $$PoA = \frac{SW_{nodal} - SW_{zonal}}{SW_{nodal}} \times 100\%$$
 
 **Bước 3 — Reserve pricing:**
@@ -196,35 +212,24 @@ $$\lambda^{Res}_{z,t} = \mu_{sys,t} + \eta_{z,t}$$
 - $\mu_{sys,t}$: System-wide reserve price (dual of system reserve constraint)
 - $\eta_{z,t}$: Zonal scarcity premium (dual of zonal contingency constraint)
 
-#### SOCP Exactness Verification
-
-> ⚠️ **SOCP relaxation exactness** (Gan-Li-Low 2014) holds cho radial networks dưới các điều kiện:
-> - Không có upper voltage bound binding
-> - Không có reverse power flow lớn
->
-> **Implementation requirement (current code):** Sau mỗi lần solve MISOCP, chạy **AC power flow check** (Newton-Raphson trong Pandapower) để verify:
-> $$\|V^{SOCP} - V^{AC}\|_\infty < \epsilon_{tol} \quad (\epsilon_{tol} = 0.01 \text{ p.u.},\ publish\ mode)$$
-> Nếu gap > threshold, pipeline vận hành theo cơ chế **fail-closed** (không phát hành output hợp lệ cho Layer 1), đồng thời lưu diagnostics để calibration.
-
 ### 4.2 Layer 1: Distributionally Robust VPP Bidding
 
 #### Why DRO over Stochastic Optimization
 
-Scenario-based SO (bản gốc) có **69% out-of-sample reliability** theo Li et al. (2022). Wasserstein DRO đạt **>85%** trên cùng test case. Đổi sang DRO là improvement có cơ sở.
+Li et al. (2022) showed: scenario-based SO achieves 69% out-of-sample reliability; Wasserstein DRO achieves >85% on the same test case.
 
 #### Formulation (Wasserstein DRO)
 
-$$\max_{P_{inj}, R} \min_{\mathbb{Q} \in \mathcal{B}_\epsilon(\hat{\mathbb{P}})} \mathbb{E}_{\mathbb{Q}} \left[ \sum_{t=1}^{T} \sum_{z \in \mathcal{Z}} \left( \lambda^{En}_{z,t} P_{inj,z,t} + \lambda^{Res}_{z,t} R_{z,t} - C_{deg}(P_{inj}) \right) \right]$$
+$$\max_{P_{inj}, R} \min_{\mathbb{Q} \in \mathcal{B}_\epsilon(\hat{\mathbb{P}})} \mathbb{E}_{\mathbb{Q}} \left[ \sum_{t=1}^{T} \sum_{z \in \mathcal{Z}_t} \left( \lambda^{En}_{z,t} P_{inj,z,t} + \lambda^{Res}_{z,t} R_{z,t} - C_{deg}(P_{inj}) \right) \right]$$
 
-Trong đó:
-- $\mathcal{B}_\epsilon(\hat{\mathbb{P}})$: Wasserstein ball bán kính $\epsilon$ quanh empirical distribution $\hat{\mathbb{P}}$
-- $P_{inj,z,t}$: Công suất bơm vào zone $z$ tại thời điểm $t$
-- $R_{z,t}$: Dung lượng dự phòng cung cấp cho zone $z$
-- $C_{deg}$: Chi phí degradation pin (battery aging cost)
+> Lưu ý: $\mathcal{Z}_t$ (zone set) có thể thay đổi theo $t$ do dynamic zoning từ Layer 0.
 
-#### Ràng buộc VPP
+- $\mathcal{B}_\epsilon(\hat{\mathbb{P}})$: Wasserstein ball radius $\epsilon$ around empirical distribution
+- $C_{deg}$: Battery degradation cost
 
-**Virtual battery model:**
+#### VPP Constraints
+
+**Virtual battery:**
 
 $$SoC_{t+1} = SoC_t + \eta_{ch} P^{ch}_t \Delta t - \frac{P^{dis}_t}{\eta_{dis}} \Delta t$$
 
@@ -232,38 +237,35 @@ $$\underline{SoC} \leq SoC_t \leq \overline{SoC}, \quad 0 \leq P^{ch}_t \leq \ov
 
 **Inverter capacity:** $P_{inj,z,t}^2 + Q_{inj,z,t}^2 \leq \overline{S}_{inv,z}^2$
 
-**Reserve delivery guarantee:** $R_{z,t} \leq \overline{P}^{dis} - P^{dis}_{z,t} + P^{ch}_{z,t}$
+**Reserve delivery:** $R_{z,t} \leq \overline{P}^{dis} - P^{dis}_{z,t} + P^{ch}_{z,t}$
 
-> **Lưu ý thiết kế:** Layer 1 **cố tình loại bỏ** power flow constraints. Đây là design choice (không phải oversight):
-> - VPP hoạt động như "Commercial VPP" — chỉ quan tâm kinh tế
-> - Physical feasibility được đảm bảo bởi Layer 2 (curtailment nếu cần)
-> - Nếu Layer 2 phải curtail >5% P_ref → trigger **iterative feedback** (xem Section 6)
+> **Design choice:** Layer 1 **cố tình loại bỏ** power flow constraints (Commercial VPP paradigm). Physical feasibility do Layer 2 đảm bảo. Nếu Layer 2 curtail >5% P_ref → trigger iterative feedback.
 
-#### DRO Tractable Reformulation
+#### Tractable Reformulation
 
-Wasserstein DRO với 1-norm distance và linear objective admits LP/SOCP reformulation (Mohajerin Esfahani & Kuhn, 2018):
+Wasserstein DRO với 1-norm + linear objective → LP (Mohajerin Esfahani & Kuhn, 2018):
 
 $$\max_{P, R, \lambda_0, s} \quad \lambda_0 - \epsilon \sum_\omega s_\omega$$
 
 $$\text{s.t.} \quad f(P, R, \xi_\omega) \geq \lambda_0 - s_\omega \|\xi_\omega\|_1, \quad s_\omega \geq 0, \quad \forall \omega$$
 
-Với $\xi_\omega$ là price scenario và $f$ là profit function.
+> **Implementation note:** Giải bằng SciPy `linprog` (HiGHS backend). Đủ cho proof-of-concept (~100 scenarios × 24 timesteps). Production-scale sẽ cần Gurobi/MOSEK.
 
 ### 4.3 Layer 2: GAT-MAPPO Real-Time Voltage Control ⭐ (Main Contribution)
 
 #### Multi-Agent Setup
 
-- **Agents:** Mỗi DER inverter node $i$ là một agent
+- **Agents:** Mỗi DER inverter node $i$ là một agent (~15–20 agents trên IEEE 123-bus)
 - **Paradigm:** Centralized Training, Decentralized Execution (CTDE)
-- **Algorithm:** MAPPO (Multi-Agent PPO) với shared GAT encoder
+- **Algorithm:** MAPPO (custom implementation, không phụ thuộc RLlib)
+- **GNN backbone:** GAT (implemented: dense PyTorch; planned option: PyG migration)
 
-#### Observation Space cho Agent $i$
+#### Observation Space
 
-$$o_i = \left[ \underbrace{V_i, \theta_i, P_{load,i}, Q_{load,i}, P_{gen,i}, SoC_i}_{\text{Local state } s_i^{local}}, \underbrace{P^*_{ref}, \lambda^{Res}_{z(i),t}}_{\text{Global command}}, \underbrace{A_t, X_t}_{\text{Graph structure}} \right]$$
+$$o_i = \left[ \underbrace{V_i, \theta_i, P_{load,i}, Q_{load,i}, P_{gen,i}, SoC_i}_{\text{Local state}}, \underbrace{P^*_{ref}, \lambda^{Res}_{z(i),t}}_{\text{Global command}}, \underbrace{A_t, X_t}_{\text{Graph structure}} \right]$$
 
-Trong đó:
-- $A_t \in \{0,1\}^{N \times N}$: Ma trận kề **thay đổi theo thời gian** (từ Layer 0 reconfiguration)
-- $X_t \in \mathbb{R}^{N \times d}$: Node feature matrix (chứa $V$, $P$, $Q$ cho tất cả các nút)
+- $A_t \in \{0,1\}^{N \times N}$: Adjacency matrix **thay đổi theo thời gian** (từ Layer 0)
+- $X_t \in \mathbb{R}^{N \times d}$: Node feature matrix ($V$, $P$, $Q$ tại mọi bus)
 
 #### GAT Encoder Architecture
 
@@ -271,85 +273,80 @@ Trong đó:
 Input: Graph G_t = (X_t, A_t)
   │
   ▼
-┌─────────────────────────────────────┐
-│  GAT Layer 1 (K=4 heads, d=32)     │
-│  h_i^(1) = ║_{k=1}^{K} σ(Σ_j α^k_ij W^k x_j)  │
-│                                     │
-│  Attention weights α_ij:            │
-│  α_ij = softmax_j(LeakyReLU(       │
-│         a^T [W h_i ║ W h_j]))      │
-│                                     │
-│  Key insight: α_ij tự động học      │
-│  "nút nào quan trọng" — nút cổ chai│
-│  sẽ có attention weight cao         │
-└─────────────┬───────────────────────┘
-              │
-              ▼
-┌─────────────────────────────────────┐
-│  GAT Layer 2 (K=1 head, d=64)      │
-│  h_i^(2) = σ(Σ_j α_ij W h_j^(1))  │
-└─────────────┬───────────────────────┘
-              │
-              ▼
-┌─────────────────────────────────────┐
-│  Output: Node embedding z_i ∈ R^64 │
-│  → Feed vào Actor & Critic heads    │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│  GAT Layer 1 (K=4 heads, d_hidden=32)   │
+│  h_i^(1) = ║_{k=1}^K σ(Σ_j α^k_ij W^k x_j)  │
+│                                          │
+│  Attention: α_ij = softmax_j(            │
+│    LeakyReLU(a^T [Wh_i ║ Wh_j]))       │
+│                                          │
+│  → α_ij cao = nút j quan trọng cho i   │
+│  → tự học "bottleneck nodes"            │
+└──────────────┬──────────────────────────┘
+               ▼
+┌─────────────────────────────────────────┐
+│  GAT Layer 2 (K=1 head, d_out=64)       │
+│  h_i^(2) = σ(Σ_j α_ij W h_j^(1))      │
+└──────────────┬──────────────────────────┘
+               ▼
+┌─────────────────────────────────────────┐
+│  Output: z_i ∈ ℝ^64 (node embedding)    │
+│  → Feed into Actor & Critic heads       │
+└─────────────────────────────────────────┘
 ```
 
 #### Actor-Critic Architecture
 
 ```
-Actor (decentralized):
-  Input:  z_i (node embedding) + s_i^local
+Actor (decentralized — chạy khi inference):
+  Input:  z_i (GAT embedding) ⊕ s_i^local (6-dim)
   Hidden: MLP [128, 64]
-  Output: μ_i, σ_i (Gaussian policy for continuous P_i, Q_i)
+  Output: μ_i, σ_i → Gaussian policy cho [P_i, Q_i]
 
-Critic (centralized, training only):
-  Input:  [z_1, z_2, ..., z_N] (all node embeddings) + global state
+Critic (centralized — chỉ dùng khi training):
+  Input:  [z_1, ..., z_N] (all embeddings) ⊕ global state
   Hidden: MLP [256, 128]
-  Output: V(s) (state value)
+  Output: V(s) (state value estimate)
 ```
 
-#### Action Space
+#### Action Space & Safety Layer
 
-Agent $i$ outputs continuous actions:
+Agent $i$ outputs continuous: $a_i = [P_i^{act}, Q_i^{act}]$
 
-$$a_i = [P_i^{act}, Q_i^{act}] \in [-\overline{P}_i, \overline{P}_i] \times [-\overline{Q}_i, \overline{Q}_i]$$
-
-Với safety clipping:
+**Safety clipping:**
 
 $$P_i^{final} = \text{clip}(P_i^{act}, P_i^{min}, P_i^{max})$$
 
-$$Q_i^{final} = \begin{cases} Q_i^{act} & \text{if } V_i \in [V_{min}+\epsilon, V_{max}-\epsilon] \\ Q_i^{emergency} & \text{otherwise (droop control fallback)} \end{cases}$$
+$$Q_i^{final} = \begin{cases} Q_i^{act} & \text{if } V_i \in [V_{min}+\epsilon, V_{max}-\epsilon] \\ Q_i^{droop}(V_i) & \text{otherwise (droop control fallback)} \end{cases}$$
+
+Droop fallback đảm bảo an toàn ngay cả khi GAT-MAPPO policy cho action xấu (e.g., trên unseen topology).
 
 #### Reward Function
 
-$$R_t = \underbrace{-\alpha \left(\sum_i P_i - P^*_{ref}\right)^2}_{\text{Tracking (how well agents follow L1)}} - \underbrace{\beta \sum_{j \in \mathcal{N}} \max(0, |V_j - 1| - \epsilon_V)^2}_{\text{Voltage violation (L2 penalty)}} + \underbrace{\gamma \cdot \lambda^{Res}_{z,t} \cdot R_{avail,i}}_{\text{Reserve provision bonus}}$$
+$$R_t = \underbrace{-\alpha \left(\sum_i P_i - P^*_{ref}\right)^2}_{\text{Tracking error}} - \underbrace{\beta \sum_{j \in \mathcal{N}} \max(0, |V_j - 1| - \epsilon_V)^2}_{\text{Voltage violation (L2)}} + \underbrace{\gamma_t \cdot \lambda^{Res}_{z,t} \cdot R_{avail,i}}_{\text{Reserve bonus}}$$
 
-> ⚠️ **Design tension:** Reserve bonus xung đột với voltage regulation (giữ reserve = giảm Q available).
->
-> **Giải pháp đề xuất:**
-> - Dùng **adaptive weighting**: $\gamma$ giảm khi voltage violation tăng
-> - Hoặc **separate critic heads** cho economic vs safety objectives
-> - **Ablation study cần thiết**: Test từng reward component riêng
+**Adaptive weighting** để giải quyết xung đột safety vs economy:
 
-#### Hyperparameters (Starting Point)
+$$\gamma_t = \gamma_0 \cdot \max\left(0, 1 - \frac{\text{ViolationCount}_t}{\text{ViolationThreshold}}\right)$$
+
+Khi voltage violation tăng → $\gamma_t$ giảm → agent ưu tiên safety hơn reserve provision.
+
+#### Hyperparameters
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| GAT heads (Layer 1) | 4 | Standard cho power systems graphs |
+| GAT heads (Layer 1) | 4 | Standard for power-system-sized graphs |
 | GAT hidden dim | 32 → 64 | 2-layer progressive |
 | Actor MLP | [128, 64] | Decentralized |
 | Critic MLP | [256, 128] | Centralized |
-| Learning rate | 3e-4 | Adam optimizer |
-| Clip ratio (ε) | 0.2 | Standard PPO |
-| GAE λ | 0.95 | Generalized Advantage Estimation |
-| Discount γ_RL | 0.99 | Near-sighted enough for voltage control |
-| Reward weights | α=1.0, β=10.0, γ=0.1 | **Cần tune** — β >> α to prioritize safety |
-| Mini-batch size | 256 | |
-| Training episodes | 50,000-100,000 | Expect ~24-48h on single GPU |
-| N agents | ~15-20 | DER nodes trên IEEE 123-bus |
+| Learning rate | 3e-4 | Adam |
+| PPO clip ratio | 0.2 | Standard |
+| GAE λ | 0.95 | |
+| Discount γ_RL | 0.99 | |
+| Reward weights | α=1.0, β=10.0, γ₀=0.1 | β >> α → safety first |
+| Mini-batch | 256 | |
+| Training episodes | 50k–100k | ~24–48h single GPU |
+| N agents | 15–20 | DER nodes on IEEE 123-bus |
 
 ---
 
@@ -357,361 +354,363 @@ $$R_t = \underbrace{-\alpha \left(\sum_i P_i - P^*_{ref}\right)^2}_{\text{Tracki
 
 ### 5.1 Test System
 
-**IEEE 123-bus distribution network** (modified)
+**IEEE 123-bus distribution network** (single-phase equivalent, modified)
 
-> ⚠️ **Single-phase equivalent** — Known limitation:
-> - IEEE 123-bus là inherently 3-phase unbalanced
-> - Single-phase mất voltage unbalance, phase-specific congestion
-> - **Mitigation**: Acknowledge rõ trong paper, note rằng BFM SOCP proofs dùng single-phase models
-> - **Nếu muốn mạnh hơn**: Dùng IEEE 33-bus (naturally single-phase) hoặc giữ IEEE 123-bus full 3-phase (phức tạp hơn nhiều)
+**Modifications:**
+- 5 tie-lines (normally-open switches) cho reconfiguration
+- ~15–20 DER nodes (PV + Battery)
+- 4–6 zones via dynamic partitioning (8–25 buses/zone)
+- Zone partition scoring: connectivity (mandatory), load/DER balance, boundary cuts, imbalance penalty
 
-**Modifications cho reconfiguration và zonal operation:**
-- Thêm **5 tie-lines** (normally-open switches) → tạo loop cho reconfiguration.
-- **~15-20 DER nodes** (PV + Battery) phân bố trên lưới.
-- Zone/VPP partition theo nguyên tắc topology-aware, mỗi zone gồm **nhiều bus** (khuyến nghị 8-25 bus/zone cho IEEE 123-bus), thay vì chia quá nhỏ 2-3 bus.
-- Tích hợp **zone partition scoring** để chọn partition tốt nhất theo tiêu chí định lượng (connectivity, load/DER balance, boundary edges, imbalance penalty).
+> ⚠️ **Known limitation:** IEEE 123-bus là inherently 3-phase unbalanced. Single-phase equivalent mất voltage unbalance effects, phase-specific congestion.
+> **Mitigation:** Acknowledge rõ trong paper; BFM SOCP proofs sử dụng single-phase models; IEEE 33-bus/69-bus là alternatives nếu cần natural single-phase.
 
 ### 5.2 Scenarios
 
-| Scenario Set | Mục đích | Số lượng |
-|--------------|----------|----------|
-| **S1: Normal operation** | Baseline performance | 100 episodes |
-| **S2: High PV penetration** | Voltage rise stress test | 100 episodes |
-| **S3: Congestion events** | Zonal pricing activation | 50 episodes |
-| **S4: Topology changes** | Zero-shot generalization test | 50 episodes × N topologies |
-| **S5: Combined stress** | Worst-case robustness | 50 episodes |
+| Set | Purpose | Count |
+|-----|---------|-------|
+| **S1:** Normal operation | Baseline | 100 episodes |
+| **S2:** High PV penetration | Voltage rise stress | 100 episodes |
+| **S3:** Congestion events | Zonal pricing activation | 50 episodes |
+| **S4:** Topology changes | Zero-shot generalization | 50 episodes × N topologies |
+| **S5:** Combined stress | Worst-case robustness | 50 episodes |
 
-### 5.3 Topology Generalization Experiment ⭐ (Critical Experiment)
+### 5.3 Topology Generalization Experiment ⭐
 
-Đây là experiment quan trọng nhất — phải thiết kế cẩn thận:
-
-**Training topologies:** Train GAT-MAPPO trên **5 base topologies** (5 cấu hình switch khác nhau của IEEE 123-bus)
+**Training:** GAT-MAPPO trained trên **5 base topologies** (5 cấu hình switch khác nhau).
 
 **Test protocol:**
-```
-Level 1 — Interpolation:  Topologies "gần" với training set
-                          (thay đổi 1 switch so với base)
-                          → Expected: <3% degradation
 
-Level 2 — Extrapolation:  Topologies "xa" với training set
-                          (thay đổi 2-3 switches)
-                          → Expected: 5-15% degradation
+| Level | Description | Expected Degradation |
+|-------|-------------|---------------------|
+| **L1 — Interpolation** | Thay đổi 1 switch vs base | <3% |
+| **L2 — Extrapolation** | Thay đổi 2–3 switches | 5–15% |
+| **L3 — Extreme shift** | Thay đổi 4+ switches | >15% |
+| **L4 — Fine-tuning** | Từ L3, fine-tune 100–500 episodes | Measure recovery → expect <5% |
 
-Level 3 — Extreme shift:  Topologies rất khác
-                          (thay đổi 4+ switches, different feeder structure)
-                          → Expected: >15% degradation
+**Metrics:**
+- **VVR (Voltage Violation Rate):** % timesteps có $|V_i - 1| > 0.05$ p.u.
+- **TE (Tracking Error):** $|P_\Sigma - P^*_{ref}|/P^*_{ref} \times 100\%$
+- **GG (Generalization Gap):** $(\text{Reward}_{train} - \text{Reward}_{unseen})/\text{Reward}_{train} \times 100\%$
 
-Level 4 — Fine-tuning:    Từ Level 3, fine-tune 100-500 episodes
-                          → Measure recovery speed
-```
+> **Honest reporting:** Report GG cho **tất cả** levels kể cả khi xấu. So sánh vs MLP baseline để isolate GNN contribution. So sánh vs retrained-from-scratch để đánh giá transfer value.
 
-**Metrics cho generalization:**
-- **Voltage Violation Rate (VVR):** % timesteps có $|V_i - 1| > 0.05$ p.u.
-- **Tracking Error (TE):** $\frac{|P_\Sigma - P^*_{ref}|}{P^*_{ref}} \times 100\%$
-- **Generalization Gap (GG):** $\frac{\text{Reward}_{train\_topo} - \text{Reward}_{unseen\_topo}}{\text{Reward}_{train\_topo}} \times 100\%$
+### 5.4 Ablation Studies
 
-> ⚠️ **Honest reporting requirement:**
-> - Report GG cho **tất cả** levels, kể cả khi kết quả xấu
-> - So sánh với MLP baseline (không có GNN) để isolate GNN contribution
-> - So sánh với "retrained from scratch" để đánh giá transfer learning value
-
-### 5.4 Ablation Study Design
-
-| Experiment | Remove/Replace | Đo gì |
-|------------|---------------|-------|
-| **A1: No GNN** | Thay GAT bằng MLP | Topology awareness contribution |
-| **A2: No attention** | Thay GAT bằng GCN (uniform weights) | Attention mechanism value |
-| **A3: No reconfiguration** | Fix topology (Layer 0 disabled) | Reconfiguration benefit |
-| **A4: No DRO** | Thay DRO bằng deterministic opt | DRO value under uncertainty |
-| **A5: No reserve signal** | Remove γ term từ reward | Reserve provision contribution |
-| **A6: Single-agent** | Thay MAPPO bằng single PPO | Multi-agent coordination value |
-| **A7: No iterative feedback** | Single-pass (no L2→L1 feedback) | Iteration benefit |
+| ID | Remove/Replace | Measures |
+|----|---------------|----------|
+| **A1** | GAT → MLP (no GNN) | Topology awareness contribution |
+| **A2** | GAT → GCN (no attention) | Attention mechanism value |
+| **A3** | Fix topology (disable L0 reconfig) | Reconfiguration benefit |
+| **A4** | DRO → deterministic optimization | DRO value under uncertainty |
+| **A5** | Remove reserve bonus (γ=0) | Reserve signal contribution |
+| **A6** | MAPPO → single-agent PPO | Multi-agent coordination value |
+| **A7** | Single-pass (no L2→L1 feedback) | Iterative feedback benefit |
+| **A8** | Fixed zones vs scoring-selected zones | Zone scoring value (implemented) |
+| **A9** | 3 zones vs 5 zones vs nodal pricing | Zone granularity trade-off |
+| **A10** | Scoring-selected vs dynamic re-partitioning | Dynamic zoning incremental value (planned) |
 
 ### 5.5 Benchmark Comparisons
 
-| Method | Type | Source | Implementation |
-|--------|------|--------|----------------|
-| **Centralized OPF** | Optimal benchmark (upper bound) | Pandapower AC-OPF | Giải full OPF mỗi timestep — impractical nhưng cho optimal reference |
-| **Rule-based droop** | Traditional baseline | IEEE 1547 standard | Droop control Q(V) trên mỗi inverter |
-| **Single-agent PPO** | RL baseline (no graph) | Standard PPO | Một agent điều khiển tất cả, MLP policy |
-| **MAPPO (no GNN)** | MARL baseline | In-repo MAPPO baseline | Multi-agent nhưng MLP, không có topology awareness |
-| **Safe DRL** | Closest competitor | Reproduce Xue et al. (2024) approach | Hierarchical constrained DRL (Lagrangian method) |
+| Method | Type | Implementation |
+|--------|------|----------------|
+| **Centralized OPF** | Upper bound (optimal) | Pandapower AC-OPF every timestep |
+| **Rule-based droop** | Traditional baseline | IEEE 1547 Q(V) droop |
+| **Single-agent PPO** | RL baseline (no graph) | One agent, MLP policy |
+| **MAPPO (no GNN)** | MARL baseline | Multi-agent MLP (in-repo) |
+| **Safe DRL (Xue et al.)** | Closest competitor | Reproduce hierarchical constrained DRL |
 
 ### 5.6 Key Performance Indicators
 
-| KPI | Formula | Target |
-|-----|---------|--------|
-| Voltage Violation Rate | $\frac{\sum_t \mathbb{1}[|V_i-1|>0.05]}{\text{total timesteps}}$ | <1% |
-| Average Voltage Deviation | $\frac{1}{NT}\sum_{i,t} |V_{i,t} - 1|$ | <0.02 p.u. |
-| Power Tracking Error | $\frac{1}{T}\sum_t |P_\Sigma - P^*_{ref}|/P^*_{ref}$ | <3% |
-| Reserve Delivery Rate | $\frac{\text{Delivered reserve}}{\text{Committed reserve}}$ | >95% |
-| Inference Time | Wall clock per decision | <100ms |
-| Social Welfare Gap vs OPF | $(SW_{OPF} - SW_{proposed})/SW_{OPF}$ | <5% |
-| Generalization Gap (Level 2) | See 5.3 | <10% |
+| KPI | Target |
+|-----|--------|
+| Voltage Violation Rate (VVR) | <1% |
+| Avg Voltage Deviation | <0.02 p.u. |
+| Power Tracking Error | <3% |
+| Reserve Delivery Rate | >95% |
+| Inference Time | <100 ms |
+| Social Welfare Gap vs OPF | <5% |
+| Generalization Gap (Level 2) | <10% |
+| Price of Aggregation (dynamic zoning) | <3% (improvement over fixed) |
 
 ---
 
-## 6. Implementation Details
+## 6. Tech Stack & Implementation
 
-### 6.1 Tech Stack
+### 6.1 Technology Choices
 
-| Component | Technology | Version | Role |
-|-----------|-----------|---------|------|
-| Grid Simulation | **Pandapower** | ≥2.13 | AC power flow, feeder model, switch status |
-| Optimization L0 | **Pyomo + MOSEK** | Pyomo 6.x, MOSEK | MISOCP reconfiguration + SOCP dual extraction |
-| Optimization L1 | **SciPy (linprog)** + fallback greedy | SciPy ≥1.10 | Wasserstein-style DRO scheduling approximation |
-| Deep Learning | **PyTorch** | ≥2.0 | Dense GAT encoder + actor-critic |
-| RL Training | **Custom MAPPO loop** | In-repo implementation | Multi-agent rollout/update without RLlib dependency |
-| Data Processing | **NumPy, Pandas, YAML** | Standard | Profiles, scenarios, configs, metrics export |
+| Component | Technology | Role |
+|-----------|-----------|------|
+| Grid simulation | **Pandapower** ≥2.13 | AC power flow, network model, switch control |
+| Layer 0 optimization | **Pyomo + MOSEK** | MISOCP reconfiguration + SOCP dual extraction |
+| Layer 0 zoning | **In-repo scoring API (NumPy/Pandas)** | Implemented: zone scoring/selection in `layer0_dso.py`; planned: spectral clustering dynamic re-partition |
+| Layer 1 optimization | **SciPy** `linprog` (HiGHS) | DRO LP reformulation. Sufficient for ~100 scenarios × 24h. Production: Gurobi/MOSEK |
+| GNN engine | **PyTorch (dense GAT implementation)** | Implemented in `src/layer2_control/gat_encoder.py`; planned migration path: PyG if needed |
+| RL training | **Custom MAPPO loop** (in-repo, no RLlib) | Multi-agent rollout/update. Avoids RLlib dependency hell |
+| Experiment tracking | **CSV logs (implemented)** / W&B (planned) | Current experiments log to artifacts CSV; online tracking optional |
+| Data processing | **NumPy, Pandas, PyYAML** | Profiles, configs, metrics |
 
-### 6.2 Project Structure
+### 6.2 Project Structure (Implemented vs Planned)
 
 ```
 project/
-├── README.md                      # This file
 ├── configs/
-│   ├── grid_ieee123.json          # IEEE 123-bus network data
-│   ├── der_placement.json         # DER locations and capacities
-│   ├── zone_definition.json       # Zone boundaries
-│   ├── training_config.yaml       # RL hyperparameters
-│   └── experiment_config.yaml     # Experiment scenarios
+│   ├── grid_ieee123.json           # IEEE 123-bus network data
+│   ├── der_placement.json          # DER locations and capacities
+│   ├── zone_config.yaml            # Zone scoring weights, constraints
+│   ├── training_config.yaml        # RL hyperparameters
+│   └── experiment_config.yaml      # Scenario definitions
 │
 ├── src/
 │   ├── layer0_dso/
-│   │   ├── reconfiguration.py     # MISOCP formulation in Pyomo
-│   │   ├── dlmp_calculator.py     # Extract DLMPs from dual variables
-│   │   ├── zonal_pricing.py       # Aggregate DLMPs to zones
-│   │   └── socp_validator.py      # AC power flow verification
+│   │   ├── reconfiguration.py      # Implemented: MISOCP formulation (Pyomo + MOSEK)
+│   │   ├── dlmp_calculator.py      # Implemented: DLMP extraction from SOCP duals
+│   │   ├── layer0_dso.py           # Implemented: pipeline + zone scoring/selection API
+│   │   ├── zonal_pricing.py        # Implemented: aggregate DLMPs to zone prices
+│   │   └── socp_validator.py       # Implemented: AC verification (fail-closed gate)
 │   │
 │   ├── layer1_vpp/
-│   │   ├── dro_bidding.py         # Wasserstein DRO formulation
-│   │   ├── scenario_generator.py  # Price scenario generation
-│   │   └── virtual_battery.py     # Aggregated battery model
+│   │   ├── dro_bidding.py          # Implemented: Wasserstein-style DRO via SciPy linprog
+│   │   ├── scenario_generator.py   # Implemented: price scenario generation
+│   │   └── virtual_battery.py      # Implemented: aggregated battery model
 │   │
 │   ├── layer2_control/
-│   │   ├── gat_encoder.py         # GAT network (PyG)
-│   │   ├── actor_critic.py        # Actor-Critic with GAT backbone
-│   │   ├── mappo_policy.py        # Custom MAPPO policy for RLlib
-│   │   ├── safety_layer.py        # Voltage clipping + droop fallback
-│   │   └── reward.py              # Reward function components
+│   │   ├── gat_encoder.py          # Implemented: dense GAT in pure PyTorch
+│   │   ├── actor_critic.py         # Implemented: actor-critic heads (PyTorch MLP)
+│   │   ├── mappo_policy.py         # Implemented: custom MAPPO policy/training update
+│   │   ├── safety_layer.py         # Implemented: voltage clipping + droop fallback
+│   │   └── reward.py               # Implemented: reward with adaptive γ
 │   │
 │   ├── environment/
-│   │   ├── grid_env.py            # Gym-compatible multi-agent env
-│   │   ├── pandapower_backend.py  # Pandapower wrapper
-│   │   └── topology_manager.py    # Switch state management
+│   │   ├── grid_env.py             # Gym-compatible multi-agent env
+│   │   ├── pandapower_backend.py   # Pandapower wrapper for step/reset
+│   │   └── topology_manager.py     # Switch state + zone update management
 │   │
 │   └── utils/
-│       ├── graph_utils.py         # Adjacency matrix from Pandapower
-│       ├── data_loader.py         # Load profiles, DER profiles
-│       └── metrics.py             # KPI calculations
+│       ├── graph_utils.py          # Adjacency matrix ↔ PyG edge_index
+│       ├── data_loader.py          # Load/PV/price profiles
+│       └── metrics.py              # KPI calculations
 │
 ├── experiments/
-│   ├── train_mappo.py             # Main training script
-│   ├── eval_generalization.py     # Topology generalization test
-│   ├── run_ablation.py            # Ablation study runner
-│   ├── run_benchmarks.py          # Baseline comparisons
-│   └── analyze_results.py         # Generate tables & figures
+│   ├── train_mappo.py              # Main training (bootstrap uses ac_tol=0.01)
+│   ├── eval_generalization.py      # Topology generalization (L1–L4)
+│   ├── run_ablation.py             # Ablation A1–A9
+│   ├── run_benchmarks.py           # Baseline comparisons
+│   └── analyze_results.py          # Tables & figures generation
 │
 ├── data/
-│   ├── load_profiles/             # 24h load curves (scaled real data)
-│   ├── pv_profiles/               # Solar irradiance profiles
-│   ├── price_scenarios/           # Generated price scenarios
-│   └── topologies/                # Pre-computed valid topologies
+│   ├── load_profiles/
+│   ├── pv_profiles/
+│   ├── price_scenarios/
+│   └── topologies/                 # Pre-computed valid topologies + zone partitions
 │
 ├── notebooks/
 │   ├── 01_grid_visualization.ipynb
 │   ├── 02_dlmp_analysis.ipynb
-│   ├── 03_training_curves.ipynb
-│   └── 04_results_visualization.ipynb
+│   ├── 03_zone_sensitivity.ipynb   # NEW: zone partition analysis
+│   ├── 04_training_curves.ipynb
+│   └── 05_results_visualization.ipynb
 │
 ├── tests/
 │   ├── test_reconfiguration.py
 │   ├── test_dro.py
 │   ├── test_gat_encoder.py
-│   └── test_environment.py
+│   ├── test_environment.py
+│   └── test_training_smoke.py
 │
 └── requirements.txt
 ```
 
-### 6.3 Critical Integration Points
+### 6.3 Key Integration: Dense-GAT (implemented) ↔ Custom MAPPO
 
-**PyG ↔ RLlib Bridge (quan trọng nhất):**
-
-RLlib expects Dict observation space. PyG expects `torch_geometric.data.Data` objects. Cần custom wrapper:
+> **Implemented now:** Dense adjacency GAT bằng PyTorch thuần + custom MAPPO loop (`mappo_policy.py`).
+>
+> **Planned extension:** chuyển encoder sang PyG (`torch_geometric`) khi cần tối ưu hóa cho graph lớn hoặc batching chuyên sâu.
 
 ```python
-# Pseudo-code for the bridge
-class GATRLlibPolicy(TorchPolicy):
-    def __init__(self, ...):
-        self.gat_encoder = GATEncoder(in_dim, hidden_dim, heads)
+# gat_encoder.py — implemented dense GAT (pure PyTorch)
+class GATEncoder(torch.nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.gat1 = _DenseGATLayer(config.in_dim, config.hidden_dim, config.heads_l1, config.dropout)
+        self.gat2 = _DenseGATLayer(config.hidden_dim * config.heads_l1, config.output_dim, 1, config.dropout)
 
-    def compute_actions(self, obs_batch):
-        # obs_batch is Dict with keys: 'local', 'global', 'adj_matrix', 'node_features'
-        # Convert to PyG Data object
-        edge_index = adj_to_edge_index(obs_batch['adj_matrix'])
-        data = Data(x=obs_batch['node_features'], edge_index=edge_index)
-        # GAT forward
-        node_embeddings = self.gat_encoder(data)
-        # Extract this agent's embedding
-        agent_embedding = node_embeddings[agent_id]
-        # Concat with local obs → Actor MLP
-        action = self.actor(torch.cat([agent_embedding, obs_batch['local']]))
+    def forward(self, obs):
+        x = to_tensor(obs.node_features)
+        a = to_tensor(obs.adjacency)
+        h1 = F.elu(self.gat1(x, a))
+        h2 = self.gat2(h1, a)
+        return h2  # [N, output_dim] node embeddings
+```
+
+```python
+# mappo_policy.py — custom loop, KHÔNG dùng RLlib
+class MappoPolicy(torch.nn.Module):
+    def act(self, obs):
+        node_features = obs['node_features']
+        adjacency = obs['adjacency']
+        local_state = obs['local_state']
+        agent_index = obs['agent_index']
+
+        embeddings = self.encoder.encode(GraphObservation(node_features, adjacency))
+        node_embedding = embeddings[agent_index]
+        actor_out = self.actor_critic.actor(node_embedding=node_embedding, local_state=local_state)
+        action = sample_and_clip(actor_out)
         return action
 ```
 
-**Pandapower ↔ Gym Environment:**
-
 ```python
-# Pseudo-code for environment step
-class GridEnv(MultiAgentEnv):
+# grid_env.py — Pandapower backend
+class GridEnv:
     def step(self, action_dict):
-        # Apply agent actions to Pandapower network
         for agent_id, action in action_dict.items():
-            bus_idx = self.agent_to_bus[agent_id]
-            self.net.sgen.at[bus_idx, 'p_mw'] = action[0]
-            self.net.sgen.at[bus_idx, 'q_mvar'] = action[1]
+            bus = self.agent_to_bus[agent_id]
+            self.net.sgen.at[bus, 'p_mw'] = action[0]
+            self.net.sgen.at[bus, 'q_mvar'] = action[1]
 
-        # Run power flow
         pp.runpp(self.net, algorithm='nr')
-
-        # Extract observations and rewards
         voltages = self.net.res_bus.vm_pu.values
-        ...
+        # ... compute rewards, obs, done
 ```
 
 ### 6.4 Implementation Roadmap
 
 ```
-Phase 1: Foundation (Tuần 1-3)
-├── Setup IEEE 123-bus trong Pandapower
-├── Implement switch control + topology manager
-├── Verify SOCP formulation cho 2-3 topologies
-├── Create Gym environment with fixed topology
-└── Milestone: Environment chạy được, power flow converge
+Phase 1: Foundation (Weeks 1–3)                           ✅ DONE
+├── ✅ IEEE 123-bus setup in Pandapower
+├── ✅ Switch control + topology manager
+├── ✅ SOCP formulation verification (2–3 topologies)
+├── ✅ Bus-82 calibration fix (max_gap ≈ 0.00482)
+├── ✅ Fail-closed quality gate (ac_tol=0.01)
+└── Milestone: Environment runs, power flow converges
 
-Phase 2: Layer 0 + Layer 1 (Tuần 4-6)
-├── Implement MISOCP trong Pyomo
-├── Extract DLMPs, implement zonal pricing
-├── Implement Wasserstein DRO (hoặc scenario-based SO trước)
-├── Verify economic dispatch results
-└── Milestone: L0+L1 chạy end-to-end, prices hợp lý
+Phase 2: Layer 0 + Layer 1 (Weeks 4–6)                   ✅ MOSTLY DONE
+├── ✅ MISOCP in Pyomo + MOSEK
+├── ✅ DLMP extraction
+├── ✅ Zone partition scoring (ZoneScoringConfig)
+├── 🔄 Dynamic zone partitioning (spectral clustering)    ← IN PROGRESS
+├── 🔄 Wasserstein DRO via SciPy linprog                  ← IN PROGRESS
+└── Milestone: L0+L1 end-to-end, prices reasonable
 
-Phase 3: Layer 2 Core (Tuần 7-10)  ⭐ Focus
-├── Implement GAT encoder trong PyG
-├── Build PyG-RLlib bridge
-├── Train MAPPO trên FIXED topology (sanity check)
-├── Verify voltage regulation converges
-└── Milestone: Agents học được voltage control trên 1 topology
+Phase 3: Layer 2 Core (Weeks 7–10)                        ⭐ NEXT FOCUS
+├── ✅ Dense-GAT encoder (pure PyTorch) implemented
+├── ✅ Actor-Critic heads (pure PyTorch) implemented
+├── ✅ Custom MAPPO policy/update loop implemented
+├── 🔄 Stabilize training on FIXED topology (sanity check)
+├── 🔄 Verify voltage regulation convergence across seeds
+└── Milestone: Robust and reproducible control on 1 topology
 
-Phase 4: Integration & Topology (Tuần 11-14)
-├── Connect L0 → L2 (dynamic topology)
-├── Train trên 5 base topologies
-├── Implement safety layer (droop fallback)
-├── Implement iterative feedback L2 → L1
-└── Milestone: Full 3-layer pipeline chạy end-to-end
+Phase 4: Integration & Dynamic Topology (Weeks 11–14)
+├── Connect L0 → L2 (dynamic topology + dynamic zones)
+├── Train on 5 base topologies (curriculum learning)
+├── Safety layer (droop fallback)
+├── Iterative feedback L2 → L1
+└── Milestone: Full 3-layer pipeline end-to-end
 
-Phase 5: Experiments (Tuần 15-18)
-├── Run generalization experiments (Level 1-4)
-├── Run ablation studies (A1-A7)
-├── Run benchmark comparisons
-├── Generate figures and tables
-└── Milestone: Tất cả experiments hoàn thành
+Phase 5: Experiments (Weeks 15–18)
+├── Generalization experiments (L1–L4)
+├── Ablation studies (A1–A9, including zone sensitivity)
+├── Benchmark comparisons (5 baselines)
+├── Zone sensitivity analysis (fixed vs dynamic, granularity)
+└── Milestone: All experiments complete
 
-Phase 6: Paper Writing (Tuần 19-22)
-├── Draft introduction + literature review
-├── Write methodology (re-use phần lớn từ doc này)
-├── Write results & discussion
-├── Revise, get feedback, submit
-└── Milestone: Paper submitted to IEEE TSG
+Phase 6: Paper Writing (Weeks 19–22)
+├── Draft (reuse most from this document)
+├── Results & discussion
+├── Revise, feedback, submit to IEEE TSG
+└── Milestone: Paper submitted
 ```
 
 ---
 
 ## 7. Expected Results & Honest Predictions
 
-### What we expect to show:
+### What we expect to show
 
-1. **GAT-MAPPO achieves <1% voltage violation rate** trên training topologies, competitive với centralized OPF nhưng nhanh hơn 100-1000x.
+1. **GAT-MAPPO achieves <1% VVR** trên training topologies, competitive với centralized OPF nhưng 100–1000× faster.
 
-2. **Generalization gap 5-15%** trên unseen topologies (Level 2), **giảm xuống <5% với 100-500 episodes fine-tuning** — consistent với de Jong et al. (2025) findings.
+2. **Generalization gap 5–15%** trên unseen topologies (Level 2), **giảm <5% với 100–500 episodes fine-tuning** — consistent với de Jong et al. (2025).
 
-3. **GAT outperforms MLP baseline by 20-40%** trên unseen topologies (ablation A1), demonstrating GNN's structural inductive bias.
+3. **GAT outperforms MLP baseline 20–40%** trên unseen topologies (A1), demonstrating GNN structural inductive bias.
 
-4. **Reconfiguration + pricing** (Layers 0+1) **giảm total cost 5-10%** so với fixed-topology baselines, consistent với reconfiguration literature.
+4. **Scoring-selected zoning improves PoA vs fixed heuristic zoning** (A8), trong khi dynamic re-partitioning được kỳ vọng cải thiện thêm khi hoàn thiện (A10).
 
-5. **Iterative feedback** giảm curtailment rate 30-50% so với single-pass coordination.
+5. **Reconfiguration + pricing giảm total cost 5–10%** so với fixed-topology baselines (A3).
 
-### What might NOT work (honest risks):
+6. **Iterative feedback giảm curtailment 30–50%** so với single-pass (A7).
+
+### Honest risks
 
 | Risk | Likelihood | Mitigation |
 |------|-----------|------------|
-| MAPPO training unstable with dynamic topology | Medium | Curriculum learning: start fixed, gradually add changes |
-| SOCP relaxation gap large under high DER | Low-Medium | AC power flow verification + penalty method |
-| DRO formulation too conservative | Medium | Tune Wasserstein radius ε via cross-validation |
-| Inference time >100ms | Low | Smaller GAT, quantization if needed |
-| Reward function imbalance (safety vs economy) | High | Extensive hyperparameter sweep, consider constrained RL |
+| MAPPO unstable with dynamic topology | Medium | Curriculum learning: fixed → gradual changes |
+| SOCP gap large under high DER | Low–Medium | Fail-closed gate + penalty method |
+| DRO too conservative | Medium | Tune ε via cross-validation |
+| Inference >100ms | Low | Smaller GAT, quantization |
+| Reward imbalance (safety vs economy) | High | Adaptive γ, constrained RL if needed |
+| Spectral clustering unstable | Low | Fallback to scoring-based partitioning |
 
 ---
 
-## 8. Paper Outline (IEEE TSG Format)
+## 8. Paper Outline (IEEE TSG, ~12 pages)
 
 ```
-I.   Introduction (1.5 pages)
-     - Motivation: DER integration, DSO-VPP coordination challenge
-     - Literature: Bilevel DSO-VPP frameworks → gap in topology adaptation
-     - Contribution summary (C1, C2, C3)
+I.   Introduction (1.5 pp)
+     - Motivation, literature, gap: topology-adaptive control + dynamic zoning
+     - Contributions C1–C4
 
-II.  System Model (2 pages)
-     - Tri-level architecture
-     - Layer 0: MISOCP formulation (brief — cite conference paper foundation)
-     - Layer 1: DRO formulation (brief — cite conference paper)
+II.  System Model (2 pp)
+     - Tri-level architecture with dynamic zoning
+     - Layer 0: MISOCP + zone partitioning (brief)
+     - Layer 1: DRO formulation (brief)
 
-III. GAT-MAPPO for Topology-Adaptive Voltage Control (3 pages)  ⭐
-     - GAT encoder design
-     - MAPPO with CTDE
-     - Reward design and safety layer
-     - Training procedure with topology curriculum
+III. GAT-MAPPO for Topology-Adaptive Voltage Control (3 pp)  ⭐
+     - GAT encoder, MAPPO with CTDE
+     - Reward design with adaptive γ
+     - Safety layer, training with topology curriculum
 
-IV.  Simulation Setup (1.5 pages)
-     - Test system, scenarios, baselines
+IV.  Simulation Setup (1.5 pp)
+     - IEEE 123-bus, scenarios, baselines
 
-V.   Results and Discussion (3 pages)
-     - Performance comparison (Table + Figures)
-     - Generalization experiment (key contribution)
-     - Ablation study
+V.   Results and Discussion (3 pp)
+     - Performance (Table + Figs)
+     - Topology generalization (L1–L4) — key contribution
+     - Ablation (A1–A9 including zone sensitivity)
      - Computational performance
 
-VI.  Conclusion (0.5 pages)
-
-     Total: ~12 pages (IEEE TSG limit: 12-14 pages)
+VI.  Conclusion (0.5 pp)
 ```
 
 ---
 
-## 9. References to Cite (Must-cite)
+## 9. Must-Cite References
 
-### Direct competitors (benchmark against these):
-- Xue et al. (2024), "Privacy-preserving multi-level co-regulation of VPPs via hierarchical safe DRL," *Applied Energy*
-- Lin et al. (2025), "Coordinated DSO-VPP operation framework with energy and reserve," *Applied Energy*
-- Sun et al. (2024), "Collaborative operation optimization of DSO-VPP using MADRL," *IET GTD*
+**Direct competitors (benchmark against):**
+- Xue et al. (2024), "Hierarchical safe DRL for DSO-VPP," *Applied Energy*
+- Lin et al. (2025), "DSO-VPP coordination with shared energy storage," *Applied Energy*
+- Sun et al. (2024), "MADRL for DSO-VPP collaborative operation," *IET GTD*
 
-### DLMP foundation (do NOT overclaim novelty here):
+**DLMP (established — do not overclaim):**
 - Bai et al. (2022), "Distribution LMP: Fundamentals and Applications," *Proc. IEEE*
 - Papavasiliou (2018), "Analysis of DLMP," *IEEE Trans. Power Systems*
 
-### GNN for power systems (position our work):
+**GNN for power systems:**
 - Donon et al. (2020), "Neural networks for power flow," *PSCC*
-- Owerko et al. (2025), "PowerGNN: Topology-aware GNN for electricity grids," *arXiv*
-- de Jong et al. (2025), "Generalizable GNN for robust power grid topology control," *arXiv*
+- Owerko et al. (2025), "PowerGNN: Topology-aware GNN," *arXiv*
+- de Jong et al. (2025), "Generalizable GNN for grid topology control," *arXiv*
 
-### MARL for power systems:
+**MARL for power systems:**
 - Wang et al. (2021), "Multi-agent RL for active voltage control," *NeurIPS*
-- CommonPower framework (2024), "MAPPO for safe grid control"
+- CommonPower (2024), "MAPPO for safe grid control"
 
-### Reconfiguration:
+**Reconfiguration & SOCP:**
 - Jabr et al. (2012), "Minimum loss reconfiguration via MICP," *IEEE Trans. Power Systems*
 - Gan, Li, Low (2014), "Exact convex relaxation of OPF," *IEEE Trans. Power Systems*
 
-### DRO:
+**DRO:**
 - Mohajerin Esfahani & Kuhn (2018), "Data-driven DRO using Wasserstein metric," *Math. Programming*
-- Li et al. (2022), "DRO vs SO for VPP scheduling comparison"
+- Li et al. (2022), "DRO vs SO for VPP scheduling"
+
+**Graph partitioning / Zoning:**
+- Karypis & Kumar (1998), "METIS graph partitioning," *SIAM J. Scientific Computing*
+- Von Luxburg (2007), "A tutorial on spectral clustering," *Statistics and Computing*
