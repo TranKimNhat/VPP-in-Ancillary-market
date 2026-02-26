@@ -3,13 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-import logging
+REACTIVE_CONTROL_TYPES = {"wind", "bess", "storage"}
+REACTIVE_PF = 0.95
+
 import numpy as np
 import pandapower as pp
 import pyomo.environ as pyo
-from pyomo.opt import SolverFactory
-from pyomo.util.infeasible import log_infeasible_constraints
+import networkx as nx
 
+from src.layer0_dso.dlmp_calculator import (
+    extract_dlmp as _extract_dlmp,
+    fix_and_solve_socp as _fix_and_solve_socp,
+    run_dlmp_calculation,
+    solve_misocp as _solve_misocp,
+)
 
 
 @dataclass(frozen=True)
@@ -19,9 +26,14 @@ class EdgeData:
     to_bus: int
     r_ohm: float
     x_ohm: float
+    r_pu: float
+    x_pu: float
+    tap_ratio: float
     max_i_ka: float
+    rating_mva: float
     is_switch: bool
     switch_index: int | None
+    element_type: str
 
 
 @dataclass(frozen=True)
@@ -31,7 +43,10 @@ class NetworkData:
     edges: list[EdgeData]
     loads_p: dict[int, float]
     loads_q: dict[int, float]
+    reactive_caps: dict[int, float]
     base_kv: float
+    base_mva: float
+    bus_nominal_kv: dict[int, float]
     switch_closed: dict[int, bool]
 
 
@@ -54,16 +69,51 @@ def _slack_buses(net: pp.pandapowerNet) -> list[int]:
     return [int(bus) for bus in net.ext_grid.bus]
 
 
-def _collect_loads(net: pp.pandapowerNet) -> tuple[dict[int, float], dict[int, float]]:
+def _collect_loads(
+    net: pp.pandapowerNet,
+) -> tuple[dict[int, float], dict[int, float], dict[int, float]]:
+    def _safe_float(value: object) -> float:
+        try:
+            result = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        if np.isnan(result):
+            return 0.0
+        return result
+
     loads_p = {int(bus): 0.0 for bus in net.bus.index}
     loads_q = {int(bus): 0.0 for bus in net.bus.index}
-    if net.load.empty:
-        return loads_p, loads_q
-    for _, row in net.load.iterrows():
-        bus = int(row["bus"])
-        loads_p[bus] = loads_p.get(bus, 0.0) + float(row.get("p_mw", 0.0))
-        loads_q[bus] = loads_q.get(bus, 0.0) + float(row.get("q_mvar", 0.0))
-    return loads_p, loads_q
+    reactive_caps = {int(bus): 0.0 for bus in net.bus.index}
+    if not net.load.empty:
+        for _, row in net.load.iterrows():
+            bus = int(row["bus"])
+            loads_p[bus] = loads_p.get(bus, 0.0) + _safe_float(row.get("p_mw", 0.0))
+            loads_q[bus] = loads_q.get(bus, 0.0) + _safe_float(row.get("q_mvar", 0.0))
+    if not net.sgen.empty:
+        for _, row in net.sgen.iterrows():
+            in_service = row.get("in_service")
+            if in_service is False:
+                continue
+            bus = int(row["bus"])
+            p_mw = _safe_float(row.get("p_mw", 0.0))
+            q_mvar = _safe_float(row.get("q_mvar", 0.0))
+            loads_p[bus] = loads_p.get(bus, 0.0) - p_mw
+            loads_q[bus] = loads_q.get(bus, 0.0) - q_mvar
+            sgen_type = str(row.get("type", "")).lower()
+            if sgen_type in REACTIVE_CONTROL_TYPES and abs(p_mw) > 1e-9:
+                max_q = abs(p_mw) * (max(1.0 / (REACTIVE_PF**2) - 1.0, 0.0) ** 0.5)
+                reactive_caps[bus] = reactive_caps.get(bus, 0.0) + max_q
+    if not net.shunt.empty:
+        for _, row in net.shunt.iterrows():
+            in_service = row.get("in_service")
+            if in_service is False:
+                continue
+            bus = int(row["bus"])
+            q_mvar = _safe_float(row.get("q_mvar", 0.0))
+            p_mw = _safe_float(row.get("p_mw", 0.0))
+            loads_p[bus] = loads_p.get(bus, 0.0) + p_mw
+            loads_q[bus] = loads_q.get(bus, 0.0) + q_mvar
+    return loads_p, loads_q, reactive_caps
 
 
 def _edge_resistance(line: pp.Series) -> float:
@@ -84,33 +134,45 @@ def _edge_max_i_ka(line: pp.Series) -> float:
 def extract_network_data(net: pp.pandapowerNet) -> NetworkData:
     buses = [int(bus) for bus in net.bus.index]
     slack_buses = _slack_buses(net)
-    base_bus = None
-    if not net.trafo.empty:
-        lv_candidates = net.trafo[net.trafo.hv_bus.isin(slack_buses)]
-        if not lv_candidates.empty:
-            base_bus = int(lv_candidates.lv_bus.iloc[0])
-    if base_bus is None and slack_buses:
-        base_bus = int(slack_buses[0])
+    base_bus = int(slack_buses[0]) if slack_buses else None
     if base_bus is not None and not net.bus.empty and base_bus in net.bus.index:
         base_kv = float(net.bus.loc[base_bus, "vn_kv"])
     else:
         base_kv = float(net.bus["vn_kv"].mean()) if not net.bus.empty else 1.0
 
-    loads_p, loads_q = _collect_loads(net)
+    base_mva = 1.0
+    loads_p, loads_q, reactive_caps = _collect_loads(net)
 
     edges: list[EdgeData] = []
     edge_id = 0
     for _, line in net.line.iterrows():
+        from_bus = int(line["from_bus"])
+        to_bus = int(line["to_bus"])
+        r_ohm = _edge_resistance(line)
+        x_ohm = _edge_reactance(line)
+        vn_from = float(net.bus.at[from_bus, "vn_kv"])
+        z_base_from = (vn_from**2) / base_mva if vn_from > 0 else 1.0
+        r_pu = r_ohm / z_base_from
+        x_pu = x_ohm / z_base_from
+        max_i_ka = _edge_max_i_ka(line)
+        rating_mva = 0.0
+        if max_i_ka > 0.0 and vn_from > 0.0:
+            rating_mva = np.sqrt(3.0) * vn_from * max_i_ka
         edges.append(
             EdgeData(
                 edge_id=edge_id,
-                from_bus=int(line["from_bus"]),
-                to_bus=int(line["to_bus"]),
-                r_ohm=_edge_resistance(line),
-                x_ohm=_edge_reactance(line),
-                max_i_ka=_edge_max_i_ka(line),
+                from_bus=from_bus,
+                to_bus=to_bus,
+                r_ohm=r_ohm,
+                x_ohm=x_ohm,
+                r_pu=r_pu,
+                x_pu=x_pu,
+                tap_ratio=1.0,
+                max_i_ka=max_i_ka,
+                rating_mva=rating_mva,
                 is_switch=False,
                 switch_index=None,
+                element_type="line",
             )
         )
         edge_id += 1
@@ -124,17 +186,33 @@ def extract_network_data(net: pp.pandapowerNet) -> NetworkData:
             vn_lv_kv = float(trafo.get("vn_lv_kv", 0.0) or 0.0)
             vk_percent = float(trafo.get("vk_percent", 0.0) or 0.0)
             vkr_percent = float(trafo.get("vkr_percent", 0.0) or 0.0)
-            z_pu = vk_percent / 100.0
-            r_pu = vkr_percent / 100.0
-            x_pu = (max(z_pu**2 - r_pu**2, 0.0)) ** 0.5
-            z_base_kv = vn_lv_kv if vn_lv_kv > 0 else vn_hv_kv
-            if sn_mva > 0 and z_base_kv > 0:
-                z_base = (z_base_kv**2) / sn_mva
-                r_ohm = r_pu * z_base
-                x_ohm = x_pu * z_base
+            z_pu_nameplate = vk_percent / 100.0
+            r_pu_nameplate = vkr_percent / 100.0
+            x_pu_nameplate = (max(z_pu_nameplate**2 - r_pu_nameplate**2, 0.0)) ** 0.5
+            if sn_mva > 0.0:
+                scale = base_mva / sn_mva
+                r_pu = r_pu_nameplate * scale
+                x_pu = x_pu_nameplate * scale
             else:
-                r_ohm = 0.0
-                x_ohm = 0.0
+                r_pu = 0.0
+                x_pu = 0.0
+
+            z_base_hv = (vn_hv_kv**2) / base_mva if vn_hv_kv > 0 else 1.0
+            r_ohm = r_pu * z_base_hv
+            x_ohm = x_pu * z_base_hv
+
+            vn_bus_hv = float(net.bus.at[hv_bus, "vn_kv"])
+            vn_bus_lv = float(net.bus.at[lv_bus, "vn_kv"])
+            tap_ratio = 1.0
+            if vn_bus_hv > 0.0 and vn_bus_lv > 0.0 and vn_hv_kv > 0.0 and vn_lv_kv > 0.0:
+                tap_ratio = (vn_hv_kv / vn_lv_kv) / (vn_bus_hv / vn_bus_lv)
+                if not np.isfinite(tap_ratio) or tap_ratio <= 0.0:
+                    tap_ratio = 1.0
+
+            max_i_ka = 0.0
+            if sn_mva > 0.0 and vn_bus_hv > 0.0:
+                max_i_ka = sn_mva / (np.sqrt(3.0) * vn_bus_hv)
+
             edges.append(
                 EdgeData(
                     edge_id=edge_id,
@@ -142,9 +220,14 @@ def extract_network_data(net: pp.pandapowerNet) -> NetworkData:
                     to_bus=lv_bus,
                     r_ohm=r_ohm,
                     x_ohm=x_ohm,
-                    max_i_ka=0.0,
+                    r_pu=r_pu,
+                    x_pu=x_pu,
+                    tap_ratio=tap_ratio,
+                    max_i_ka=max_i_ka,
+                    rating_mva=sn_mva,
                     is_switch=False,
                     switch_index=None,
+                    element_type="trafo",
                 )
             )
             edge_id += 1
@@ -161,12 +244,22 @@ def extract_network_data(net: pp.pandapowerNet) -> NetworkData:
                     to_bus=int(sw["element"]),
                     r_ohm=0.0,
                     x_ohm=0.0,
+                    r_pu=0.0,
+                    x_pu=0.0,
+                    tap_ratio=1.0,
                     max_i_ka=0.0,
+                    rating_mva=0.0,
                     is_switch=True,
                     switch_index=int(sw_idx),
+                    element_type="switch",
                 )
             )
             edge_id += 1
+
+    bus_nominal_kv = {
+        int(bus_idx): float(net.bus.at[bus_idx, "vn_kv"])
+        for bus_idx in net.bus.index
+    }
 
     return NetworkData(
         buses=buses,
@@ -174,7 +267,10 @@ def extract_network_data(net: pp.pandapowerNet) -> NetworkData:
         edges=edges,
         loads_p=loads_p,
         loads_q=loads_q,
+        reactive_caps=reactive_caps,
         base_kv=base_kv,
+        base_mva=base_mva,
+        bus_nominal_kv=bus_nominal_kv,
         switch_closed=switch_closed,
     )
 
@@ -193,6 +289,17 @@ def build_misocp_model(
     weights: ModelWeights,
     switch_cost: float,
     voltage_bounds: tuple[float, float] | None = None,
+    soc_relax: float = 1.001,
+    soc_slack_weight: float = 1000.0,
+    voltage_drop_slack_weight: float = 10000.0,
+    trafo_voltage_drop_slack_weight: float = 200000.0,
+    soc_slack_cap: float = 0.0,
+    voltage_drop_slack_cap: float = 0.0,
+    fix_switch_status: bool = False,
+    fixed_switch_indices: set[int] | None = None,
+    switch_initial: dict[int, int] | None = None,
+    enforce_radiality: bool = True,
+    radiality_slack: int = 0,
 ) -> tuple[pyo.ConcreteModel, dict[int, pyo.Constraint]]:
     model = pyo.ConcreteModel("ieee123_reconfiguration")
 
@@ -208,22 +315,45 @@ def build_misocp_model(
     model.Q = pyo.Var(model.EDGE, domain=pyo.Reals)
     model.V2 = pyo.Var(model.BUS, domain=pyo.NonNegativeReals)
     model.I2 = pyo.Var(model.EDGE, domain=pyo.NonNegativeReals)
+    model.Qcap = pyo.Var(model.BUS, domain=pyo.Reals)
     model.alpha = pyo.Var(model.SWITCH, domain=pyo.Binary)
+    model.SwitchChange = pyo.Var(model.SWITCH, domain=pyo.NonNegativeReals)
     model.F = pyo.Var(model.EDGE, domain=pyo.Reals)
+    model.Pslack = pyo.Var(data.slack_buses, domain=pyo.Reals)
+    model.Qslack = pyo.Var(data.slack_buses, domain=pyo.Reals)
+    model.SOCSlack = pyo.Var(model.EDGE, domain=pyo.NonNegativeReals)
+    model.VoltageDropSlack = pyo.Var(model.EDGE, domain=pyo.NonNegativeReals)
+
+    base_mva = max(float(data.base_mva), 1e-9)
+
+    def _bus_vbase_kv(bus: int) -> float:
+        return max(float(data.bus_nominal_kv.get(int(bus), data.base_kv)), 1e-9)
 
     edge_map = {edge.edge_id: edge for edge in data.edges}
+    model._bus_nominal_kv = {int(bus): float(v) for bus, v in data.bus_nominal_kv.items()}
+    model._voltage_in_pu = True
 
+    bus_voltage_bounds: dict[int, tuple[float, float]] = {}
     if voltage_bounds is not None:
         voltage_min, voltage_max = voltage_bounds
+        v_base_global = max(float(data.base_kv), 1e-9)
+        vm_min_pu = (max(voltage_min, 0.0) ** 0.5) / v_base_global
+        vm_max_pu = (max(voltage_max, 0.0) ** 0.5) / v_base_global
+
+        for bus in bus_set:
+            bus_voltage_bounds[int(bus)] = (vm_min_pu**2, vm_max_pu**2)
 
         def _voltage_bounds_rule(m: pyo.ConcreteModel, bus: int) -> pyo.Constraint:
-            return pyo.inequality(voltage_min, m.V2[bus], voltage_max)
+            v_min_bus, v_max_bus = bus_voltage_bounds[int(bus)]
+            return pyo.inequality(v_min_bus, m.V2[bus], v_max_bus)
 
         model.VoltageBounds = pyo.Constraint(model.BUS, rule=_voltage_bounds_rule)
 
     if voltage_bounds is not None:
         def _slack_voltage_rule(m: pyo.ConcreteModel, bus: int) -> pyo.Constraint:
-            return m.V2[bus] == data.base_kv**2
+            if bus not in bus_set:
+                return pyo.Constraint.Skip
+            return m.V2[bus] == 1.0
 
         model.SlackVoltage = pyo.Constraint(data.slack_buses, rule=_slack_voltage_rule)
 
@@ -239,16 +369,28 @@ def build_misocp_model(
         var = m.Q if reactive else m.P
         incoming = incident_in.get(bus, [])
         outgoing = incident_out.get(bus, [])
-        if bus in slack_set:
-            return pyo.Constraint.Skip
-        load = data.loads_p.get(bus, 0.0) if not reactive else data.loads_q.get(bus, 0.0)
+        load_mw = data.loads_p.get(bus, 0.0)
+        load_q = data.loads_q.get(bus, 0.0)
+        load = (load_q if reactive else load_mw) / base_mva
         if not incoming and not outgoing:
             if abs(load) <= 1e-9:
                 return pyo.Constraint.Feasible
+            if bus in slack_set:
+                slack_var = m.Qslack[bus] if reactive else m.Pslack[bus]
+                return slack_var == load
             return pyo.Constraint.Infeasible
         inflow = pyo.quicksum(var[e] for e in incoming)
         outflow = pyo.quicksum(var[e] for e in outgoing)
-        return inflow - outflow == load
+        if reactive:
+            loss_term = pyo.quicksum(edge_map[e].x_pu * m.I2[e] for e in incoming)
+            reactive_support = m.Qcap[bus]
+        else:
+            loss_term = pyo.quicksum(edge_map[e].r_pu * m.I2[e] for e in incoming)
+            reactive_support = 0.0
+        if bus in slack_set:
+            slack_var = m.Qslack[bus] if reactive else m.Pslack[bus]
+            return inflow - outflow + slack_var == load + loss_term - reactive_support
+        return inflow - outflow == load + loss_term - reactive_support
 
     model.PBalance = pyo.Constraint(model.BUS, rule=lambda m, b: _balance_rule(m, b, reactive=False))
     model.QBalance = pyo.Constraint(model.BUS, rule=lambda m, b: _balance_rule(m, b, reactive=True))
@@ -263,12 +405,19 @@ def build_misocp_model(
         if bus in slack_set
         or incident_in_line.get(bus, [])
         or incident_out_line.get(bus, [])
-        or abs(data.loads_p.get(bus, 0.0)) > 1e-9
-        or abs(data.loads_q.get(bus, 0.0)) > 1e-9
+        or abs(data.loads_p.get(bus, 0.0) / base_mva) > 1e-9
+        or abs(data.loads_q.get(bus, 0.0) / base_mva) > 1e-9
     ]
     active_bus_set = set(active_buses)
     flow_limit = float(len(active_buses))
     root_balance = len(active_buses) - len(slack_set)
+
+    if enforce_radiality:
+        fixed_edges_count = sum(1 for edge in data.edges if not edge.is_switch)
+        target_edges = len(active_buses) - len(slack_set) + radiality_slack
+        model.Radiality = pyo.Constraint(
+            expr=pyo.quicksum(model.alpha[e] for e in model.SWITCH) + fixed_edges_count == target_edges
+        )
 
     def _connectivity_rule(m: pyo.ConcreteModel, bus: int) -> pyo.Constraint:
         if bus not in active_bus_set:
@@ -296,54 +445,107 @@ def build_misocp_model(
     model.ConnectivityRoot = pyo.Constraint(rule=_connectivity_root_rule)
 
     if voltage_bounds is not None:
-        big_m = float(voltage_bounds[1] - voltage_bounds[0])
+        v_base_global = max(float(data.base_kv), 1e-9)
+        vm_min_pu = (max(voltage_bounds[0], 0.0) ** 0.5) / v_base_global
+        vm_max_pu = (max(voltage_bounds[1], 0.0) ** 0.5) / v_base_global
+        big_m = float(max(vm_max_pu**2 - vm_min_pu**2, 1e-3))
     else:
-        big_m = float((2 * data.base_kv) ** 2)
-    big_m_p = 10.0
-    big_m_q = 10.0
-    big_m_i = 10.0
+        big_m = 4.0
+    non_switch_edges = [edge for edge in data.edges if not edge.is_switch]
+    estimated_flow_bound = sum(abs(data.loads_p.get(int(bus), 0.0)) for bus in data.buses) / base_mva
+    estimated_q_bound = sum(abs(data.loads_q.get(int(bus), 0.0)) for bus in data.buses) / base_mva
+    rated_s_bound = max((edge.rating_mva for edge in non_switch_edges if edge.rating_mva > 0.0), default=base_mva) / base_mva
+    if non_switch_edges:
+        estimated_flow_bound += 0.5 * sum(abs(edge.r_pu) for edge in non_switch_edges)
+        estimated_q_bound += 0.5 * sum(abs(edge.x_pu) for edge in non_switch_edges)
+    big_m_p = max(1e-3, estimated_flow_bound, rated_s_bound)
+    big_m_q = max(1e-3, estimated_q_bound, rated_s_bound)
+    big_m_i = max(1e-6, (big_m_p**2 + big_m_q**2))
 
-    def _voltage_drop_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
+    def _voltage_drop_upper_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
         edge = edge_map[edge_id]
         from_bus = edge.from_bus
         to_bus = edge.to_bus
-        r = edge.r_ohm
-        x = edge.x_ohm
-        drop = 2 * (r * m.P[edge_id] + x * m.Q[edge_id]) - (r**2 + x**2) * m.I2[edge_id]
+        r = edge.r_pu
+        x = edge.x_pu
+        tap_sq = edge.tap_ratio**2 if edge.tap_ratio > 0 else 1.0
+        drop = -2 * (r * m.P[edge_id] + x * m.Q[edge_id]) + (r**2 + x**2) * m.I2[edge_id]
+        residual = m.V2[to_bus] - tap_sq * m.V2[from_bus] - drop
         if edge.is_switch:
-            return m.V2[to_bus] - m.V2[from_bus] <= drop + big_m * (1 - m.alpha[edge_id])
-        return m.V2[to_bus] - m.V2[from_bus] == drop
+            return residual <= big_m * (1 - m.alpha[edge_id]) + m.VoltageDropSlack[edge_id]
+        return residual <= m.VoltageDropSlack[edge_id]
 
-    model.VoltageDrop = pyo.Constraint(model.EDGE, rule=_voltage_drop_rule)
-
-    def _voltage_drop_switch_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
+    def _voltage_drop_lower_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
         edge = edge_map[edge_id]
         from_bus = edge.from_bus
         to_bus = edge.to_bus
-        r = edge.r_ohm
-        x = edge.x_ohm
-        drop = 2 * (r * m.P[edge_id] + x * m.Q[edge_id]) - (r**2 + x**2) * m.I2[edge_id]
-        return m.V2[to_bus] - m.V2[from_bus] >= drop - big_m * (1 - m.alpha[edge_id])
+        r = edge.r_pu
+        x = edge.x_pu
+        tap_sq = edge.tap_ratio**2 if edge.tap_ratio > 0 else 1.0
+        drop = -2 * (r * m.P[edge_id] + x * m.Q[edge_id]) + (r**2 + x**2) * m.I2[edge_id]
+        residual = m.V2[to_bus] - tap_sq * m.V2[from_bus] - drop
+        if edge.is_switch:
+            return -residual <= big_m * (1 - m.alpha[edge_id]) + m.VoltageDropSlack[edge_id]
+        return -residual <= m.VoltageDropSlack[edge_id]
 
-    model.VoltageDropSwitch = pyo.Constraint(model.SWITCH, rule=_voltage_drop_switch_rule)
+    model.VoltageDropUpper = pyo.Constraint(model.EDGE, rule=_voltage_drop_upper_rule)
+    model.VoltageDropLower = pyo.Constraint(model.EDGE, rule=_voltage_drop_lower_rule)
 
-    def _switch_status_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
-        edge = edge_map[edge_id]
-        if edge.switch_index is None:
-            return pyo.Constraint.Skip
-        closed = data.switch_closed.get(edge.switch_index, True)
-        if closed:
-            return m.alpha[edge_id] == 1
-        return m.alpha[edge_id] == 0
+    def _soc_slack_cap_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
+        if soc_slack_cap <= 0.0:
+            return m.SOCSlack[edge_id] == 0.0
+        return m.SOCSlack[edge_id] <= soc_slack_cap
 
-    model.SwitchStatus = pyo.Constraint(model.SWITCH, rule=_switch_status_rule)
+    def _voltage_drop_slack_cap_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
+        if voltage_drop_slack_cap <= 0.0:
+            return m.VoltageDropSlack[edge_id] == 0.0
+        return m.VoltageDropSlack[edge_id] <= voltage_drop_slack_cap
 
-    v_base_sq = data.base_kv**2
+    model.SOCSlackCap = pyo.Constraint(model.EDGE, rule=_soc_slack_cap_rule)
+    model.VoltageDropSlackCap = pyo.Constraint(model.EDGE, rule=_voltage_drop_slack_cap_rule)
+
+    if fix_switch_status:
+        fixed_switches = fixed_switch_indices or set()
+
+        def _switch_status_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
+            edge = edge_map[edge_id]
+            if edge.switch_index is None or edge.switch_index not in fixed_switches:
+                return pyo.Constraint.Skip
+            closed = data.switch_closed.get(edge.switch_index, True)
+            if closed:
+                return m.alpha[edge_id] == 1
+            return m.alpha[edge_id] == 0
+
+        model.SwitchStatus = pyo.Constraint(model.SWITCH, rule=_switch_status_rule)
+
+    initial_alpha = switch_initial or {}
+
+    def _switch_change_pos_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
+        return m.SwitchChange[edge_id] >= m.alpha[edge_id] - initial_alpha.get(int(edge_id), 0)
+
+    def _switch_change_neg_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
+        return m.SwitchChange[edge_id] >= initial_alpha.get(int(edge_id), 0) - m.alpha[edge_id]
+
+    model.SwitchChangePos = pyo.Constraint(model.SWITCH, rule=_switch_change_pos_rule)
+    model.SwitchChangeNeg = pyo.Constraint(model.SWITCH, rule=_switch_change_neg_rule)
+
+    default_v2_max = max((bounds[1] for bounds in bus_voltage_bounds.values()), default=1.5**2)
 
     def _soc_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
-        return m.P[edge_id] ** 2 + m.Q[edge_id] ** 2 <= v_base_sq * m.I2[edge_id]
+        edge = edge_map[edge_id]
+        tap_sq = edge.tap_ratio**2 if edge.tap_ratio > 0 else 1.0
+        v2_from_max = bus_voltage_bounds.get(int(edge.from_bus), (0.0, default_v2_max))[1]
+        return m.P[edge_id] ** 2 + m.Q[edge_id] ** 2 <= soc_relax * tap_sq * v2_from_max * m.I2[edge_id] + m.SOCSlack[edge_id]
 
     model.SOC = pyo.Constraint(model.EDGE, rule=_soc_rule)
+
+    def _reactive_cap_rule(m: pyo.ConcreteModel, bus: int) -> pyo.Constraint:
+        cap = data.reactive_caps.get(bus, 0.0) / base_mva
+        if cap <= 0:
+            return m.Qcap[bus] == 0.0
+        return pyo.inequality(-cap, m.Qcap[bus], cap)
+
+    model.ReactiveCap = pyo.Constraint(model.BUS, rule=_reactive_cap_rule)
 
     def _switch_flow_p_ub_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
         return m.P[edge_id] <= big_m_p * m.alpha[edge_id]
@@ -386,9 +588,10 @@ def build_misocp_model(
 
     def _current_limit_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
         edge = edge_map[edge_id]
-        if edge.max_i_ka <= 0:
+        if edge.rating_mva <= 0:
             return pyo.Constraint.Skip
-        return m.I2[edge_id] <= edge.max_i_ka**2
+        limit_pu = edge.rating_mva / base_mva
+        return m.I2[edge_id] <= limit_pu**2
 
     model.CurrentLimit = pyo.Constraint(model.EDGE, rule=_current_limit_rule)
 
@@ -400,12 +603,25 @@ def build_misocp_model(
 
     model.MinCurrent = pyo.Constraint(model.EDGE, rule=_min_current_rule)
 
-    loss_term = sum(edge_map[e].r_ohm * model.I2[e] for e in model.EDGE)
-    switch_term = switch_cost * sum(model.alpha[e] for e in model.SWITCH)
+    loss_term = sum(edge_map[e].r_pu * model.I2[e] for e in model.EDGE)
+    switch_term = switch_cost * sum(model.SwitchChange[e] for e in model.SWITCH)
     voltage_term = sum((model.V2[b] - 1.0) ** 2 for b in model.BUS)
+    soc_slack_term = soc_slack_weight * sum(model.SOCSlack[e] for e in model.EDGE)
+
+    voltage_drop_slack_term = 0.0
+    if hasattr(model, "VoltageDropSlack"):
+        voltage_drop_slack_term = pyo.quicksum(
+            (trafo_voltage_drop_slack_weight if edge_map[e].element_type == "trafo" else voltage_drop_slack_weight)
+            * model.VoltageDropSlack[e]
+            for e in model.EDGE
+        )
 
     model.Objective = pyo.Objective(
-        expr=weights.loss * loss_term + weights.switch * switch_term + weights.voltage * voltage_term,
+        expr=weights.loss * loss_term
+        + weights.switch * switch_term
+        + weights.voltage * voltage_term
+        + soc_slack_term
+        + voltage_drop_slack_term,
         sense=pyo.minimize,
     )
 
@@ -418,62 +634,35 @@ def solve_misocp(
     debug: bool = False,
     debug_context: dict[str, object] | None = None,
 ) -> dict[int, int]:
-    solver = SolverFactory("mosek")
-    if solver_opts:
-        if solver_opts.mipgap is not None:
-            solver.options["mio_tol_rel_gap"] = solver_opts.mipgap
-        if solver_opts.timelimit is not None:
-            solver.options["mio_max_time"] = solver_opts.timelimit
-
-    result = solver.solve(model, tee=True)
-    if result.solver.termination_condition not in {pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible}:
-        if debug:
-            if debug_context:
-                debug_logger = logging.getLogger(__name__)
-                for key, value in debug_context.items():
-                    debug_logger.info("%s: %s", key, value)
-            logging.getLogger("pyomo.util.infeasible").setLevel(logging.INFO)
-            log_infeasible_constraints(model, log_expression=True, log_variables=True)
-        raise RuntimeError(f"MISOCP solve failed: {result.solver.termination_condition}")
-
-    alpha_star: dict[int, int] = {}
-    for edge_id in model.SWITCH:
-        value = pyo.value(model.alpha[edge_id])
-        alpha_star[int(edge_id)] = 1 if value >= 0.5 else 0
-    return alpha_star
+    return _solve_misocp(model, solver_opts=solver_opts, debug=debug, debug_context=debug_context)
 
 
 def fix_and_solve_socp(
     model: pyo.ConcreteModel,
     alpha_star: dict[int, int],
 ) -> pyo.ConcreteModel:
-    for edge_id, value in alpha_star.items():
-        if edge_id in model.SWITCH:
-            model.alpha[edge_id].fix(value)
-
-    pyo.TransformationFactory("core.relax_integer_vars").apply_to(model)
-    model.dual = pyo.Suffix(direction=pyo.Suffix.IMPORT)
-    solver = SolverFactory("mosek")
-    result = solver.solve(model, tee=True)
-    if result.solver.termination_condition != pyo.TerminationCondition.optimal:
-        raise RuntimeError(f"SOCP solve failed: {result.solver.termination_condition}")
-    return model
+    return _fix_and_solve_socp(model, alpha_star)
 
 
 def extract_dlmp(
     model: pyo.ConcreteModel,
     balance_constraints: dict[int, pyo.Constraint],
 ) -> dict[int, float]:
-    dlmp: dict[int, float] = {}
-    for bus, constraint in balance_constraints.items():
-        if constraint not in model.dual:
-            dlmp[int(bus)] = float("nan")
-        else:
-            dlmp[int(bus)] = float(model.dual[constraint])
-    return dlmp
+    return _extract_dlmp(model, balance_constraints)
 
 
-def run_reconfiguration(
+@dataclass(frozen=True)
+class ReconfigurationResult:
+    lambda_dlmp: dict[int, float]
+    alpha_star: dict[int, int]
+    socp_voltage_squared: dict[int, float]
+    soc_slack_max: float
+    soc_slack_sum: float
+    voltage_drop_slack_max: float
+    voltage_drop_slack_sum: float
+
+
+def run_reconfiguration_detailed(
     net: pp.pandapowerNet,
     weights: ModelWeights | None = None,
     switch_cost: float = 0.01,
@@ -481,12 +670,35 @@ def run_reconfiguration(
     debug: bool = False,
     force_switch_closed: bool = False,
     apply_voltage_bounds: bool = True,
-) -> tuple[dict[int, float], dict[int, int]]:
+    fix_switch_status: bool = False,
+    penalize_switch_changes: bool = True,
+    enforce_radiality: bool = True,
+    radiality_slack: int = 0,
+    soc_relax: float = 1.001,
+    soc_slack_cap: float = 0.0,
+    voltage_drop_slack_cap: float = 0.0,
+) -> ReconfigurationResult:
     weights = weights or ModelWeights()
 
     if not net.switch.empty:
         candidate_mask = (net.switch["et"].astype(str) == "b") & (net.switch["type"].astype(str) == "CB")
         net.switch.loc[~candidate_mask, "closed"] = net.switch.loc[~candidate_mask, "closed"].fillna(True)
+
+    fixed_pairs = {("250", "251"), ("95", "195"), ("300", "350"), ("450", "451"), ("61", "610")}
+    fixed_indices: list[int] = []
+    if not net.switch.empty:
+        bus_names = net.bus["name"].astype(str)
+        name_by_bus = bus_names.to_dict()
+        for idx, row in net.switch.iterrows():
+            if str(row["et"]) != "b":
+                continue
+            bus = int(row["bus"])
+            element = int(row["element"])
+            name_pair = tuple(sorted((name_by_bus.get(bus, ""), name_by_bus.get(element, ""))))
+            if name_pair in fixed_pairs:
+                fixed_indices.append(idx)
+        if fixed_indices:
+            net.switch.loc[fixed_indices, "closed"] = True
 
     data = extract_network_data(net)
     if force_switch_closed:
@@ -502,16 +714,32 @@ def run_reconfiguration(
 
     voltage_bounds = None
     if apply_voltage_bounds:
-        if debug:
-            voltage_bounds = ((0.90 * data.base_kv) ** 2, (1.10 * data.base_kv) ** 2)
-        else:
-            voltage_bounds = ((0.95 * data.base_kv) ** 2, (1.05 * data.base_kv) ** 2)
+        voltage_bounds = ((0.85 * data.base_kv) ** 2, (1.15 * data.base_kv) ** 2)
+
+    switch_initial = None
+    if penalize_switch_changes:
+        switch_initial = {
+            edge.edge_id: int(data.switch_closed.get(edge.switch_index, True))
+            for edge in data.edges
+            if edge.is_switch
+        }
 
     model, balance_constraints = build_misocp_model(
         data,
         weights=weights,
         switch_cost=switch_cost,
         voltage_bounds=voltage_bounds,
+        soc_relax=soc_relax,
+        soc_slack_weight=1000.0,
+        voltage_drop_slack_weight=10000.0,
+        trafo_voltage_drop_slack_weight=200000.0,
+        soc_slack_cap=soc_slack_cap,
+        voltage_drop_slack_cap=voltage_drop_slack_cap,
+        fix_switch_status=fix_switch_status,
+        fixed_switch_indices=set(fixed_indices),
+        switch_initial=switch_initial,
+        enforce_radiality=enforce_radiality,
+        radiality_slack=radiality_slack,
     )
 
     debug_context = None
@@ -527,16 +755,101 @@ def run_reconfiguration(
             for edge in data.edges
             if edge.is_switch
         ]
+        switch_status: list[tuple[int, int | None, bool]] = []
+        for edge in data.edges:
+            if not edge.is_switch:
+                continue
+            switch_index = edge.switch_index
+            closed = data.switch_closed.get(switch_index, True) if switch_index is not None else True
+            switch_status.append((edge.edge_id, switch_index, closed))
+        switch_closed = [edge_id for edge_id, _, closed in switch_status if closed]
+        switch_open = [edge_id for edge_id, _, closed in switch_status if not closed]
+        edge_with_limit = [edge.edge_id for edge in data.edges if edge.max_i_ka > 0]
+        active_buses = [
+            bus
+            for bus in data.buses
+            if bus in data.slack_buses
+            or any(edge.to_bus == bus or edge.from_bus == bus for edge in data.edges if not edge.is_switch)
+            or abs(data.loads_p.get(bus, 0.0)) > 1e-9
+            or abs(data.loads_q.get(bus, 0.0)) > 1e-9
+        ]
+        graph = pp.topology.create_nxgraph(net, include_lines=True, include_switches=True)
+        components = list(nx.connected_components(graph))
+        slack_buses = set(int(bus) for bus in net.ext_grid.bus) if not net.ext_grid.empty else set()
+        slack_component: set[int] = set()
+        island_summaries: list[dict[str, object]] = []
+        for idx, comp in enumerate(components, start=1):
+            comp_set = {int(bus) for bus in comp}
+            has_slack = bool(slack_buses & comp_set)
+            if has_slack:
+                slack_component = comp_set
+            island_summaries.append({"id": idx, "bus_count": len(comp_set), "has_slack": has_slack})
+        buses_outside_slack = sorted(set(data.buses) - slack_component) if slack_component else sorted(data.buses)
         debug_context = {
+            "bus_count": len(data.buses),
+            "edge_count": len(data.edges),
+            "switch_edge_count": len(switch_edges),
+            "switch_closed_count": len(switch_closed),
+            "switch_open_count": len(switch_open),
+            "active_bus_count": len(active_buses),
+            "isolated_load_bus_count": len(isolated_load_buses),
+            "edges_with_current_limits": len(edge_with_limit),
+            "island_count": len(components),
+            "islands": island_summaries,
+            "buses_outside_slack": buses_outside_slack,
             "isolated_load_buses": isolated_load_buses,
             "switch_edges": switch_edges,
+            "switch_status": switch_status,
             "voltage_bounds": voltage_bounds,
             "base_kv": data.base_kv,
         }
 
-    alpha_star = solve_misocp(model, solver_opts=solver_opts, debug=debug, debug_context=debug_context)
+    solve_result = run_dlmp_calculation(
+        model,
+        balance_constraints,
+        solver_opts=solver_opts,
+        debug=debug,
+        debug_context=debug_context,
+    )
 
-    fix_and_solve_socp(model, alpha_star)
-    lambda_dlmp = extract_dlmp(model, balance_constraints)
+    soc_slack_values = [float(pyo.value(model.SOCSlack[e])) for e in model.EDGE]
+    voltage_drop_slack_values = [float(pyo.value(model.VoltageDropSlack[e])) for e in model.EDGE]
 
-    return lambda_dlmp, alpha_star
+    return ReconfigurationResult(
+        lambda_dlmp=solve_result.lambda_dlmp,
+        alpha_star=solve_result.alpha_star,
+        socp_voltage_squared=solve_result.socp_voltage_squared,
+        soc_slack_max=float(max(soc_slack_values)) if soc_slack_values else 0.0,
+        soc_slack_sum=float(sum(soc_slack_values)) if soc_slack_values else 0.0,
+        voltage_drop_slack_max=float(max(voltage_drop_slack_values)) if voltage_drop_slack_values else 0.0,
+        voltage_drop_slack_sum=float(sum(voltage_drop_slack_values)) if voltage_drop_slack_values else 0.0,
+    )
+
+
+def run_reconfiguration(
+    net: pp.pandapowerNet,
+    weights: ModelWeights | None = None,
+    switch_cost: float = 0.01,
+    solver_opts: SolverOptions | None = None,
+    debug: bool = False,
+    force_switch_closed: bool = False,
+    apply_voltage_bounds: bool = True,
+    fix_switch_status: bool = False,
+    penalize_switch_changes: bool = True,
+    enforce_radiality: bool = True,
+    radiality_slack: int = 0,
+) -> tuple[dict[int, float], dict[int, int]]:
+    result = run_reconfiguration_detailed(
+        net=net,
+        weights=weights,
+        switch_cost=switch_cost,
+        solver_opts=solver_opts,
+        debug=debug,
+        force_switch_closed=force_switch_closed,
+        apply_voltage_bounds=apply_voltage_bounds,
+        fix_switch_status=fix_switch_status,
+        penalize_switch_changes=penalize_switch_changes,
+        enforce_radiality=enforce_radiality,
+        radiality_slack=radiality_slack,
+    )
+    return result.lambda_dlmp, result.alpha_star

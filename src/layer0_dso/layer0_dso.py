@@ -193,7 +193,16 @@ class Layer0Result:
     market_signals: dict[str, dict[str, float]]
     pricing_method: str
     socp_ac_gap_max: float
+    socp_ac_gap_p95: float
+    socp_ac_gap_p50: float
+    socp_ac_worst_bus: int | None
+    socp_ac_compared_bus_count: int
+    ac_converged: bool
     ac_valid: bool
+    soc_slack_max: float
+    soc_slack_sum: float
+    voltage_drop_slack_max: float
+    voltage_drop_slack_sum: float
 
 
 @dataclass(frozen=True)
@@ -205,7 +214,16 @@ class Layer0HourlyResult:
     market_signals: dict[str, dict[str, float]]
     pricing_method: str
     socp_ac_gap_max: float
+    socp_ac_gap_p95: float
+    socp_ac_gap_p50: float
+    socp_ac_worst_bus: int | None
+    socp_ac_compared_bus_count: int
+    ac_converged: bool
     ac_valid: bool
+    soc_slack_max: float
+    soc_slack_sum: float
+    voltage_drop_slack_max: float
+    voltage_drop_slack_sum: float
 
 
 @dataclass(frozen=True)
@@ -213,6 +231,8 @@ class Layer0CsvBundle:
     zone_prices_csv: Path
     alpha_csv: Path
     switches_csv: Path
+    diagnostics_csv: Path
+    valid_for_layer1: bool
 
 
 def run_layer0_dso(
@@ -227,13 +247,23 @@ def run_layer0_dso(
     drop_isolated_loads: bool = False,
     fix_switch_status: bool = False,
     penalize_switch_changes: bool = True,
-    enforce_radiality: bool = False,
-    radiality_slack: int = 3,
+    enforce_radiality: bool = True,
+    radiality_slack: int = 0,
     pricing_method: str = "load_weighted",
-    ac_tolerance: float = 0.2,
+    ac_tolerance: float = 0.01,
+    soc_relax: float = 1.001,
+    soc_slack_cap: float = 0.0,
+    voltage_drop_slack_cap: float = 0.0,
 ) -> Layer0Result:
     if net is None:
-        net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+        net = build_ieee123_net(
+            mode="feeder123",
+            balanced=True,
+            convert_switches=True,
+            slack_zones={1},
+            source_mode="publish",
+        )
+        _keep_hv_slack_only(net)
 
     validate_ieee123_net(net)
 
@@ -255,6 +285,9 @@ def run_layer0_dso(
         penalize_switch_changes=penalize_switch_changes,
         enforce_radiality=enforce_radiality,
         radiality_slack=radiality_slack,
+        soc_relax=soc_relax,
+        soc_slack_cap=soc_slack_cap,
+        voltage_drop_slack_cap=voltage_drop_slack_cap,
     )
     validation = validate_socp_against_ac(
         net,
@@ -277,7 +310,16 @@ def run_layer0_dso(
         market_signals=market_signals,
         pricing_method=pricing_method,
         socp_ac_gap_max=validation.socp_ac_gap_max,
+        socp_ac_gap_p95=validation.socp_ac_gap_p95,
+        socp_ac_gap_p50=validation.socp_ac_gap_p50,
+        socp_ac_worst_bus=validation.worst_bus,
+        socp_ac_compared_bus_count=validation.compared_bus_count,
+        ac_converged=validation.converged,
         ac_valid=validation.ac_valid,
+        soc_slack_max=result.soc_slack_max,
+        soc_slack_sum=result.soc_slack_sum,
+        voltage_drop_slack_max=result.voltage_drop_slack_max,
+        voltage_drop_slack_sum=result.voltage_drop_slack_sum,
     )
 
 
@@ -291,11 +333,23 @@ def _apply_hourly_profiles(
     bess_soc: dict[int, float] | None = None,
     bess_prev: dict[int, float] | None = None,
     thermal_prev: dict[int, float] | None = None,
-    timestep_hours: float = 1.0,
+    timestep_hours: float = 0.25,
     bess_energy_hours: float = 4.0,
     bess_efficiency: float = 0.9,
     ramp_fraction: float = 0.1,
 ) -> tuple[int, int]:
+    def _safe_nameplate(row: pd.Series) -> float:
+        raw = row.get("sn_mva", row.get("p_mw", 0.0))
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = float(row.get("p_mw", 0.0) or 0.0)
+        if np.isnan(value):
+            value = float(row.get("p_mw", 0.0) or 0.0)
+        if np.isnan(value):
+            return 0.0
+        return abs(value)
+
     updated_loads = 0
     updated_sgens = 0
     if not net.load.empty:
@@ -317,17 +371,21 @@ def _apply_hourly_profiles(
     baseline_pv = 0.0
     baseline_wind = 0.0
 
+    pv_total_series = None
+    pv_total_scale = 1.0
     if pv_profiles:
         total_profile = pv_profiles.get("total_pv_mw")
         if total_profile is not None:
             total_series = total_profile.get("p_mw")
             if total_series is not None:
-                pv_output = float(total_series[hour_index])
-                baseline_pv = float(np.mean(total_series))
+                pv_total_series = np.asarray(total_series, dtype=float)
+                if pv_total_series.size > 0:
+                    pv_total_scale = max(float(np.max(np.clip(pv_total_series, 0.0, None))), 1e-9)
 
     if not net.sgen.empty:
         for idx, row in net.sgen.iterrows():
-            sgen_type = str(row.get("type", ""))
+            sgen_type = str(row.get("type", "")).lower()
+            nameplate = _safe_nameplate(row)
             if sgen_type == "pv":
                 if not pv_profiles:
                     continue
@@ -338,9 +396,20 @@ def _apply_hourly_profiles(
                 if not bus_name:
                     continue
                 profile = pv_profiles.get(bus_name)
-                if profile is None:
+                profile_series = profile.get("p_mw") if profile is not None else pv_total_series
+                if profile_series is None or nameplate <= 0.0:
                     continue
-                net.sgen.at[idx, "p_mw"] = float(profile["p_mw"][hour_index])
+                profile_arr = np.asarray(profile_series, dtype=float)
+                if profile_arr.size <= hour_index:
+                    continue
+                if profile is None:
+                    factor_series = np.clip(profile_arr / pv_total_scale, 0.0, 1.0)
+                else:
+                    factor_series = np.clip(profile_arr, 0.0, 1.0)
+                factor = float(factor_series[hour_index])
+                net.sgen.at[idx, "p_mw"] = nameplate * factor
+                pv_output += nameplate * factor
+                baseline_pv += nameplate * float(np.mean(factor_series))
                 updated_sgens += 1
             elif sgen_type == "wind":
                 if not wind_profiles:
@@ -353,22 +422,21 @@ def _apply_hourly_profiles(
                 if profile is None:
                     continue
                 profile_series = profile.get("p_mw")
-                if profile_series is None:
+                if profile_series is None or nameplate <= 0.0:
                     continue
-                base_p = float(row.get("p_mw", 0.0))
-                factor = float(profile_series[hour_index])
-                net.sgen.at[idx, "p_mw"] = base_p * factor
-                wind_output += base_p * factor
-                baseline_wind += base_p * float(np.mean(profile_series))
+                factor = float(np.clip(profile_series[hour_index], 0.0, 1.0))
+                net.sgen.at[idx, "p_mw"] = nameplate * factor
+                wind_output += nameplate * factor
+                baseline_wind += nameplate * float(np.mean(np.clip(profile_series, 0.0, 1.0)))
 
     renewable_deviation = (pv_output + wind_output) - (baseline_pv + baseline_wind)
 
     if not net.sgen.empty:
         for idx, row in net.sgen.iterrows():
-            sgen_type = str(row.get("type", ""))
+            sgen_type = str(row.get("type", "")).lower()
             if sgen_type not in {"bess", "storage"}:
                 continue
-            nameplate = abs(float(row.get("p_mw", 0.0)))
+            nameplate = _safe_nameplate(row)
             if nameplate <= 0.0:
                 net.sgen.at[idx, "p_mw"] = 0.0
                 continue
@@ -398,10 +466,10 @@ def _apply_hourly_profiles(
     thermal_min = 0.2
     if not net.sgen.empty:
         for idx, row in net.sgen.iterrows():
-            sgen_type = str(row.get("type", ""))
+            sgen_type = str(row.get("type", "")).lower()
             if sgen_type != "thermal":
                 continue
-            nameplate = abs(float(row.get("p_mw", 0.0)))
+            nameplate = _safe_nameplate(row)
             if nameplate <= 0.0:
                 net.sgen.at[idx, "p_mw"] = 0.0
                 continue
@@ -463,13 +531,32 @@ def _warn_if_profile_mismatch(updated: int, total: int, label: str, kind: str) -
         )
 
 
+def _safe_metric(value: object) -> float:
+    try:
+        metric = float(value)
+    except (TypeError, ValueError):
+        return float("inf")
+    if not np.isfinite(metric):
+        return float("inf")
+    return metric
+
+
 def _zone_price_records(
     day_label: str,
     hour: int,
     market_signals: dict[str, dict[str, float]],
     pricing_method: str,
     socp_ac_gap_max: float,
+    socp_ac_gap_p95: float,
+    socp_ac_gap_p50: float,
+    socp_ac_worst_bus: int | None,
+    socp_ac_compared_bus_count: int,
+    ac_converged: bool,
     ac_valid: bool,
+    soc_slack_max: float,
+    soc_slack_sum: float,
+    voltage_drop_slack_max: float,
+    voltage_drop_slack_sum: float,
 ) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
     for zone, data in market_signals.items():
@@ -481,8 +568,17 @@ def _zone_price_records(
                 "energy_price": float(data.get("energy_price", float("nan"))),
                 "reserve_price": float(data.get("reserve_price", float("nan"))),
                 "pricing_method": pricing_method,
-                "socp_ac_gap_max": float(socp_ac_gap_max),
+                "socp_ac_gap_max": _safe_metric(socp_ac_gap_max),
+                "socp_ac_gap_p95": _safe_metric(socp_ac_gap_p95),
+                "socp_ac_gap_p50": _safe_metric(socp_ac_gap_p50),
+                "socp_ac_worst_bus": socp_ac_worst_bus,
+                "socp_ac_compared_bus_count": int(socp_ac_compared_bus_count),
+                "ac_converged": bool(ac_converged),
                 "ac_valid": bool(ac_valid),
+                "soc_slack_max": float(soc_slack_max),
+                "soc_slack_sum": float(soc_slack_sum),
+                "voltage_drop_slack_max": float(voltage_drop_slack_max),
+                "voltage_drop_slack_sum": float(voltage_drop_slack_sum),
             }
         )
     return records
@@ -492,11 +588,14 @@ def _keep_hv_slack_only(net: pp.pandapowerNet) -> None:
     if net.ext_grid.empty:
         return
     if net.trafo.empty:
+        net.ext_grid = net.ext_grid.iloc[:1].copy().reset_index(drop=True)
         return
     hv_buses = set(int(bus) for bus in net.trafo.hv_bus.values)
     hv_ext = net.ext_grid[net.ext_grid.bus.isin(hv_buses)].copy()
     if not hv_ext.empty:
-        net.ext_grid = hv_ext.reset_index(drop=True)
+        net.ext_grid = hv_ext.iloc[:1].copy().reset_index(drop=True)
+        return
+    net.ext_grid = net.ext_grid.iloc[:1].copy().reset_index(drop=True)
 
 
 def _drop_isolated_loads(net: pp.pandapowerNet) -> list[int]:
@@ -557,10 +656,13 @@ def run_layer0_dso_hourly(
     drop_isolated_loads: bool = False,
     fix_switch_status: bool = False,
     penalize_switch_changes: bool = True,
-    enforce_radiality: bool = False,
-    radiality_slack: int = 3,
+    enforce_radiality: bool = True,
+    radiality_slack: int = 0,
     pricing_method: str = "load_weighted",
-    ac_tolerance: float = 0.2,
+    ac_tolerance: float = 0.01,
+    soc_relax: float = 1.001,
+    soc_slack_cap: float = 0.0,
+    voltage_drop_slack_cap: float = 0.0,
 ) -> list[Layer0HourlyResult]:
     if pricing_method not in PRICING_METHODS:
         raise ValueError(f"pricing_method must be one of {sorted(PRICING_METHODS)}")
@@ -587,7 +689,11 @@ def run_layer0_dso_hourly(
             thermal_prev=thermal_prev,
         )
         _warn_if_profile_mismatch(updated_loads, len(hour_net.load), f"{day_label} hour {hour_offset}", "load")
-        _warn_if_profile_mismatch(updated_sgens, len(hour_net.sgen), f"{day_label} hour {hour_offset}", "pv")
+        pv_count = 0
+        if not hour_net.sgen.empty and "type" in hour_net.sgen.columns:
+            pv_count = int(hour_net.sgen["type"].astype(str).str.lower().eq("pv").sum())
+        if pv_profiles is not None:
+            _warn_if_profile_mismatch(updated_sgens, pv_count, f"{day_label} hour {hour_offset}", "pv")
         if drop_isolated_loads:
             _drop_isolated_loads(hour_net)
         reconfig_result = run_reconfiguration_detailed(
@@ -602,6 +708,9 @@ def run_layer0_dso_hourly(
             penalize_switch_changes=penalize_switch_changes,
             enforce_radiality=enforce_radiality,
             radiality_slack=radiality_slack,
+            soc_relax=soc_relax,
+            soc_slack_cap=soc_slack_cap,
+            voltage_drop_slack_cap=voltage_drop_slack_cap,
         )
         validation = validate_socp_against_ac(
             hour_net,
@@ -625,7 +734,16 @@ def run_layer0_dso_hourly(
                 market_signals=market_signals,
                 pricing_method=pricing_method,
                 socp_ac_gap_max=validation.socp_ac_gap_max,
+                socp_ac_gap_p95=validation.socp_ac_gap_p95,
+                socp_ac_gap_p50=validation.socp_ac_gap_p50,
+                socp_ac_worst_bus=validation.worst_bus,
+                socp_ac_compared_bus_count=validation.compared_bus_count,
+                ac_converged=validation.converged,
                 ac_valid=validation.ac_valid,
+                soc_slack_max=reconfig_result.soc_slack_max,
+                soc_slack_sum=reconfig_result.soc_slack_sum,
+                voltage_drop_slack_max=reconfig_result.voltage_drop_slack_max,
+                voltage_drop_slack_sum=reconfig_result.voltage_drop_slack_sum,
             )
         )
     return results
@@ -634,15 +752,28 @@ def run_layer0_dso_hourly(
 def run_layer0_pipeline(
     output_dir: Path,
     pricing_method: str = "load_weighted",
-    ac_tolerance: float = 0.2,
+    ac_tolerance: float = 0.01,
     debug_reconfig: bool = False,
     force_switch_closed: bool = True,
     apply_voltage_bounds: bool = True,
     drop_isolated_loads: bool = False,
+    enforce_radiality: bool = True,
+    radiality_slack: int = 0,
+    soc_relax: float = 1.001,
+    soc_slack_cap: float = 0.0,
+    voltage_drop_slack_cap: float = 0.0,
+    diagnostics_only_on_fail: bool = True,
 ) -> Layer0CsvBundle:
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+    net = build_ieee123_net(
+        mode="feeder123",
+        balanced=True,
+        convert_switches=True,
+        slack_zones={1},
+        source_mode="publish",
+    )
+    _keep_hv_slack_only(net)
     validate_ieee123_net(net)
 
     wind_bus_names: list[str] = []
@@ -677,19 +808,52 @@ def run_layer0_pipeline(
                 force_switch_closed=force_switch_closed,
                 apply_voltage_bounds=apply_voltage_bounds,
                 drop_isolated_loads=drop_isolated_loads,
+                enforce_radiality=enforce_radiality,
+                radiality_slack=radiality_slack,
                 pricing_method=pricing_method,
                 ac_tolerance=ac_tolerance,
+                soc_relax=soc_relax,
+                soc_slack_cap=soc_slack_cap,
+                voltage_drop_slack_cap=voltage_drop_slack_cap,
             )
         )
 
-    return export_layer0_csvs(output_dir, all_results)
+    soc_slack_limit = max(float(soc_slack_cap), 0.0) + 1e-6
+    voltage_drop_slack_limit = max(float(voltage_drop_slack_cap), 0.0) + 1e-6
+    valid_for_layer1 = bool(
+        all(
+            result.ac_valid
+            and result.ac_converged
+            and float(result.soc_slack_max) <= soc_slack_limit
+            and float(result.voltage_drop_slack_max) <= voltage_drop_slack_limit
+            for result in all_results
+        )
+    )
+    diagnostics_path = output_dir / "layer0_diagnostics.csv"
+    if diagnostics_only_on_fail and not valid_for_layer1:
+        return export_layer0_csvs(output_dir, all_results, valid_for_layer1=False, diagnostics_csv=diagnostics_path)
+    return export_layer0_csvs(output_dir, all_results, valid_for_layer1=valid_for_layer1, diagnostics_csv=diagnostics_path)
 
 
-def export_layer0_csvs(output_dir: Path, hourly_results: list[Layer0HourlyResult]) -> Layer0CsvBundle:
+def export_layer0_csvs(
+    output_dir: Path,
+    hourly_results: list[Layer0HourlyResult],
+    *,
+    valid_for_layer1: bool,
+    diagnostics_csv: Path,
+) -> Layer0CsvBundle:
     zone_rows: list[dict[str, object]] = []
     alpha_rows: list[dict[str, object]] = []
     switch_rows: list[dict[str, object]] = []
-    switch_map = switch_edge_map(build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None))
+    switch_map = switch_edge_map(
+        build_ieee123_net(
+            mode="feeder123",
+            balanced=True,
+            convert_switches=True,
+            slack_zones={1},
+            source_mode="publish",
+        )
+    )
     for result in hourly_results:
         zone_rows.extend(
             _zone_price_records(
@@ -698,7 +862,16 @@ def export_layer0_csvs(output_dir: Path, hourly_results: list[Layer0HourlyResult
                 result.market_signals,
                 pricing_method=result.pricing_method,
                 socp_ac_gap_max=result.socp_ac_gap_max,
+                socp_ac_gap_p95=result.socp_ac_gap_p95,
+                socp_ac_gap_p50=result.socp_ac_gap_p50,
+                socp_ac_worst_bus=result.socp_ac_worst_bus,
+                socp_ac_compared_bus_count=result.socp_ac_compared_bus_count,
+                ac_converged=result.ac_converged,
                 ac_valid=result.ac_valid,
+                soc_slack_max=result.soc_slack_max,
+                soc_slack_sum=result.soc_slack_sum,
+                voltage_drop_slack_max=result.voltage_drop_slack_max,
+                voltage_drop_slack_sum=result.voltage_drop_slack_sum,
             )
         )
         alpha_records = _alpha_records(result.day_label, result.hour, result.alpha_star)
@@ -720,14 +893,65 @@ def export_layer0_csvs(output_dir: Path, hourly_results: list[Layer0HourlyResult
     alpha_path = output_dir / "layer0_alpha.csv"
     switch_path = output_dir / "layer0_switches.csv"
 
-    pd.DataFrame(zone_rows).to_csv(zone_path, index=False)
-    pd.DataFrame(alpha_rows).to_csv(alpha_path, index=False)
-    pd.DataFrame(switch_rows).to_csv(switch_path, index=False)
+    diagnostics_rows = []
+    for result in hourly_results:
+        diagnostics_rows.append(
+            {
+                "day": result.day_label,
+                "hour": result.hour,
+                "socp_ac_gap_max": _safe_metric(result.socp_ac_gap_max),
+                "socp_ac_gap_p95": _safe_metric(result.socp_ac_gap_p95),
+                "socp_ac_gap_p50": _safe_metric(result.socp_ac_gap_p50),
+                "socp_ac_worst_bus": result.socp_ac_worst_bus,
+                "socp_ac_compared_bus_count": int(result.socp_ac_compared_bus_count),
+                "ac_converged": bool(result.ac_converged),
+                "ac_valid": bool(result.ac_valid),
+                "soc_slack_max": float(result.soc_slack_max),
+                "soc_slack_sum": float(result.soc_slack_sum),
+                "voltage_drop_slack_max": float(result.voltage_drop_slack_max),
+                "voltage_drop_slack_sum": float(result.voltage_drop_slack_sum),
+            }
+        )
+
+    pd.DataFrame(diagnostics_rows).to_csv(diagnostics_csv, index=False)
+
+    if valid_for_layer1:
+        pd.DataFrame(zone_rows).to_csv(zone_path, index=False)
+        pd.DataFrame(alpha_rows).to_csv(alpha_path, index=False)
+        pd.DataFrame(switch_rows).to_csv(switch_path, index=False)
+    else:
+        pd.DataFrame(
+            columns=[
+                "day",
+                "hour",
+                "zone",
+                "energy_price",
+                "reserve_price",
+                "pricing_method",
+                "socp_ac_gap_max",
+                "socp_ac_gap_p95",
+                "socp_ac_gap_p50",
+                "socp_ac_worst_bus",
+                "socp_ac_compared_bus_count",
+                "ac_converged",
+                "ac_valid",
+                "soc_slack_max",
+                "soc_slack_sum",
+                "voltage_drop_slack_max",
+                "voltage_drop_slack_sum",
+            ]
+        ).to_csv(zone_path, index=False)
+        pd.DataFrame(columns=["day", "hour", "edge_id", "alpha"]).to_csv(alpha_path, index=False)
+        pd.DataFrame(columns=["day", "hour", "edge_id", "alpha", "from_bus", "to_bus"]).to_csv(
+            switch_path, index=False
+        )
 
     return Layer0CsvBundle(
         zone_prices_csv=zone_path,
         alpha_csv=alpha_path,
         switches_csv=switch_path,
+        diagnostics_csv=diagnostics_csv,
+        valid_for_layer1=valid_for_layer1,
     )
 
 
@@ -754,7 +978,7 @@ def main() -> None:
     parser.add_argument(
         "--ac-tolerance",
         type=float,
-        default=0.2,
+        default=0.01,
         help="SOCP vs AC validation tolerance in p.u.",
     )
     args = parser.parse_args()
@@ -776,6 +1000,8 @@ def main() -> None:
     print(f"- Zone prices: {csv_bundle.zone_prices_csv}")
     print(f"- Alpha decisions: {csv_bundle.alpha_csv}")
     print(f"- Switch decisions: {csv_bundle.switches_csv}")
+    print(f"- Diagnostics: {csv_bundle.diagnostics_csv}")
+    print(f"- Valid for Layer1: {csv_bundle.valid_for_layer1}")
 
 
 if __name__ == "__main__":

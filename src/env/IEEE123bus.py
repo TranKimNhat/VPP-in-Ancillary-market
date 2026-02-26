@@ -9,18 +9,17 @@ import pandas as pd
 import pandapower as pp
 
 """
-IEEE123 OpenDSS -> pandapower converter (self-parsed).
+IEEE123 feeder123 -> pandapower converter (self-parsed).
 
-Data source: data/oedisi-ieee123-main/snapshot/master.dss
+Data source: data/feeder123/*.xls (or *.csv).
 Assumptions:
-- OpenDSS files are parsed with a minimal parser (new/~, like=, comments).
 - Length units default to kft (converted to km).
 - Balanced approximation: per-phase values are aggregated to a single-phase equivalent.
 - Regcontrol elements are ignored (no tap control applied).
 """
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = BASE_DIR / "data" / "oedisi-ieee123-main"
+DATA_DIR = BASE_DIR / "data"
 
 IEEE123_ZONE_BUS_MAP: dict[int, list[str]] = {
     1: [
@@ -165,27 +164,19 @@ IEEE123_ZONE_BUS_MAP: dict[int, list[str]] = {
     ],
 }
 
-DSS_SNAPSHOT_FILES = (
-    "master.dss",
-    "IEEE123Loads.dss",
-    "IEEE123Regulators.dss",
-    "IEEELinecodes.dss",
-)
-
-
 def build_ieee123_net(
-    mode: str = "snapshot",
+    mode: str = "feeder123",
     balanced: bool = True,
     convert_switches: bool = True,
+    slack_zones: set[int] | None = None,
+    source_mode: str = "publish",
 ) -> pp.pandapowerNet:
-    """Build the IEEE123 pandapower network from OpenDSS or feeder123."""
-    if mode.lower() == "feeder123":
-        net = _build_feeder123_net()
-    else:
-        dss_paths = _resolve_dss_paths(mode)
-        buscoords_path = _resolve_buscoords_path(mode)
-        parsed = _parse_dss_files(dss_paths)
-        net = _build_pandapower_net(parsed, buscoords_path=buscoords_path)
+    """Build the IEEE123 pandapower network from feeder123 data."""
+    if mode.lower() != "feeder123":
+        raise ValueError(f"Unsupported mode: {mode}. Use 'feeder123'.")
+    if source_mode not in {"publish", "research"}:
+        raise ValueError("source_mode must be 'publish' or 'research'.")
+    net = _build_feeder123_net(slack_zones=slack_zones, source_mode=source_mode)
 
     if balanced:
         convert_to_balanced(net)
@@ -309,30 +300,6 @@ def validate_ieee123_net(net: pp.pandapowerNet) -> dict[str, int]:
     print(f"INFO: Closed switches: {closed_switches}")
 
     return summary
-
-
-def _resolve_dss_paths(mode: str) -> list[Path]:
-    if mode.lower() == "snapshot":
-        base = DATA_DIR / "snapshot"
-        paths = [base / name for name in DSS_SNAPSHOT_FILES]
-    else:
-        raise ValueError(f"Unsupported mode: {mode}")
-    missing = [str(path) for path in paths if not path.exists()]
-    if missing:
-        raise FileNotFoundError(f"OpenDSS files not found: {missing}")
-    return paths
-
-
-def _resolve_buscoords_path(mode: str) -> Path:
-    if mode.lower() == "snapshot":
-        path = DATA_DIR / "snapshot" / "Buscoords.dss"
-    elif mode.lower() == "qsts":
-        path = DATA_DIR / "qsts" / "Buscoords.dss"
-    else:
-        raise ValueError(f"Unsupported mode: {mode}")
-    if not path.exists():
-        raise FileNotFoundError(f"Buscoords file not found: {path}")
-    return path
 
 
 def _feeder123_dir() -> Path:
@@ -718,10 +685,20 @@ def _read_buscoords_order(path: Path) -> list[str]:
     return ordered
 
 
-def _read_csv_table(path: Path, header_row: int, data_start_row: int | None = None) -> pd.DataFrame:
-    df = pd.read_csv(path, header=None)
+def _read_table(base: Path, name: str, header_row: int, data_start_row: int | None = None) -> pd.DataFrame:
+    csv_path = base / f"{name}.csv"
+    xls_path = base / f"{name}.xls"
+    if csv_path.exists():
+        df = pd.read_csv(csv_path, header=None)
+        source = csv_path
+    elif xls_path.exists():
+        df = pd.read_excel(xls_path, header=None)
+        source = xls_path
+    else:
+        raise FileNotFoundError(f"Missing feeder123 table: {csv_path} or {xls_path}")
+
     if header_row >= len(df):
-        raise ValueError(f"Header row {header_row} out of range for {path}")
+        raise ValueError(f"Header row {header_row} out of range for {source}")
     headers = [str(value).strip() for value in df.iloc[header_row].tolist()]
     start = (header_row + 1) if data_start_row is None else data_start_row
     data = df.iloc[start:].copy()
@@ -731,25 +708,22 @@ def _read_csv_table(path: Path, header_row: int, data_start_row: int | None = No
 
 
 def _parse_feeder123_lines(base: Path) -> pd.DataFrame:
-    path = base / "line data.csv"
-    df = _read_csv_table(path, header_row=2)
+    df = _read_table(base, "line data", header_row=2)
     df = df.rename(columns={"Node A": "from_bus", "Node B": "to_bus", "Length (ft.)": "length_ft", "Config.": "config"})
     return df[["from_bus", "to_bus", "length_ft", "config"]]
 
 
 def _parse_feeder123_switches(base: Path) -> pd.DataFrame:
-    path = base / "switch data.csv"
-    df = _read_csv_table(path, header_row=2)
+    df = _read_table(base, "switch data", header_row=2)
     df = df.rename(columns={"Node A": "from_bus", "Node B": "to_bus", "Normal": "status"})
     return df[["from_bus", "to_bus", "status"]]
 
 
 def _parse_feeder123_loads(base: Path) -> pd.DataFrame:
-    path = base / "spot loads data.csv"
-    raw = pd.read_csv(path, header=None)
-    if len(raw) < 5:
-        raise ValueError("spot loads data.csv missing data rows")
-    data = raw.iloc[4:].copy()
+    raw = _read_table(base, "spot loads data", header_row=3)
+    if raw.empty:
+        raise ValueError("spot loads data missing data rows")
+    data = raw.copy()
     data.columns = [
         "bus",
         "model",
@@ -766,8 +740,7 @@ def _parse_feeder123_loads(base: Path) -> pd.DataFrame:
 
 
 def _parse_feeder123_caps(base: Path) -> pd.DataFrame:
-    path = base / "cap data.csv"
-    df = _read_csv_table(path, header_row=2, data_start_row=4)
+    df = _read_table(base, "cap data", header_row=2, data_start_row=4)
     df = df.rename(columns={"Node": "bus", "Ph-A": "ph_a", "Ph-B": "ph_b", "Ph-C": "ph_c"})
     df = df[df["bus"].astype(str).str.lower() != "total"]
     for col in ["ph_a", "ph_b", "ph_c"]:
@@ -776,8 +749,7 @@ def _parse_feeder123_caps(base: Path) -> pd.DataFrame:
 
 
 def _parse_feeder123_transformer(base: Path) -> pd.DataFrame:
-    path = base / "Transformer Data.csv"
-    df = _read_csv_table(path, header_row=2)
+    df = _read_table(base, "Transformer Data", header_row=2)
     df = df.rename(
         columns={
             "kVA": "kva",
@@ -793,8 +765,7 @@ def _parse_feeder123_transformer(base: Path) -> pd.DataFrame:
 
 
 def _parse_feeder123_regulators(base: Path) -> pd.DataFrame:
-    path = base / "Regulator Data.csv"
-    df = _read_csv_table(path, header_row=2)
+    df = _read_table(base, "Regulator Data", header_row=2)
     return df
 
 
@@ -834,8 +805,7 @@ def _feeder123_bus_order(buses: set[str]) -> list[str]:
 
 
 def _parse_feeder123_config_rx(base: Path) -> dict[str, tuple[float, float]]:
-    path = base / "config data.csv"
-    df = _read_csv_table(path, header_row=2)
+    df = _read_table(base, "config data", header_row=2)
     df = df.rename(columns={"Config.": "config"})
     rx_map: dict[str, tuple[float, float]] = {}
     for _, row in df.iterrows():
@@ -850,8 +820,7 @@ def _parse_feeder123_config_rx(base: Path) -> dict[str, tuple[float, float]]:
 
 
 def _parse_feeder123_config_ampacity_kA(base: Path) -> dict[str, float]:
-    path = base / "config data.csv"
-    df = _read_csv_table(path, header_row=2)
+    df = _read_table(base, "config data", header_row=2)
     df = df.rename(columns={"Config.": "config"})
     ampacity_map: dict[str, float] = {}
 
@@ -1121,7 +1090,10 @@ def _build_bus_map(net: pp.pandapowerNet, bus_numbers: list[int]) -> dict[int, i
     return {bus_no: int(idx) for bus_no, idx in zip(bus_numbers, net.bus.index)}
 
 
-def _build_feeder123_net() -> pp.pandapowerNet:
+def _build_feeder123_net(
+    slack_zones: set[int] | None = None,
+    source_mode: str = "publish",
+) -> pp.pandapowerNet:
     base = _feeder123_dir()
     lines = _parse_feeder123_lines(base)
     switches = _parse_feeder123_switches(base)
@@ -1135,6 +1107,22 @@ def _build_feeder123_net() -> pp.pandapowerNet:
         {"name": "wind_35", "bus": "35", "p_mw": 0.05, "q_mvar": 0.0, "type": "wind"},
         {"name": "battery_61", "bus": "61", "p_mw": 0.03, "q_mvar": 0.0, "type": "storage"},
     ]
+
+    pv_bus_map: dict[str, float] = {}
+    if pv_defs:
+        for pv_name, pv_info in pv_defs.items():
+            bus = str(pv_info.get("bus") or "").strip()
+            if not bus:
+                continue
+            pmpp_kw = float(pv_info.get("pmpp_kw") or 0.0)
+            if pmpp_kw > 0.0:
+                pv_bus_map[bus] = pmpp_kw / 1000.0
+    else:
+        pv_profile_dir = BASE_DIR / "data" / "profiles" / "pv_profiles"
+        for profile in pv_profile_dir.glob("pvshape_*.csv"):
+            bus = profile.stem.replace("pvshape_", "")
+            if bus:
+                pv_bus_map[bus] = 0.2
 
     buses: set[str] = set()
     for _, row in lines.iterrows():
@@ -1175,6 +1163,7 @@ def _build_feeder123_net() -> pp.pandapowerNet:
                     i0_percent=0.0,
                     name="substation_xfm",
                 )
+                pp.create_ext_grid(net, bus=bus_index["150"], vm_pu=1.0, name="source_hv")
 
     for idx, row in lines.iterrows():
         bus1 = str(row["from_bus"]).strip()
@@ -1259,17 +1248,17 @@ def _build_feeder123_net() -> pp.pandapowerNet:
         kvar = ph_a + ph_b + ph_c
         pp.create_shunt(net, bus=bus_index[bus], q_mvar=-(kvar / 1000.0), name=f"cap_{bus}")
 
-    for pv_name, pv_info in pv_defs.items():
-        bus = str(pv_info.get("bus") or "").strip()
-        if not bus or bus not in bus_index:
+    for bus, p_mw in pv_bus_map.items():
+        if bus not in bus_index:
             continue
-        pmpp_kw = float(pv_info.get("pmpp_kw") or 0.0)
+        if p_mw <= 0.0:
+            continue
         pp.create_sgen(
             net,
             bus=bus_index[bus],
-            p_mw=pmpp_kw / 1000.0,
+            p_mw=p_mw,
             q_mvar=0.0,
-            name=f"pv_{pv_name}",
+            name=f"pv_{bus}",
             type="pv",
         )
 
@@ -1286,7 +1275,11 @@ def _build_feeder123_net() -> pp.pandapowerNet:
             type=str(source.get("type") or "der"),
         )
 
-    _apply_zone_sources(net)
+    if source_mode == "research":
+        _apply_zone_sources(net, slack_zones=slack_zones, keep_existing_ext_grids=False)
+    else:
+        if not net.ext_grid.empty:
+            net.ext_grid = net.ext_grid.iloc[:1].copy().reset_index(drop=True)
 
     return net
 
@@ -1296,27 +1289,48 @@ def _aggregate_power_elements(net: pp.pandapowerNet, element: str) -> None:
     if table is None or table.empty or "bus" not in table.columns:
         return
 
-    grouped = table.groupby("bus", sort=False)
+    group_keys = ["bus"]
+    if element == "sgen" and "type" in table.columns:
+        group_keys.append("type")
+
+    grouped = table.groupby(group_keys, sort=False, dropna=False)
     rows = []
-    for bus, group in grouped:
+    for key, group in grouped:
+        if isinstance(key, tuple):
+            bus = key[0]
+            element_type = key[1] if len(key) > 1 else ""
+        else:
+            bus = key
+            element_type = ""
         template = group.iloc[0].copy()
         if "p_mw" in group.columns:
             template["p_mw"] = float(group["p_mw"].sum())
         if "q_mvar" in group.columns:
             template["q_mvar"] = float(group["q_mvar"].sum())
+        if "sn_mva" in group.columns:
+            template["sn_mva"] = float(group["sn_mva"].sum())
         if "in_service" in group.columns:
             template["in_service"] = bool(group["in_service"].any())
         if "name" in group.columns:
-            template["name"] = f"{element}_agg_{bus}"
+            suffix = f"_{element_type}" if element == "sgen" and str(element_type) else ""
+            template["name"] = f"{element}_agg_{bus}{suffix}"
         rows.append(template)
 
     new_table = pd.DataFrame(rows).reset_index(drop=True)
     setattr(net, element, new_table)
 
 
-def _apply_zone_sources(net: pp.pandapowerNet, seed: int = 123) -> None:
+def _apply_zone_sources(
+    net: pp.pandapowerNet,
+    seed: int = 123,
+    slack_zones: set[int] | None = None,
+    keep_existing_ext_grids: bool = True,
+) -> None:
     if net.bus.empty:
         return
+
+    if slack_zones is not None:
+        slack_zones = {int(zone) for zone in slack_zones}
 
     bus_name_to_index = {str(row["name"]): int(idx) for idx, row in net.bus.iterrows()}
     zone_bus_indices: dict[int, list[int]] = {}
@@ -1336,8 +1350,15 @@ def _apply_zone_sources(net: pp.pandapowerNet, seed: int = 123) -> None:
     if not net.sgen.empty:
         existing_sgen_buses = {int(bus) for bus in net.sgen.bus}
 
+    if keep_existing_ext_grids and not net.ext_grid.empty:
+        return
+    if not keep_existing_ext_grids and not net.ext_grid.empty:
+        net.ext_grid = net.ext_grid.iloc[0:0].copy()
+
     slack_buses: set[int] = set()
     for zone, candidates in sorted(zone_bus_indices.items()):
+        if slack_zones is not None and int(zone) not in slack_zones:
+            continue
         sgen_candidates = [bus for bus in candidates if bus in existing_sgen_buses]
         preferred_pool = sgen_candidates or candidates
         slack_bus = int(preferred_pool[0])

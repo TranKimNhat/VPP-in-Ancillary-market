@@ -66,11 +66,6 @@ def fix_and_solve_socp(
     if termination in {pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible}:
         return model
 
-    if termination == pyo.TerminationCondition.unknown:
-        v2_values = [pyo.value(model.V2[bus]) for bus in model.BUS]
-        if v2_values and all(np.isfinite(v) for v in v2_values):
-            return model
-
     raise RuntimeError(f"SOCP solve failed: {termination}")
 
 
@@ -88,6 +83,12 @@ def extract_dlmp(
 
 
 def extract_socp_voltage_squared(model: pyo.ConcreteModel) -> dict[int, float]:
+    if getattr(model, "_voltage_in_pu", False):
+        bus_nominal_kv = getattr(model, "_bus_nominal_kv", {})
+        return {
+            int(bus): float(pyo.value(model.V2[bus])) * (float(bus_nominal_kv.get(int(bus), 1.0)) ** 2)
+            for bus in model.BUS
+        }
     return {int(bus): float(pyo.value(model.V2[bus])) for bus in model.BUS}
 
 
