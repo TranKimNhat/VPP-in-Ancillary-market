@@ -122,7 +122,8 @@ def _run_layer0_layer1(repo_root: Path, env_cfg: dict) -> tuple[Path, Path]:
     layer0_bundle = run_layer0_pipeline(
         output_dir=layer0_csv.parent,
         pricing_method="load_weighted",
-        ac_tolerance=0.001,
+        ac_tolerance=0.01,
+        voltage_reference_upper_band=0.005,
     )
 
     if not layer0_bundle.valid_for_layer1:
