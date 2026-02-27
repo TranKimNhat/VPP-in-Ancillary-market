@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
@@ -10,6 +10,7 @@ import pandapower as pp
 
 from src.environment.pandapower_backend import PandapowerBackend
 from src.environment.topology_manager import TopologySnapshot, build_topology_snapshot
+from src.environment.vpp_mapping import CanonicalMappings, load_canonical_mappings, resolve_der_vpp
 from src.layer2_control.reward import RewardWeights, compute_reward
 from src.layer2_control.safety_layer import SafetyLimits, enforce_safety
 
@@ -24,6 +25,9 @@ class EnvConfig:
     action_scale_p: float = 0.2
     action_scale_q: float = 0.2
     reward_weights: RewardWeights = RewardWeights()
+    zoning_mode: str = "static"
+    vpp_mode: bool = False
+    mapping_config: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,8 @@ class AgentMapping:
     agent_id: str
     sgen_idx: int
     bus_idx: int
+    zone_id: str
+    vpp_id: str | None
 
 
 class GridEnvironment:
@@ -49,10 +55,15 @@ class GridEnvironment:
         config: EnvConfig | None = None,
         layer1_pref_csv: str | Path | None = None,
         market_signal_csv: str | Path | None = None,
+        mapping_config: Mapping[str, Any] | None = None,
     ) -> None:
         self.net = net
         self.backend = backend or PandapowerBackend()
         self.config = config or EnvConfig()
+        if str(self.config.zoning_mode).lower() != "static":
+            raise NotImplementedError(
+                f"zoning_mode='{self.config.zoning_mode}' is not supported. GridEnvironment requires static zoning."
+            )
 
         self._base_p: dict[int, float] = {}
         self._base_q: dict[int, float] = {}
@@ -65,6 +76,11 @@ class GridEnvironment:
 
         self._p_ref_series = np.zeros(self.config.max_steps, dtype=float)
         self._reserve_price_series = np.zeros(self.config.max_steps, dtype=float)
+        self._mappings: CanonicalMappings = load_canonical_mappings(
+            self.net,
+            mapping_config if mapping_config is not None else self.config.mapping_config,
+        )
+        self._p_ref_by_vpp: dict[str, np.ndarray] = {}
 
         self._build_agent_mapping()
         self._load_layer1_signal(layer1_pref_csv)
@@ -91,9 +107,19 @@ class GridEnvironment:
             if sgen_type not in CONTROLLABLE_TYPES:
                 continue
             bus_idx = int(row["bus"])
+            vpp_id = resolve_der_vpp(self._mappings, der_idx=int(sgen_idx), bus_idx=bus_idx)
+            zone_id = str(self._mappings.bus_to_zone.get(bus_idx, 1))
             agent_id = f"agent_{len(self._agent_map)}"
             self._agent_to_index[agent_id] = len(self._agent_map)
-            self._agent_map.append(AgentMapping(agent_id=agent_id, sgen_idx=int(sgen_idx), bus_idx=bus_idx))
+            self._agent_map.append(
+                AgentMapping(
+                    agent_id=agent_id,
+                    sgen_idx=int(sgen_idx),
+                    bus_idx=bus_idx,
+                    zone_id=zone_id,
+                    vpp_id=vpp_id,
+                )
+            )
             self._base_p[int(sgen_idx)] = float(row.get("p_mw", 0.0))
             self._base_q[int(sgen_idx)] = float(row.get("q_mvar", 0.0))
 
@@ -103,6 +129,22 @@ class GridEnvironment:
         df = pd.read_csv(path)
         if "P_ref" not in df.columns:
             return
+
+        if self.config.vpp_mode and {"vpp_id", "hour"}.issubset(df.columns):
+            self._p_ref_by_vpp = {}
+            for vpp_id, group in df.groupby("vpp_id"):
+                ordered = group.sort_values("hour")
+                arr = np.zeros(self.config.max_steps, dtype=float)
+                values = ordered["P_ref"].to_numpy(dtype=float)
+                n = min(len(values), self.config.max_steps)
+                arr[:n] = values[:n]
+                self._p_ref_by_vpp[str(vpp_id)] = arr
+
+            if self._p_ref_by_vpp:
+                stacked = np.stack(list(self._p_ref_by_vpp.values()), axis=0)
+                self._p_ref_series = np.mean(stacked, axis=0)
+            return
+
         values = df["P_ref"].to_numpy(dtype=float)
         n = min(len(values), self.config.max_steps)
         self._p_ref_series[:n] = values[:n]
@@ -167,8 +209,8 @@ class GridEnvironment:
         node_features = np.nan_to_num(node_features, nan=0.0, posinf=1e6, neginf=-1e6)
         return GridState(topology=topology, node_features=node_features)
 
-    def _agent_obs(self, state: GridState) -> dict[str, dict[str, np.ndarray | float | int]]:
-        obs: dict[str, dict[str, np.ndarray | float | int]] = {}
+    def _agent_obs(self, state: GridState) -> dict[str, dict[str, np.ndarray | float | int | str | None]]:
+        obs: dict[str, dict[str, np.ndarray | float | int | str | None]] = {}
         p_ref = float(self._p_ref_series[min(self._current_step, len(self._p_ref_series) - 1)])
         reserve_price = float(self._reserve_price_series[min(self._current_step, len(self._reserve_price_series) - 1)])
         global_state = np.array([p_ref, reserve_price], dtype=float)
@@ -180,13 +222,20 @@ class GridEnvironment:
                 bus_local_idx = 0
 
             local_state = state.node_features[bus_local_idx].astype(float)
+            p_ref_agent = p_ref
+            if self.config.vpp_mode and mapping.vpp_id is not None:
+                series = self._p_ref_by_vpp.get(mapping.vpp_id)
+                if series is not None and len(series) > 0:
+                    p_ref_agent = float(series[min(self._current_step, len(series) - 1)])
             obs[mapping.agent_id] = {
                 "node_features": state.node_features.astype(float),
                 "adjacency": state.topology.adjacency.astype(float),
                 "global_state": global_state,
                 "local_state": local_state,
                 "agent_index": int(bus_local_idx),
-                "p_ref": p_ref,
+                "p_ref": p_ref_agent,
+                "zone_id": mapping.zone_id,
+                "vpp_id": mapping.vpp_id,
             }
         return obs
 
@@ -231,6 +280,9 @@ class GridEnvironment:
             "step": self._current_step,
             "tracking_error": self._last_tracking_error,
             "voltage_violation": self._last_voltage_violation,
+            "zoning_mode": self.config.zoning_mode,
+            "mapping_scope": "vpp" if self.config.vpp_mode else "legacy",
+            "legacy_mapping_fallback": bool(self._mappings.legacy_mode),
         }
         return obs, info
 
@@ -267,14 +319,25 @@ class GridEnvironment:
         voltage_violation = float(np.mean(voltage_violations)) if voltage_violations.size else 0.0
 
         rewards: dict[str, float] = {}
-        infos: dict[str, dict[str, float | bool]] = {}
+        infos: dict[str, dict[str, float | bool | str | None]] = {}
         for mapping in self._agent_map:
             curtailed = bool(curtailed_flags.get(mapping.agent_id, False))
             if curtailed:
                 self._curtailment_count += 1
+
+            p_ref_agent = p_ref
+            p_actual_agent = p_actual
+            if self.config.vpp_mode and mapping.vpp_id is not None:
+                series = self._p_ref_by_vpp.get(mapping.vpp_id)
+                if series is not None and len(series) > 0:
+                    p_ref_agent = float(series[min(self._current_step, len(series) - 1)])
+                agent_rows = [m for m in self._agent_map if m.vpp_id == mapping.vpp_id]
+                if agent_rows:
+                    p_actual_agent = float(sum(float(self.net.sgen.at[m.sgen_idx, "p_mw"]) for m in agent_rows))
+
             reward = compute_reward(
-                p_ref=p_ref,
-                p_actual=p_actual,
+                p_ref=p_ref_agent,
+                p_actual=p_actual_agent,
                 voltage_violation=voltage_violation,
                 curtailed=curtailed,
                 weights=self.config.reward_weights,
@@ -282,11 +345,16 @@ class GridEnvironment:
             rewards[mapping.agent_id] = reward
             infos[mapping.agent_id] = {
                 "converged": bool(converged),
-                "tracking_error": float(tracking_error),
+                "tracking_error": float(abs(p_ref_agent - p_actual_agent)),
                 "voltage_violation": float(voltage_violation),
                 "curtailed": curtailed,
-                "p_ref": p_ref,
-                "p_actual": p_actual,
+                "p_ref": p_ref_agent,
+                "p_actual": p_actual_agent,
+                "zone_id": mapping.zone_id,
+                "vpp_id": mapping.vpp_id,
+                "zoning_mode": self.config.zoning_mode,
+                "mapping_scope": "vpp" if self.config.vpp_mode else "legacy",
+                "safety_mode": "clip_project",
             }
 
         self._last_tracking_error = float(tracking_error)

@@ -19,6 +19,7 @@ class SafetyResult:
     p_safe: float
     q_safe: float
     curtailed: bool
+    safety_mode: str = "clip_project"
 
 
 def enforce_safety(action: np.ndarray, limits: SafetyLimits) -> SafetyResult:
@@ -36,4 +37,4 @@ def enforce_safety(action: np.ndarray, limits: SafetyLimits) -> SafetyResult:
         q *= scale
         curtailed = True
 
-    return SafetyResult(p_safe=p, q_safe=q, curtailed=curtailed)
+    return SafetyResult(p_safe=p, q_safe=q, curtailed=curtailed, safety_mode="clip_project")

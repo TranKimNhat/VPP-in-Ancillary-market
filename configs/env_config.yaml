@@ -7,6 +7,14 @@ signals:
   layer1_pref_csv: data/oedisi-ieee123-main/profiles/layer1_vpp/layer1_pref.csv
   market_signal_csv: data/oedisi-ieee123-main/profiles/layer0_hourly/layer0_zone_prices.csv
 
+zoning_mode: static
+vpp_mode: false
+mappings:
+  bus_to_zone_csv:
+  vpp_to_zone_csv:
+  bus_to_vpp_csv:
+  der_to_vpp_csv:
+
 reward_weights:
   tracking: 1.0
   voltage: 10.0

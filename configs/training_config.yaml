@@ -19,6 +19,9 @@ policy:
   update_epochs: 4
   minibatch_size: 256
 
+layer1:
+  vpp_mode:
+
 model:
   in_dim: 6
   hidden_dim: 32

@@ -3,13 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 import argparse
 import csv
+import warnings
 
 import numpy as np
+import pandas as pd
 import yaml
 
 from src.env.IEEE123bus import build_ieee123_net, validate_ieee123_net
 from src.environment.grid_env import EnvConfig, GridEnvironment
+from src.environment.vpp_mapping import build_partition_report, load_canonical_mappings
 from src.layer0_dso.layer0_dso import run_layer0_pipeline
+from src.layer0_dso.vpp_formation import run_vpp_formation
 from src.layer1_vpp.layer1_vpp import Layer1Config, run_layer1
 from src.layer2_control.actor_critic import ActorCritic, ActorCriticConfig
 from src.layer2_control.gat_encoder import GATEncoder, GATEncoderConfig
@@ -21,8 +25,36 @@ def _load_yaml(path: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def _build_env(env_cfg: dict, repo_root: Path) -> GridEnvironment:
+def _resolve_runtime_modes(train_cfg: dict, env_cfg: dict) -> tuple[bool, dict[str, object]]:
+    zoning_mode = str(env_cfg.get("zoning_mode", "static")).strip().lower()
+    if zoning_mode != "static":
+        raise NotImplementedError(
+            f"zoning_mode='{zoning_mode}' is not supported. This runtime only supports static zoning."
+        )
+
+    mapping_cfg = dict(env_cfg.get("mappings", {}) or {})
+    env_vpp_mode = bool(env_cfg.get("vpp_mode", False))
+
+    layer1_cfg = train_cfg.get("layer1", {}) or {}
+    train_vpp_mode = layer1_cfg.get("vpp_mode")
+    if train_vpp_mode is None:
+        vpp_mode = env_vpp_mode
+    else:
+        vpp_mode = bool(train_vpp_mode)
+        if vpp_mode != env_vpp_mode:
+            warnings.warn(
+                "training_config.layer1.vpp_mode overrides env_config.vpp_mode. "
+                "env_config remains source-of-truth for mapping paths.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+    return vpp_mode, mapping_cfg
+
+
+def _build_env(env_cfg: dict, repo_root: Path, *, vpp_mode: bool, mapping_cfg: dict[str, object]) -> GridEnvironment:
     reward_weights = env_cfg.get("reward_weights", {})
+
     cfg = EnvConfig(
         max_steps=int(env_cfg.get("max_steps", 96)),
         voltage_tolerance=float(env_cfg.get("voltage_tolerance", 0.05)),
@@ -39,6 +71,9 @@ def _build_env(env_cfg: dict, repo_root: Path) -> GridEnvironment:
             voltage=float(reward_weights.get("voltage", cfg.reward_weights.voltage)),
             curtailment=float(reward_weights.get("curtailment", cfg.reward_weights.curtailment)),
         ),
+        zoning_mode=str(env_cfg.get("zoning_mode", "static")),
+        vpp_mode=vpp_mode,
+        mapping_config=mapping_cfg,
     )
 
     signals = env_cfg.get("signals", {})
@@ -52,6 +87,7 @@ def _build_env(env_cfg: dict, repo_root: Path) -> GridEnvironment:
         config=cfg,
         layer1_pref_csv=layer1_csv,
         market_signal_csv=market_csv,
+        mapping_config=mapping_cfg,
     )
 
 
@@ -114,16 +150,40 @@ def _eval_episode(env: GridEnvironment, policy: MappoPolicy) -> dict[str, float]
     return metrics
 
 
-def _run_layer0_layer1(repo_root: Path, env_cfg: dict) -> tuple[Path, Path]:
+def _run_layer0_layer1(
+    repo_root: Path,
+    env_cfg: dict,
+    *,
+    vpp_mode: bool,
+    mappings_cfg: dict[str, object],
+) -> tuple[Path, Path]:
     signals = env_cfg.get("signals", {})
+
     layer0_csv = repo_root / signals.get("market_signal_csv", "data/oedisi-ieee123-main/profiles/layer0_hourly/layer0_zone_prices.csv")
     layer1_csv = repo_root / signals.get("layer1_pref_csv", "data/oedisi-ieee123-main/profiles/layer1_vpp/layer1_pref.csv")
+
+    if vpp_mode and not mappings_cfg.get("vpp_to_zone_csv"):
+        bus_to_zone_csv = mappings_cfg.get("bus_to_zone_csv")
+        if not bus_to_zone_csv:
+            raise ValueError(
+                "VPP mode requires mappings.bus_to_zone_csv to generate VPP formation artifacts."
+            )
+
+        bus_to_zone_abs = repo_root / str(bus_to_zone_csv)
+        vpp_assign_dir = layer1_csv.parent.parent / "vpp_assignments"
+        artifacts = run_vpp_formation(
+            output_dir=vpp_assign_dir,
+            mapping_config={"bus_to_zone_csv": str(bus_to_zone_abs)},
+        )
+        mappings_cfg["bus_to_vpp_csv"] = str(artifacts.bus_to_vpp_csv)
+        mappings_cfg["vpp_to_zone_csv"] = str(artifacts.vpp_to_zone_csv)
 
     layer0_bundle = run_layer0_pipeline(
         output_dir=layer0_csv.parent,
         pricing_method="load_weighted",
         ac_tolerance=0.01,
         voltage_reference_upper_band=0.005,
+        mapping_config=mappings_cfg,
     )
 
     if not layer0_bundle.valid_for_layer1:
@@ -132,6 +192,14 @@ def _run_layer0_layer1(repo_root: Path, env_cfg: dict) -> tuple[Path, Path]:
             f"{layer0_bundle.diagnostics_csv} before running Layer1."
         )
 
+    mapping_vpp_to_zone_csv = mappings_cfg.get("vpp_to_zone_csv")
+    if mapping_vpp_to_zone_csv:
+        mapping_vpp_to_zone_csv = repo_root / mapping_vpp_to_zone_csv
+
+    mapping_bus_to_vpp_csv = mappings_cfg.get("bus_to_vpp_csv")
+    if mapping_bus_to_vpp_csv:
+        mapping_bus_to_vpp_csv = repo_root / mapping_bus_to_vpp_csv
+
     layer1_cfg = Layer1Config(
         input_csv=layer0_bundle.zone_prices_csv,
         output_csv=layer1_csv,
@@ -139,8 +207,20 @@ def _run_layer0_layer1(repo_root: Path, env_cfg: dict) -> tuple[Path, Path]:
         sign="inject",
         wasserstein_radius=0.02,
         degradation_cost=1.0,
+        vpp_mode=vpp_mode,
+        mapping_bus_to_vpp_csv=mapping_bus_to_vpp_csv,
+        mapping_vpp_to_zone_csv=mapping_vpp_to_zone_csv,
+        legacy_output_csv=layer1_csv.with_name(f"{layer1_csv.stem}_legacy.csv") if vpp_mode else None,
     )
     run_layer1(layer1_cfg)
+
+    net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+    validate_ieee123_net(net)
+    mappings = load_canonical_mappings(net, mappings_cfg)
+    report = build_partition_report(net, mappings)
+    report_path = layer1_csv.parent / "vpp_partition_report.csv"
+    pd.DataFrame(report.rows).to_csv(report_path, index=False)
+
     return layer0_bundle.zone_prices_csv, layer1_csv
 
 
@@ -148,16 +228,22 @@ def run_training(train_cfg_path: Path, env_cfg_path: Path, bootstrap_tri_layer: 
     repo_root = Path(__file__).resolve().parents[1]
     train_cfg = _load_yaml(train_cfg_path)
     env_cfg = _load_yaml(env_cfg_path)
+    vpp_mode, mappings_cfg = _resolve_runtime_modes(train_cfg, env_cfg)
 
     if bootstrap_tri_layer:
-        layer0_out, layer1_out = _run_layer0_layer1(repo_root, env_cfg)
+        layer0_out, layer1_out = _run_layer0_layer1(
+            repo_root,
+            env_cfg,
+            vpp_mode=vpp_mode,
+            mappings_cfg=mappings_cfg,
+        )
         print(f"Layer0 output: {layer0_out}")
         print(f"Layer1 output: {layer1_out}")
 
     seed = int(train_cfg.get("seed", 42))
     np.random.seed(seed)
 
-    env = _build_env(env_cfg, repo_root)
+    env = _build_env(env_cfg, repo_root, vpp_mode=vpp_mode, mapping_cfg=mappings_cfg)
     policy = _build_policy(train_cfg)
 
     updates = int(train_cfg.get("updates", 20))
@@ -262,6 +348,13 @@ def run_training(train_cfg_path: Path, env_cfg_path: Path, bootstrap_tri_layer: 
                     signals = env_cfg.get("signals", {})
                     layer1_csv = repo_root / signals.get("layer1_pref_csv", "data/oedisi-ieee123-main/profiles/layer1_vpp/layer1_pref.csv")
                     layer0_csv = repo_root / signals.get("market_signal_csv", "data/oedisi-ieee123-main/profiles/layer0_hourly/layer0_zone_prices.csv")
+                    mapping_vpp_to_zone_csv = mappings_cfg.get("vpp_to_zone_csv")
+                    if mapping_vpp_to_zone_csv:
+                        mapping_vpp_to_zone_csv = repo_root / mapping_vpp_to_zone_csv
+                    mapping_bus_to_vpp_csv = mappings_cfg.get("bus_to_vpp_csv")
+                    if mapping_bus_to_vpp_csv:
+                        mapping_bus_to_vpp_csv = repo_root / mapping_bus_to_vpp_csv
+
                     feedback_cfg = Layer1Config(
                         input_csv=layer0_csv,
                         output_csv=layer1_csv,
@@ -271,6 +364,10 @@ def run_training(train_cfg_path: Path, env_cfg_path: Path, bootstrap_tri_layer: 
                         degradation_cost=1.0,
                         curtailment_ratio=eval_metrics["curtailment_ratio"],
                         feedback_threshold=0.05,
+                        vpp_mode=vpp_mode,
+                        mapping_bus_to_vpp_csv=mapping_bus_to_vpp_csv,
+                        mapping_vpp_to_zone_csv=mapping_vpp_to_zone_csv,
+                        legacy_output_csv=layer1_csv.with_name(f"{layer1_csv.stem}_legacy.csv") if vpp_mode else None,
                     )
                     run_layer1(feedback_cfg)
                     print("Triggered Layer1 re-optimization from Layer2 curtailment feedback.")
