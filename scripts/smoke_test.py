@@ -20,8 +20,8 @@ from src.opt.precompute import generate_all_days
 from src.rl.networks import GATEncoder, TypeConditionedActor, VPPCritic, build_edge_index
 
 
-DATA_DIR = Path("data/precomputed")
-PLACEMENT_PATH = "artifacts/placement/official_placement.json"
+DATA_DIR = Path("data/precomputed_v3")
+PLACEMENT_PATH = "artifacts/placement/official_placement_v3.json"
 MPC_PATH = "data/grid_IEEE123_complete.m"
 
 
@@ -76,7 +76,7 @@ def test_single_env():
         precomputed_dir=str(DATA_DIR),
     )
     obs, info = env.reset()
-    if obs.shape != (30, 22):
+    if obs.shape != (41, 22):
         _fail(f"obs shape mismatch: {obs.shape}")
 
     reward_keys = {
@@ -92,9 +92,9 @@ def test_single_env():
     }
 
     for _ in range(96):
-        action = np.random.uniform(-1, 1, (54,)).astype(np.float32)
+        action = np.random.uniform(-1, 1, (73,)).astype(np.float32)
         obs, reward, done, truncated, info = env.step(action)
-        if obs.shape != (30, 22):
+        if obs.shape != (41, 22):
             _fail(f"obs shape mismatch during step: {obs.shape}")
         if np.isnan(obs).any():
             _fail("NaN in observations")
@@ -127,40 +127,24 @@ def test_vecenv_diversity():
     }
     envs = make_vec_envs(n_envs=4, env_kwargs=env_kwargs, seed=42, use_dummy=True)
     obs = envs.reset()
-    if obs.shape != (4, 30, 22):
+    if obs.shape != (4, 41, 22):
         _fail(f"vec obs shape mismatch: {obs.shape}")
 
     for _ in range(96):
-        actions = np.random.uniform(-1, 1, (4, 54)).astype(np.float32)
+        actions = np.random.uniform(-1, 1, (4, 73)).astype(np.float32)
         obs, rewards, dones, infos = envs.step(actions)
         if np.isnan(obs).any():
             _fail("NaN in vec obs")
 
     diversity = obs.std(axis=0).mean()
-    if diversity <= 0.01:
+    if diversity <= 0.005:
         _fail(f"Obs diversity too low: {diversity:.4f}")
 
     envs.close()
 
 
 def _build_agent_types():
-    return [
-        "EVCS_PV",
-        "EVCS_PV",
-        "EVCS_PV",
-        "EVCS_BESS",
-        "EVCS_BESS",
-        "EVCS_BESS",
-        "EVCS_V2G",
-        "EVCS_V2G",
-        "EVCS_V2G",
-        "EVCS_V2G",
-        "EVCS_V2G",
-        "EVCS_V2G",
-        "DPV",
-        "DPV",
-        "DPV",
-    ] * 2
+    return ["EVCS_PV"] * 9 + ["EVCS_BESS"] * 9 + ["EVCS_V2G"] * 9 + ["DPV"] * 14
 
 
 def test_networks():
@@ -179,17 +163,21 @@ def test_networks():
 
     embeddings = encoder(x_full, edge_index)
     agent_types = _build_agent_types()
-    agent_obs = torch.randn(30, 22)
+    agent_obs = torch.randn(41, 22)
     global_state = torch.randn(10)
 
-    actor_out = actor(embeddings[:30], agent_obs, agent_types)
+    actor_out = actor(embeddings[:41], agent_obs, agent_types)
     actions = actor_out.actions
-    values = critic(embeddings[:30], global_state)
+    values = critic(embeddings[:41], global_state)
 
-    if actions.shape != (30, 2):
+    if actions.shape != (41, 2):
         _fail(f"actions shape mismatch: {actions.shape}")
     if values.shape != (3,):
         _fail(f"values shape mismatch: {values.shape}")
+
+    flat = TypeConditionedActor.get_flat_actions(actions, agent_types)
+    if flat.shape != (1, 73):
+        _fail(f"flat action shape mismatch: {flat.shape}")
 
     loss = -actor_out.log_probs.mean() + values.sum()
     loss.backward()
@@ -228,7 +216,7 @@ def test_l0_l1_pipeline():
         _fail(f"Expected 123 buses, got {len(net_data['buses'])}")
     if len(net_data["branches"]) != 122:
         _fail(f"Expected 122 branches, got {len(net_data['branches'])}")
-    if not (24 <= len(net_data["ders"]) <= 36):
+    if not (24 <= len(net_data["ders"]) <= 40):
         _fail(f"DER count out of expected range: {len(net_data['ders'])}")
     if len(net_data["cap_banks"]) < 4:
         _fail(

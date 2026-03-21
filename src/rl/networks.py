@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -11,24 +13,46 @@ from torch.distributions import Normal
 from torch_geometric.nn import GATConv
 
 
-AGENT_TYPES = [
-    "EVCS_PV",
-    "EVCS_BESS",
-    "EVCS_V2G",
-    "DPV",
-]
+def _load_agent_registry(
+    placement_path: str = "artifacts/placement/official_placement_v3.json",
+) -> Tuple[List[int], List[str], Dict[int, List[int]], List[int]]:
+    placement = json.loads(Path(placement_path).read_text(encoding="utf-8"))
+
+    evcs = sorted(placement["evcs"], key=lambda e: int(e["id"][1:]))
+    dpv = sorted(placement["dpv"], key=lambda p: int(p["id"][2:]))
+
+    evcs_buses = [e["bus"] for e in evcs]
+    dpv_buses = [p["bus"] for p in dpv]
+
+    agent_buses = evcs_buses * 3 + dpv_buses
+    agent_types = ["EVCS_PV"] * 9 + ["EVCS_BESS"] * 9 + ["EVCS_V2G"] * 9 + ["DPV"] * 14
+
+    vpp_names = ["VPP_1", "VPP_2", "VPP_3"]
+    vpp_agent_indices: Dict[int, List[int]] = {}
+    for vpp_idx, vpp_name in enumerate(vpp_names):
+        evcs_in_vpp = [i for i, e in enumerate(evcs) if e.get("vpp") == vpp_name]
+        dpv_in_vpp = [i for i, p in enumerate(dpv) if p.get("vpp") == vpp_name]
+
+        agent_idxs: List[int] = []
+        for evcs_idx in evcs_in_vpp:
+            agent_idxs += [evcs_idx, evcs_idx + 9, evcs_idx + 18]
+        for dpv_idx in dpv_in_vpp:
+            agent_idxs.append(27 + dpv_idx)
+
+        vpp_agent_indices[vpp_idx] = sorted(agent_idxs)
+
+    v2g_agent_indices = list(range(18, 27))
+
+    return agent_buses, agent_types, vpp_agent_indices, v2g_agent_indices
+
+
+AGENT_BUSES, AGENT_TYPES, VPP_AGENT_INDICES, V2G_AGENT_INDICES = _load_agent_registry()
 
 AGENT_TYPE_DIM = {
     "EVCS_PV": 4,
     "EVCS_BESS": 4,
     "EVCS_V2G": 2,
     "DPV": 4,
-}
-
-VPP_AGENT_MAP = {
-    1: list(range(0, 10)),
-    2: list(range(10, 20)),
-    3: list(range(20, 30)),
 }
 
 
@@ -138,7 +162,7 @@ class VPPCritic(nn.Module):
 
     def forward(self, embeddings: torch.Tensor, global_state: torch.Tensor) -> torch.Tensor:
         values = []
-        for vpp_id, agent_indices in VPP_AGENT_MAP.items():
+        for vpp_id, agent_indices in VPP_AGENT_INDICES.items():
             vpp_emb = embeddings[agent_indices].mean(dim=0)
             inp = torch.cat([vpp_emb, global_state], dim=-1)
             values.append(self.critic(inp).squeeze(-1))
