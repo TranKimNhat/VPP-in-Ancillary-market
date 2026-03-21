@@ -3,10 +3,49 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 import re
+import json
+import math
 
 import numpy as np
 import pandas as pd
 import pandapower as pp
+from pandapower.converter.matpower import from_mpc
+
+
+def _patch_matpowercaseframes_encoding(encoding: str = "utf-8") -> None:
+    try:
+        import matpowercaseframes.core as mpc_core
+    except Exception:
+        return
+
+    if getattr(mpc_core, "_patched_encoding", None) == encoding:
+        return
+
+    def _read_matpower(self, filepath, allow_any_keys=False):
+        with open(filepath, encoding=encoding, errors="replace") as handle:
+            string = handle.read()
+
+        self.name = mpc_core.find_name(string)
+        self._attributes = []
+
+        for attribute in mpc_core.find_attributes(string):
+            if attribute not in mpc_core.ATTRIBUTES and not allow_any_keys:
+                continue
+
+            list_ = mpc_core.parse_file(attribute, string)
+            if list_ is not None:
+                if attribute in {"version", "baseMVA"}:
+                    value = list_[0][0]
+                elif attribute in {"bus_name", "branch_name", "gen_name"}:
+                    value = mpc_core.pd.Index([name[0] for name in list_], name=attribute)
+                else:
+                    n_cols = max(len(row) for row in list_)
+                    value = self._get_dataframe(attribute, list_, n_cols)
+
+                setattr(self, attribute, value)
+
+    mpc_core.CaseFrames._read_matpower = _read_matpower
+    mpc_core._patched_encoding = encoding
 
 """
 IEEE123 feeder123 -> pandapower converter (self-parsed).
@@ -20,6 +59,8 @@ Assumptions:
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = BASE_DIR / "data"
+MATPOWER_PATH = DATA_DIR / "grid_IEEE123_complete.m"
+ASSET_MAPPING_PATH = BASE_DIR / "artifacts" / "placement" / "official_placement_v3.json"
 
 IEEE123_ZONE_BUS_MAP: dict[int, list[str]] = {
     1: [
@@ -170,19 +211,39 @@ def build_ieee123_net(
     convert_switches: bool = True,
     slack_zones: set[int] | None = None,
     source_mode: str = "publish",
+    islanded_override_slack_to_g1: bool = False,
+    g1_bus_name: str = "114",
+    mpc_path: Path | None = None,
+    asset_mapping_path: Path | None = None,
 ) -> pp.pandapowerNet:
-    """Build the IEEE123 pandapower network from feeder123 data."""
-    if mode.lower() != "feeder123":
-        raise ValueError(f"Unsupported mode: {mode}. Use 'feeder123'.")
+    """Build the IEEE123 pandapower network from feeder123 or MATPOWER source."""
+    normalized_mode = str(mode).strip().lower()
+    if normalized_mode not in {"feeder123", "matpower"}:
+        raise ValueError(f"Unsupported mode: {mode}. Use 'feeder123' or 'matpower'.")
     if source_mode not in {"publish", "research"}:
         raise ValueError("source_mode must be 'publish' or 'research'.")
-    net = _build_feeder123_net(slack_zones=slack_zones, source_mode=source_mode)
+
+    if normalized_mode == "feeder123":
+        net = _build_feeder123_net(slack_zones=slack_zones, source_mode=source_mode)
+    else:
+        net = _build_matpower_net(
+            mpc_path=mpc_path or MATPOWER_PATH,
+            source_mode=source_mode,
+            asset_mapping_path=asset_mapping_path or ASSET_MAPPING_PATH,
+        )
 
     if balanced:
         convert_to_balanced(net)
 
     if convert_switches:
         convert_near_zero_branches_to_switches(net)
+
+    _apply_slack_policy(
+        net,
+        source_mode=source_mode,
+        islanded_override_slack_to_g1=islanded_override_slack_to_g1,
+        g1_bus_name=g1_bus_name,
+    )
 
     return net
 
@@ -304,6 +365,380 @@ def validate_ieee123_net(net: pp.pandapowerNet) -> dict[str, int]:
 
 def _feeder123_dir() -> Path:
     return BASE_DIR / "data" / "feeder123"
+
+
+def _read_matpower_bus_numbers(mpc_path: Path) -> list[int]:
+    lines = mpc_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    start = None
+    for idx, line in enumerate(lines):
+        if line.strip().startswith("mpc.bus"):
+            start = idx
+            break
+    if start is None:
+        raise ValueError(f"mpc.bus section not found in {mpc_path}")
+
+    bus_numbers: list[int] = []
+    for line in lines[start + 1 :]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("%"):
+            continue
+        if stripped.startswith("];"):
+            break
+        if stripped.endswith(";"):
+            stripped = stripped[:-1]
+        parts = stripped.split()
+        if not parts:
+            continue
+        try:
+            bus_no = int(float(parts[0]))
+        except ValueError:
+            continue
+        bus_numbers.append(bus_no)
+
+    if not bus_numbers:
+        raise ValueError(f"No MATPOWER bus IDs parsed from {mpc_path}")
+    return bus_numbers
+
+
+def _read_matpower_matrix_rows(mpc_path: Path, matrix_name: str) -> list[list[float]]:
+    lines = mpc_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    start = None
+    marker = f"mpc.{matrix_name}"
+    for idx, line in enumerate(lines):
+        if line.strip().startswith(marker):
+            start = idx
+            break
+    if start is None:
+        return []
+
+    rows: list[list[float]] = []
+    for line in lines[start + 1 :]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("%"):
+            continue
+        if stripped.startswith("];"):
+            break
+        if stripped.endswith(";"):
+            stripped = stripped[:-1]
+        values: list[float] = []
+        ok = True
+        for token in stripped.split():
+            try:
+                values.append(float(token))
+            except ValueError:
+                ok = False
+                break
+        if ok and values:
+            rows.append(values)
+    return rows
+
+
+def _normalize_bus_label(value: object) -> str:
+    text = str(value).strip()
+    if not text:
+        return text
+    if text.endswith(".0"):
+        text = text[:-2]
+    return text
+
+
+def _build_bus_name_to_index(net: pp.pandapowerNet) -> dict[str, int]:
+    mapping: dict[str, int] = {}
+    for idx, row in net.bus.iterrows():
+        label = _normalize_bus_label(row.get("name", ""))
+        if label:
+            mapping[label] = int(idx)
+    return mapping
+
+
+def _components_from_placement(payload: object) -> list[dict[str, object]]:
+    if not isinstance(payload, dict):
+        return []
+
+    components: list[dict[str, object]] = []
+
+    gfm = payload.get("gfm", {})
+    if isinstance(gfm, dict) and "G1" in gfm:
+        g1 = gfm["G1"]
+        components.append(
+            {
+                "component": "g1",
+                "bus": g1.get("bus"),
+                "category": "bess",
+                "p_mw": g1.get("bess_mw"),
+                "e_mwh": g1.get("bess_mwh"),
+            }
+        )
+
+    wind = payload.get("wind", [])
+    if isinstance(wind, list):
+        for item in wind:
+            if not isinstance(item, dict):
+                continue
+            components.append(
+                {
+                    "component": item.get("id", "wind"),
+                    "bus": item.get("bus"),
+                    "category": "wind",
+                    "p_mw": item.get("mw"),
+                }
+            )
+
+    evcs = payload.get("evcs", [])
+    if isinstance(evcs, list):
+        for item in evcs:
+            if not isinstance(item, dict):
+                continue
+            bus = item.get("bus")
+            components.append(
+                {"component": f"{item.get('id', 'evcs')}_pv", "bus": bus, "category": "pv", "p_mw": item.get("pv_mw")}
+            )
+            components.append(
+                {
+                    "component": f"{item.get('id', 'evcs')}_bess",
+                    "bus": bus,
+                    "category": "bess",
+                    "p_mw": item.get("bess_mw"),
+                    "e_mwh": item.get("bess_mwh"),
+                }
+            )
+            components.append(
+                {
+                    "component": f"{item.get('id', 'evcs')}_v2g",
+                    "bus": bus,
+                    "category": "evcs",
+                    "p_mw": item.get("v2g_mw"),
+                }
+            )
+
+    dpv = payload.get("dpv", [])
+    if isinstance(dpv, list):
+        for item in dpv:
+            if not isinstance(item, dict):
+                continue
+            components.append(
+                {
+                    "component": item.get("id", "dpv"),
+                    "bus": item.get("bus"),
+                    "category": "pv",
+                    "p_mw": item.get("mw"),
+                }
+            )
+
+    return components
+
+
+def _apply_slack_policy(
+    net: pp.pandapowerNet,
+    *,
+    source_mode: str,
+    islanded_override_slack_to_g1: bool,
+    g1_bus_name: str,
+) -> None:
+    if source_mode == "research":
+        return
+
+    bus_map = _build_bus_name_to_index(net)
+    target_bus_name = _normalize_bus_label(g1_bus_name if islanded_override_slack_to_g1 else "114")
+    target_bus_idx = bus_map.get(target_bus_name)
+    if target_bus_idx is None:
+        raise ValueError(f"Slack target bus '{target_bus_name}' not found in network")
+
+    if net.ext_grid.empty:
+        pp.create_ext_grid(net, bus=target_bus_idx, vm_pu=1.0, name="slack")
+        return
+
+    ext = net.ext_grid.copy()
+    chosen = ext[ext["bus"].astype(int) == int(target_bus_idx)]
+    if chosen.empty:
+        first = ext.iloc[[0]].copy()
+        first.loc[:, "bus"] = int(target_bus_idx)
+        first.loc[:, "name"] = "slack"
+        net.ext_grid = first.reset_index(drop=True)
+        return
+
+    net.ext_grid = chosen.iloc[[0]].copy().reset_index(drop=True)
+
+
+def _inject_assets_from_mapping(net: pp.pandapowerNet, mapping_path: Path) -> None:
+    if not mapping_path.exists() or not mapping_path.is_file():
+        raise FileNotFoundError(f"Publish-grade mapping artifact missing: {mapping_path}")
+
+    payload = json.loads(mapping_path.read_text(encoding="utf-8"))
+    records = payload.get("components") if isinstance(payload, dict) else None
+    if not isinstance(records, list) or not records:
+        records = _components_from_placement(payload)
+    if not isinstance(records, list) or not records:
+        raise ValueError(f"Invalid or empty component mapping: {mapping_path}")
+
+    bus_map = _build_bus_name_to_index(net)
+
+    def _parse_power(text: object) -> tuple[float, float]:
+        if text is None:
+            return 0.0, 0.0
+        raw = str(text)
+        values = [float(token) for token in re.findall(r"[-+]?\d*\.?\d+", raw)]
+        if not values:
+            return 0.0, 0.0
+        lowered = raw.lower()
+        if "mw/" in lowered and len(values) >= 2:
+            return values[0], values[1]
+        if "mwh" in lowered:
+            return 0.0, values[0]
+        return values[0], 0.0
+
+    stats = {"pv": 0, "wind": 0, "evcs": 0, "bess": 0, "g1": 0}
+
+    for item in records:
+        if not isinstance(item, dict):
+            continue
+        bus_name = _normalize_bus_label(item.get("bus"))
+        if not bus_name:
+            continue
+        bus_idx = bus_map.get(bus_name)
+        if bus_idx is None:
+            raise ValueError(f"Mapped bus '{bus_name}' does not exist in MATPOWER network")
+
+        component_name = str(item.get("component", "")).strip()
+        component = component_name.lower()
+        category = str(item.get("category", "")).strip().lower()
+        capacity = item.get("capacity")
+        p_mw, e_mwh = _parse_power(capacity)
+        if p_mw <= 0.0:
+            p_mw = float(item.get("p_mw") or 0.0)
+        if e_mwh <= 0.0:
+            e_mwh = float(item.get("e_mwh") or 0.0)
+
+        if component == "g1":
+            pp.create_storage(
+                net,
+                bus=bus_idx,
+                p_mw=0.0,
+                max_e_mwh=max(e_mwh, max(p_mw, 0.1)),
+                soc_percent=50.0,
+                name=component_name,
+                max_p_mw=max(p_mw, 0.1),
+                min_p_mw=-max(p_mw, 0.1),
+            )
+            stats["bess"] += 1
+            stats["g1"] += 1
+            continue
+
+        if "evcs" in component or component.startswith("e"):
+            stats["evcs"] += 1
+            if "pv" in component:
+                pp.create_sgen(net, bus=bus_idx, p_mw=max(p_mw, 0.1), q_mvar=0.0, name=component_name, type="pv")
+                stats["pv"] += 1
+            elif "bess" in component:
+                pp.create_storage(
+                    net,
+                    bus=bus_idx,
+                    p_mw=0.0,
+                    max_e_mwh=max(e_mwh, max(p_mw, 0.1)),
+                    soc_percent=50.0,
+                    name=component_name,
+                    max_p_mw=max(p_mw, 0.1),
+                    min_p_mw=-max(p_mw, 0.1),
+                )
+                stats["bess"] += 1
+            elif "v2g" in component:
+                pp.create_load(net, bus=bus_idx, p_mw=max(p_mw, 0.05), q_mvar=0.0, name=component_name)
+            continue
+
+        if "wind" in component or category == "wind":
+            pp.create_sgen(net, bus=bus_idx, p_mw=max(p_mw, 0.1), q_mvar=0.0, name=component_name or "wind", type="wind")
+            stats["wind"] += 1
+            continue
+
+        if "pv" in component or category == "pv":
+            pp.create_sgen(net, bus=bus_idx, p_mw=max(p_mw, 0.1), q_mvar=0.0, name=component_name or "pv", type="pv")
+            stats["pv"] += 1
+            continue
+
+        if "bess" in component or category == "bess":
+            pp.create_storage(
+                net,
+                bus=bus_idx,
+                p_mw=0.0,
+                max_e_mwh=max(e_mwh, max(p_mw, 0.1)),
+                soc_percent=50.0,
+                name=component_name or "bess",
+                max_p_mw=max(p_mw, 0.1),
+                min_p_mw=-max(p_mw, 0.1),
+            )
+            stats["bess"] += 1
+
+    if (
+        stats["pv"] <= 0
+        or stats["wind"] <= 0
+        or stats["bess"] <= 0
+        or stats["evcs"] <= 0
+        or stats["g1"] != 1
+    ):
+        raise ValueError(f"Incomplete renewable injection from mapping: {stats}")
+
+
+def _build_matpower_net(
+    mpc_path: Path,
+    source_mode: str = "publish",
+    asset_mapping_path: Path | None = None,
+) -> pp.pandapowerNet:
+    if not mpc_path.exists() or not mpc_path.is_file():
+        raise FileNotFoundError(f"MATPOWER file not found: {mpc_path}")
+
+    bus_numbers = _read_matpower_bus_numbers(mpc_path)
+    bus_set = set(bus_numbers)
+
+    net = pp.create_empty_network(sn_mva=1.0)
+    bus_index: dict[int, int] = {}
+    for bus_no in bus_numbers:
+        bus_index[int(bus_no)] = pp.create_bus(net, vn_kv=4.16, name=str(bus_no))
+
+    if 114 in bus_index:
+        pp.create_ext_grid(net, bus=bus_index[114], vm_pu=1.0, name="source_114")
+
+    line_rows = _read_matpower_matrix_rows(mpc_path, "branch")
+    for row in line_rows:
+        if len(row) < 11:
+            continue
+        fbus = int(float(row[0]))
+        tbus = int(float(row[1]))
+        if fbus not in bus_index or tbus not in bus_index:
+            continue
+        r = float(row[2])
+        x = float(row[3])
+        b = float(row[4])
+        status = int(float(row[10]))
+        pp.create_line_from_parameters(
+            net,
+            from_bus=bus_index[fbus],
+            to_bus=bus_index[tbus],
+            length_km=1.0,
+            r_ohm_per_km=max(r, 1e-8),
+            x_ohm_per_km=max(x, 1e-8),
+            c_nf_per_km=max(abs(b) * 1e3, 0.0),
+            max_i_ka=1.0,
+            in_service=bool(status),
+            name=f"line_{fbus}_{tbus}",
+        )
+
+    load_rows = _read_matpower_matrix_rows(mpc_path, "bus")
+    for row in load_rows:
+        if len(row) < 4:
+            continue
+        bus_no = int(float(row[0]))
+        if bus_no not in bus_index:
+            continue
+        pd_mw = float(row[2])
+        qd_mvar = float(row[3])
+        if abs(pd_mw) < 1e-9 and abs(qd_mvar) < 1e-9:
+            continue
+        pp.create_load(net, bus=bus_index[bus_no], p_mw=pd_mw, q_mvar=qd_mvar, name=f"load_{bus_no}")
+
+    if source_mode == "publish":
+        _inject_assets_from_mapping(net, asset_mapping_path or ASSET_MAPPING_PATH)
+
+    return net
 
 
 def _parse_dss_files(paths: Iterable[Path]) -> dict[str, object]:

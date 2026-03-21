@@ -356,6 +356,7 @@ def build_misocp_model(
     switch_initial: dict[int, int] | None = None,
     enforce_radiality: bool = True,
     radiality_slack: int = 0,
+    enforce_current_limits: bool = True,
 ) -> tuple[pyo.ConcreteModel, dict[int, pyo.Constraint]]:
     model = pyo.ConcreteModel("ieee123_reconfiguration")
 
@@ -678,14 +679,15 @@ def build_misocp_model(
     # No explicit radiality constraints here; connectivity flow constraints enforce a tree
     # when combined with a fixed number of energized edges (see earlier iterations).
 
-    def _current_limit_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
-        edge = edge_map[edge_id]
-        if edge.rating_mva <= 0:
-            return pyo.Constraint.Skip
-        limit_pu = edge.rating_mva / base_mva
-        return m.I2[edge_id] <= limit_pu**2
+    if enforce_current_limits:
+        def _current_limit_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
+            edge = edge_map[edge_id]
+            if edge.rating_mva <= 0:
+                return pyo.Constraint.Skip
+            limit_pu = edge.rating_mva / base_mva
+            return m.I2[edge_id] <= limit_pu**2
 
-    model.CurrentLimit = pyo.Constraint(model.EDGE, rule=_current_limit_rule)
+        model.CurrentLimit = pyo.Constraint(model.EDGE, rule=_current_limit_rule)
 
     def _min_current_rule(m: pyo.ConcreteModel, edge_id: int) -> pyo.Constraint:
         edge = edge_map[edge_id]
@@ -771,6 +773,7 @@ def run_reconfiguration_detailed(
     voltage_drop_slack_cap: float = 0.0,
     soc_reference_iterations: int = 4,
     voltage_reference_upper_band: float = 0.01,
+    enforce_current_limits: bool = True,
 ) -> ReconfigurationResult:
     weights = weights or ModelWeights()
 
@@ -905,6 +908,7 @@ def run_reconfiguration_detailed(
             switch_initial=switch_initial,
             enforce_radiality=enforce_radiality,
             radiality_slack=radiality_slack,
+            enforce_current_limits=enforce_current_limits,
         )
 
         solve_result = run_dlmp_calculation(

@@ -1,0 +1,11 @@
+# .gitignore additions
+data/precomputed*/
+data/precomputed_v3/
+node_modules/
+.claude/
+*.local.json
+__pycache__/
+*.pyc
+checkpoints/
+results/
+figures/

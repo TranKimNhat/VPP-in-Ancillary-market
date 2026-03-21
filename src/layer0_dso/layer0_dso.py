@@ -450,6 +450,7 @@ class Layer0CsvBundle:
     switches_csv: Path
     diagnostics_csv: Path
     valid_for_layer1: bool
+    solver_error: str | None = None
 
 
 def run_layer0_dso(
@@ -472,16 +473,23 @@ def run_layer0_dso(
     soc_slack_cap: float = 0.0,
     voltage_drop_slack_cap: float = 0.0,
     voltage_reference_upper_band: float = 0.01,
+    grid_mode: str = "matpower",
+    source_mode: str = "publish",
+    islanded_override_slack_to_g1: bool = False,
+    g1_bus_name: str = "114",
 ) -> Layer0Result:
     if net is None:
         net = build_ieee123_net(
-            mode="feeder123",
+            mode=grid_mode,
             balanced=True,
             convert_switches=True,
             slack_zones={1},
-            source_mode="publish",
+            source_mode=source_mode,
+            islanded_override_slack_to_g1=islanded_override_slack_to_g1,
+            g1_bus_name=g1_bus_name,
         )
-        _keep_hv_slack_only(net)
+        if not islanded_override_slack_to_g1:
+            _keep_hv_slack_only(net)
 
     validate_ieee123_net(net)
 
@@ -894,6 +902,7 @@ def run_layer0_dso_hourly(
     soc_slack_cap: float = 0.0,
     voltage_drop_slack_cap: float = 0.0,
     voltage_reference_upper_band: float = 0.01,
+    enforce_current_limits: bool = True,
 ) -> list[Layer0HourlyResult]:
     if pricing_method not in PRICING_METHODS:
         raise ValueError(f"pricing_method must be one of {sorted(PRICING_METHODS)}")
@@ -940,6 +949,7 @@ def run_layer0_dso_hourly(
             soc_slack_cap=soc_slack_cap,
             voltage_drop_slack_cap=voltage_drop_slack_cap,
             voltage_reference_upper_band=voltage_reference_upper_band,
+            enforce_current_limits=enforce_current_limits,
         )
         validation = validate_socp_against_ac(
             hour_net,
@@ -981,6 +991,7 @@ def run_layer0_dso_hourly(
 def run_layer0_pipeline(
     output_dir: Path,
     pricing_method: str = "load_weighted",
+    mapping_config: dict[str, object] | None = None,
     ac_tolerance: float = 0.01,
     debug_reconfig: bool = False,
     force_switch_closed: bool = True,
@@ -993,17 +1004,25 @@ def run_layer0_pipeline(
     voltage_drop_slack_cap: float = 0.0,
     voltage_reference_upper_band: float = 0.01,
     diagnostics_only_on_fail: bool = True,
+    grid_mode: str = "matpower",
+    source_mode: str = "publish",
+    islanded_override_slack_to_g1: bool = False,
+    g1_bus_name: str = "114",
+    enforce_current_limits: bool = True,
 ) -> Layer0CsvBundle:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     net = build_ieee123_net(
-        mode="feeder123",
+        mode=grid_mode,
         balanced=True,
         convert_switches=True,
         slack_zones={1},
-        source_mode="publish",
+        source_mode=source_mode,
+        islanded_override_slack_to_g1=islanded_override_slack_to_g1,
+        g1_bus_name=g1_bus_name,
     )
-    _keep_hv_slack_only(net)
+    if not islanded_override_slack_to_g1:
+        _keep_hv_slack_only(net)
     validate_ieee123_net(net)
 
     wind_bus_names: list[str] = []
@@ -1025,34 +1044,41 @@ def run_layer0_pipeline(
     day_map = select_representative_days(total_p_mw)
 
     all_results: list[Layer0HourlyResult] = []
+    solver_error: str | None = None
     for label, day_index in day_map.items():
-        all_results.extend(
-            run_layer0_dso_hourly(
-                day_label=label,
-                day_index=day_index,
-                base_net=net,
-                load_profiles=load_profiles,
-                pv_profiles=pv_profiles,
-                wind_profiles=wind_profiles,
-                debug_reconfig=debug_reconfig,
-                force_switch_closed=force_switch_closed,
-                apply_voltage_bounds=apply_voltage_bounds,
-                drop_isolated_loads=drop_isolated_loads,
-                enforce_radiality=enforce_radiality,
-                radiality_slack=radiality_slack,
-                pricing_method=pricing_method,
-                ac_tolerance=ac_tolerance,
-                soc_relax=soc_relax,
-                soc_slack_cap=soc_slack_cap,
-                voltage_drop_slack_cap=voltage_drop_slack_cap,
-                voltage_reference_upper_band=voltage_reference_upper_band,
+        try:
+            all_results.extend(
+                run_layer0_dso_hourly(
+                    day_label=label,
+                    day_index=day_index,
+                    base_net=net,
+                    load_profiles=load_profiles,
+                    pv_profiles=pv_profiles,
+                    wind_profiles=wind_profiles,
+                    debug_reconfig=debug_reconfig,
+                    force_switch_closed=force_switch_closed,
+                    apply_voltage_bounds=apply_voltage_bounds,
+                    drop_isolated_loads=drop_isolated_loads,
+                    enforce_radiality=enforce_radiality,
+                    radiality_slack=radiality_slack,
+                    pricing_method=pricing_method,
+                    ac_tolerance=ac_tolerance,
+                    soc_relax=soc_relax,
+                    soc_slack_cap=soc_slack_cap,
+                    voltage_drop_slack_cap=voltage_drop_slack_cap,
+                    voltage_reference_upper_band=voltage_reference_upper_band,
+                    enforce_current_limits=enforce_current_limits,
+                )
             )
-        )
+        except RuntimeError as exc:
+            solver_error = str(exc)
+            break
 
     soc_slack_limit = max(float(soc_slack_cap), 0.0) + 1e-6
     voltage_drop_slack_limit = max(float(voltage_drop_slack_cap), 0.0) + 1e-6
     valid_for_layer1 = bool(
-        all(
+        solver_error is None
+        and all(
             result.ac_valid
             and result.ac_converged
             and float(result.soc_slack_max) <= soc_slack_limit
@@ -1062,8 +1088,28 @@ def run_layer0_pipeline(
     )
     diagnostics_path = output_dir / "layer0_diagnostics.csv"
     if diagnostics_only_on_fail and not valid_for_layer1:
-        return export_layer0_csvs(output_dir, all_results, valid_for_layer1=False, diagnostics_csv=diagnostics_path)
-    return export_layer0_csvs(output_dir, all_results, valid_for_layer1=valid_for_layer1, diagnostics_csv=diagnostics_path)
+        return export_layer0_csvs(
+            output_dir,
+            all_results,
+            valid_for_layer1=False,
+            diagnostics_csv=diagnostics_path,
+            grid_mode=grid_mode,
+            source_mode=source_mode,
+            islanded_override_slack_to_g1=islanded_override_slack_to_g1,
+            g1_bus_name=g1_bus_name,
+            solver_error=solver_error,
+        )
+    return export_layer0_csvs(
+        output_dir,
+        all_results,
+        valid_for_layer1=valid_for_layer1,
+        diagnostics_csv=diagnostics_path,
+        grid_mode=grid_mode,
+        source_mode=source_mode,
+        islanded_override_slack_to_g1=islanded_override_slack_to_g1,
+        g1_bus_name=g1_bus_name,
+        solver_error=solver_error,
+    )
 
 
 def export_layer0_csvs(
@@ -1072,17 +1118,24 @@ def export_layer0_csvs(
     *,
     valid_for_layer1: bool,
     diagnostics_csv: Path,
+    grid_mode: str = "matpower",
+    source_mode: str = "publish",
+    islanded_override_slack_to_g1: bool = False,
+    g1_bus_name: str = "114",
+    solver_error: str | None = None,
 ) -> Layer0CsvBundle:
     zone_rows: list[dict[str, object]] = []
     alpha_rows: list[dict[str, object]] = []
     switch_rows: list[dict[str, object]] = []
     switch_map = switch_edge_map(
         build_ieee123_net(
-            mode="feeder123",
+            mode=grid_mode,
             balanced=True,
             convert_switches=True,
             slack_zones={1},
-            source_mode="publish",
+            source_mode=source_mode,
+            islanded_override_slack_to_g1=islanded_override_slack_to_g1,
+            g1_bus_name=g1_bus_name,
         )
     )
     for result in hourly_results:
@@ -1144,7 +1197,41 @@ def export_layer0_csvs(
             }
         )
 
-    pd.DataFrame(diagnostics_rows).to_csv(diagnostics_csv, index=False)
+    diagnostics_columns = [
+        "day",
+        "hour",
+        "socp_ac_gap_max",
+        "socp_ac_gap_p95",
+        "socp_ac_gap_p50",
+        "socp_ac_worst_bus",
+        "socp_ac_compared_bus_count",
+        "ac_converged",
+        "ac_valid",
+        "soc_slack_max",
+        "soc_slack_sum",
+        "voltage_drop_slack_max",
+        "voltage_drop_slack_sum",
+    ]
+    if solver_error is not None:
+        diagnostics_rows.append(
+            {
+                "day": "runtime_error",
+                "hour": -1,
+                "socp_ac_gap_max": float("nan"),
+                "socp_ac_gap_p95": float("nan"),
+                "socp_ac_gap_p50": float("nan"),
+                "socp_ac_worst_bus": "",
+                "socp_ac_compared_bus_count": 0,
+                "ac_converged": False,
+                "ac_valid": False,
+                "soc_slack_max": float("nan"),
+                "soc_slack_sum": float("nan"),
+                "voltage_drop_slack_max": float("nan"),
+                "voltage_drop_slack_sum": float("nan"),
+            }
+        )
+
+    pd.DataFrame(diagnostics_rows, columns=diagnostics_columns).to_csv(diagnostics_csv, index=False)
 
     if valid_for_layer1:
         pd.DataFrame(zone_rows).to_csv(zone_path, index=False)
@@ -1156,6 +1243,7 @@ def export_layer0_csvs(
                 "day",
                 "hour",
                 "zone",
+                "zone_id",
                 "energy_price",
                 "reserve_price",
                 "pricing_method",
@@ -1183,6 +1271,7 @@ def export_layer0_csvs(
         switches_csv=switch_path,
         diagnostics_csv=diagnostics_csv,
         valid_for_layer1=valid_for_layer1,
+        solver_error=solver_error,
     )
 
 

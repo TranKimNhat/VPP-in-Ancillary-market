@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from experiments.offline_phase import OfflineContext, run_offline_phase
 from experiments.train_mappo import run_training
 from src.env.IEEE123bus import build_ieee123_net
 
@@ -16,7 +17,7 @@ def test_training_smoke(tmp_path: Path) -> None:
     bus_to_zone_csv = tmp_path / "bus_to_zone.csv"
     vpp_to_zone_csv = tmp_path / "vpp_to_zone.csv"
 
-    net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+    net = build_ieee123_net(mode="matpower", balanced=True, convert_switches=True, slack_zones=None, source_mode="publish")
     bus_ids = [int(b) for b in net.bus.index]
     pd.DataFrame({"bus": bus_ids, "zone_id": [1] * len(bus_ids)}).to_csv(bus_to_zone_csv, index=False)
     pd.DataFrame(columns=["vpp_id", "zone_id"]).to_csv(vpp_to_zone_csv, index=False)
@@ -94,7 +95,7 @@ def test_training_smoke_vpp_mode(tmp_path: Path) -> None:
     bus_to_vpp_csv = tmp_path / "bus_to_vpp.csv"
     layer1_vpp_csv = tmp_path / "layer1_vpp.csv"
 
-    net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+    net = build_ieee123_net(mode="matpower", balanced=True, convert_switches=True, slack_zones=None, source_mode="publish")
     bus_ids = [int(b) for b in net.bus.index]
     pd.DataFrame({"bus": bus_ids, "zone_id": [1 if i < len(bus_ids) // 2 else 2 for i, _ in enumerate(bus_ids)]}).to_csv(bus_to_zone_csv, index=False)
     pd.DataFrame({"vpp_id": ["vpp_a", "vpp_b", "vpp_c"], "zone_id": [1, 1, 2]}).to_csv(vpp_to_zone_csv, index=False)
@@ -201,6 +202,9 @@ def test_training_rejects_non_static_zoning(tmp_path: Path) -> None:
             [
                 "max_steps: 2",
                 "zoning_mode: dynamic",
+                "signals:",
+                "  layer1_pref_csv: data/oedisi-ieee123-main/profiles/layer1_vpp/layer1_pref.csv",
+                "  market_signal_csv: data/oedisi-ieee123-main/profiles/layer0_hourly/layer0_zone_prices.csv",
             ]
         ),
         encoding="utf-8",
@@ -211,3 +215,52 @@ def test_training_rejects_non_static_zoning(tmp_path: Path) -> None:
     except NotImplementedError:
         return
     raise AssertionError("Expected NotImplementedError when zoning_mode is not static")
+
+
+def test_offline_phase_train_fail_closed_on_missing_market_signal(tmp_path: Path) -> None:
+    train_cfg = tmp_path / "training_config.yaml"
+    env_cfg = tmp_path / "env_config.yaml"
+    layer1_csv = tmp_path / "layer1_pref.csv"
+    missing_market_csv = tmp_path / "missing_market.csv"
+
+    layer1_csv.write_text("hour,P_ref,R_commit\n0,0.5,0.1\n", encoding="utf-8")
+
+    train_cfg.write_text(
+        "\n".join(
+            [
+                "seed: 1",
+                "updates: 1",
+                "rollout_steps: 2",
+                "layer1:",
+                "  vpp_mode:",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    env_cfg.write_text(
+        "\n".join(
+            [
+                "max_steps: 2",
+                "zoning_mode: static",
+                "signals:",
+                f"  layer1_pref_csv: {layer1_csv.as_posix()}",
+                f"  market_signal_csv: {missing_market_csv.as_posix()}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        run_offline_phase(
+            OfflineContext(
+                training_config=train_cfg,
+                env_config=env_cfg,
+                stage="train",
+                dry_run=False,
+            )
+        )
+    except FileNotFoundError:
+        return
+
+    raise AssertionError("Expected fail-closed FileNotFoundError when market signal CSV is missing")

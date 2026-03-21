@@ -128,6 +128,7 @@ def _fix_mpc_file(mpc_path: str) -> str:
 class AgentSpec:
     agent_type: str
     vpp: str
+    zone: int
     mpc_bus: int
     element: str
     element_idx: int
@@ -186,6 +187,9 @@ class MicrogridEnv(gym.Env):
         self._placement = placement
         self._evcs_configs = placement.get("evcs", [])
         self._dpv_configs = placement.get("dpv", [])
+        self._n_evcs = len(self._evcs_configs)
+        self._n_dpv = len(self._dpv_configs)
+        self._n_agents = self._n_evcs * 3 + self._n_dpv
 
         self._agent_specs = []
         self._agent_bus_map = {}
@@ -193,15 +197,24 @@ class MicrogridEnv(gym.Env):
         self.sgen_wind_map: dict[int, float] = {}
 
         self._inject_assets(net, placement)
+        self._add_capacitor_banks(net)
         self._order_agents(placement)
         self.edge_index = self._build_edge_index(net)
         self.agent_bus_map = self._agent_bus_map
 
         self.observation_space = gym.spaces.Box(
-            low=-np.inf, high=np.inf, shape=(30, 22), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(self._n_agents, 22), dtype=np.float32
         )
         self.action_space = gym.spaces.Box(
-            low=-1.0, high=1.0, shape=(54,), dtype=np.float32
+            low=-1.0,
+            high=1.0,
+            shape=(
+                self._n_evcs * 2
+                + self._n_evcs * 2
+                + self._n_evcs * 1
+                + self._n_dpv * 2,
+            ),
+            dtype=np.float32,
         )
 
         self.base_net = deepcopy(net)
@@ -277,10 +290,21 @@ class MicrogridEnv(gym.Env):
                 math.acos(0.9)
             )
             q_max_v2g = 0.0
-            self._append_agent("EVCS_PV", ev["vpp"], ev["bus"], "sgen", pv_idx, ev["pv_mw"], q_max_pv)
+            zone = int(ev.get("zone", 1))
+            self._append_agent(
+                "EVCS_PV",
+                ev["vpp"],
+                zone,
+                ev["bus"],
+                "sgen",
+                pv_idx,
+                ev["pv_mw"],
+                q_max_pv,
+            )
             self._append_agent(
                 "EVCS_BESS",
                 ev["vpp"],
+                zone,
                 ev["bus"],
                 "storage",
                 bess_idx,
@@ -290,6 +314,7 @@ class MicrogridEnv(gym.Env):
             self._append_agent(
                 "EVCS_V2G",
                 ev["vpp"],
+                zone,
                 ev["bus"],
                 "load",
                 v2g_idx,
@@ -305,7 +330,17 @@ class MicrogridEnv(gym.Env):
             self.sgen_pv_map[pv_idx] = float(pv["mw"])
             inv_mva = float(pv.get("inverter_mva", pv.get("sn_mva", pv["mw"])))
             q_max = inv_mva * math.sin(math.acos(0.9))
-            self._append_agent("DPV", pv["vpp"], pv["bus"], "sgen", pv_idx, pv["mw"], q_max)
+            zone = int(pv.get("zone", 1))
+            self._append_agent(
+                "DPV",
+                pv["vpp"],
+                zone,
+                pv["bus"],
+                "sgen",
+                pv_idx,
+                pv["mw"],
+                q_max,
+            )
 
         for w in wind:
             bus = self.pp_idx(w["bus"])
@@ -338,6 +373,25 @@ class MicrogridEnv(gym.Env):
         if "G1" in gfm:
             g1_bus = self.pp_idx(gfm["G1"]["bus"])
             net.ext_grid.loc[:, "bus"] = g1_bus
+
+    def _add_capacitor_banks(self, net: pp.pandapowerNet) -> None:
+        def _bus_idx(mpc_bus: int) -> int:
+            matches = net.bus.index[net.bus.bus_id == mpc_bus]
+            if len(matches) == 0:
+                raise ValueError(f"Cap bank bus {mpc_bus} not found in net.bus")
+            return int(matches[0])
+
+        pp.create_shunt(net, bus=_bus_idx(83), q_mvar=-1.7, p_mw=0.0, name="CB1")
+        pp.create_shunt(net, bus=_bus_idx(88), q_mvar=-0.4, p_mw=0.0, name="CB2")
+        pp.create_shunt(net, bus=_bus_idx(90), q_mvar=-0.4, p_mw=0.0, name="CB3")
+        pp.create_shunt(net, bus=_bus_idx(92), q_mvar=-0.4, p_mw=0.0, name="CB4")
+
+        for mpc_bus, q_mvar, name in [
+            (18, -1.0, "CB-A"),
+            (47, -0.8, "CB-B"),
+            (76, -0.6, "CB-C"),
+        ]:
+            pp.create_shunt(net, bus=_bus_idx(mpc_bus), q_mvar=q_mvar, p_mw=0.0, name=name)
 
     def _build_zone_load_mappings(self) -> tuple[dict[int, list[int]], dict[int, float]]:
         zone_bus_indices: dict[int, set[int]] = {1: set(), 2: set(), 3: set(), 4: set()}
@@ -372,6 +426,7 @@ class MicrogridEnv(gym.Env):
         self,
         agent_type: str,
         vpp: str,
+        zone: int,
         mpc_bus: int,
         element: str,
         element_idx: int,
@@ -381,6 +436,7 @@ class MicrogridEnv(gym.Env):
         spec = AgentSpec(
             agent_type=agent_type,
             vpp=vpp,
+            zone=int(zone),
             mpc_bus=int(mpc_bus),
             element=element,
             element_idx=int(element_idx),
@@ -502,8 +558,9 @@ class MicrogridEnv(gym.Env):
 
     def step(self, action: np.ndarray):
         action = np.asarray(action, dtype=np.float32).reshape(-1)
-        if action.shape[0] != 54:
-            raise ValueError(f"Expected action shape (54,), got {action.shape}")
+        expected_dim = int(self.action_space.shape[0])
+        if action.shape[0] != expected_dim:
+            raise ValueError(f"Expected action shape ({expected_dim},), got {action.shape}")
 
         if self.current_day_data is not None and not self.current_day_data.empty:
             row_idx = min(self.step_count, len(self.current_day_data) - 1)
@@ -611,7 +668,9 @@ class MicrogridEnv(gym.Env):
         evcs_v2g: List[float] = []
         dpv: List[List[float]] = []
 
-        for spec in self._agent_specs[0:6]:
+        n_evcs = self._n_evcs
+
+        for spec in self._agent_specs[0:n_evcs]:
             p_curt_norm = float(action[idx])
             q_norm = float(action[idx + 1])
             idx += 2
@@ -620,7 +679,7 @@ class MicrogridEnv(gym.Env):
             q_set = float(np.clip(q_norm, -1.0, 1.0) * spec.q_max)
             evcs_pv.append([p_curt, q_set])
 
-        for spec in self._agent_specs[6:12]:
+        for spec in self._agent_specs[n_evcs : 2 * n_evcs]:
             p_norm = float(action[idx])
             q_norm = float(action[idx + 1])
             idx += 2
@@ -628,13 +687,13 @@ class MicrogridEnv(gym.Env):
             q_set = float(np.clip(q_norm, -1.0, 1.0) * spec.q_max)
             evcs_bess.append([p_set, q_set])
 
-        for spec in self._agent_specs[12:18]:
+        for spec in self._agent_specs[2 * n_evcs : 3 * n_evcs]:
             p_norm = float(action[idx])
             idx += 1
             p_set = float((p_norm + 1.0) / 2.0 * spec.p_rated)
             evcs_v2g.append(p_set)
 
-        for spec in self._agent_specs[18:]:
+        for spec in self._agent_specs[3 * n_evcs :]:
             p_curt_norm = float(action[idx])
             q_norm = float(action[idx + 1])
             idx += 2
@@ -651,30 +710,32 @@ class MicrogridEnv(gym.Env):
         }
 
     def _apply_actions(self, actions_dict: Dict[str, List[Any]]) -> None:
-        for idx, spec in enumerate(self._agent_specs[0:6]):
+        n_evcs = self._n_evcs
+
+        for idx, spec in enumerate(self._agent_specs[0:n_evcs]):
             p_curt, q_set = actions_dict["evcs_pv"][idx]
             p_set = max(spec.p_rated - float(p_curt), 0.0)
             self.net.sgen.at[spec.element_idx, "p_mw"] = p_set
             self.net.sgen.at[spec.element_idx, "q_mvar"] = float(q_set)
 
-        for idx, spec in enumerate(self._agent_specs[6:12]):
+        for idx, spec in enumerate(self._agent_specs[n_evcs : 2 * n_evcs]):
             p_set, q_set = actions_dict["evcs_bess"][idx]
             self.net.storage.at[spec.element_idx, "p_mw"] = float(p_set)
             if "q_mvar" in self.net.storage.columns:
                 self.net.storage.at[spec.element_idx, "q_mvar"] = float(q_set)
 
-        for idx, spec in enumerate(self._agent_specs[12:18]):
+        for idx, spec in enumerate(self._agent_specs[2 * n_evcs : 3 * n_evcs]):
             p_set = float(actions_dict["evcs_v2g"][idx])
             self.net.load.at[spec.element_idx, "p_mw"] = -p_set
 
-        for idx, spec in enumerate(self._agent_specs[18:]):
+        for idx, spec in enumerate(self._agent_specs[3 * n_evcs :]):
             p_curt, q_set = actions_dict["dpv"][idx]
             p_set = max(spec.p_rated - float(p_curt), 0.0)
             self.net.sgen.at[spec.element_idx, "p_mw"] = p_set
             self.net.sgen.at[spec.element_idx, "q_mvar"] = float(q_set)
 
     def _build_observation(self, converged: bool) -> np.ndarray:
-        obs = np.zeros((30, 22), dtype=np.float32)
+        obs = np.zeros((self._n_agents, 22), dtype=np.float32)
         if not converged:
             self._encode_types(obs)
             return obs
@@ -738,8 +799,14 @@ class MicrogridEnv(gym.Env):
             obs[i, 3] = float(row.get(f"p_ref_vpp{vpp_idx}", 0.0))
             obs[i, 4] = float(row.get(f"r_as_vpp{vpp_idx}", 0.0))
 
-        obs[:, 11] = float(row.get("lambda_p2p", 0.0))
-        obs[:, 12] = float(row.get("lambda_as_ffr", 0.0))
+            zone = int(getattr(spec, "zone", 1))
+            obs[i, 11] = float(
+                row.get(f"lambda_p2p_z{zone}", row.get("lambda_p2p", 0.0))
+            )
+            obs[i, 12] = float(
+                row.get(f"lambda_as_z{zone}", row.get("lambda_as_ffr", 0.0))
+            )
+
         hour = float(row.get("hour", 0.0))
         obs[:, 13] = float(math.sin(hour * math.pi / 12.0))
         obs[:, 14] = float(math.cos(hour * math.pi / 12.0))
@@ -762,34 +829,35 @@ class MicrogridEnv(gym.Env):
             evcs_p_ch_min.append(float(features[3] * model.bess_mw))
             evcs_oblig.append(False)
 
-        p_flex_up = np.zeros(30, dtype=np.float32)
-        p_flex_down = np.zeros(30, dtype=np.float32)
+        n_evcs = self._n_evcs
+        p_flex_up = np.zeros(self._n_agents, dtype=np.float32)
+        p_flex_down = np.zeros(self._n_agents, dtype=np.float32)
 
-        for i, spec in enumerate(self._agent_specs[0:6]):
+        for i, spec in enumerate(self._agent_specs[0:n_evcs]):
             p_set = float(self.net.sgen.at[spec.element_idx, "p_mw"])
             p_flex_up[i] = max(spec.p_rated - p_set, 0.0)
             p_flex_down[i] = max(p_set, 0.0)
 
-        for i, spec in enumerate(self._agent_specs[6:12]):
+        for i, spec in enumerate(self._agent_specs[n_evcs : 2 * n_evcs]):
             p_set = float(self.net.storage.at[spec.element_idx, "p_mw"])
-            p_flex_up[i + 6] = max(spec.p_rated - max(p_set, 0.0), 0.0)
-            p_flex_down[i + 6] = max(spec.p_rated + min(p_set, 0.0), 0.0)
+            p_flex_up[i + n_evcs] = max(spec.p_rated - max(p_set, 0.0), 0.0)
+            p_flex_down[i + n_evcs] = max(spec.p_rated + min(p_set, 0.0), 0.0)
 
-        for i, spec in enumerate(self._agent_specs[12:18]):
+        for i, spec in enumerate(self._agent_specs[2 * n_evcs : 3 * n_evcs]):
             p_set = -float(self.net.load.at[spec.element_idx, "p_mw"])
-            p_flex_up[i + 12] = max(spec.p_rated - p_set, 0.0)
-            p_flex_down[i + 12] = max(p_set, 0.0)
+            p_flex_up[i + 2 * n_evcs] = max(spec.p_rated - p_set, 0.0)
+            p_flex_down[i + 2 * n_evcs] = max(p_set, 0.0)
 
-        for i, spec in enumerate(self._agent_specs[18:]):
+        for i, spec in enumerate(self._agent_specs[3 * n_evcs :]):
             p_set = float(self.net.sgen.at[spec.element_idx, "p_mw"])
-            p_flex_up[i + 18] = max(spec.p_rated - p_set, 0.0)
-            p_flex_down[i + 18] = max(p_set, 0.0)
+            p_flex_up[i + 3 * n_evcs] = max(spec.p_rated - p_set, 0.0)
+            p_flex_down[i + 3 * n_evcs] = max(p_set, 0.0)
 
-        dpv_p_rated = [spec.p_rated for spec in self._agent_specs[18:]]
-        dpv_s_rated = [spec.q_max for spec in self._agent_specs[18:]]
+        dpv_p_rated = [spec.p_rated for spec in self._agent_specs[3 * n_evcs :]]
+        dpv_s_rated = [spec.q_max for spec in self._agent_specs[3 * n_evcs :]]
 
-        evcs_s_rated = [spec.q_max for spec in self._agent_specs[0:6]]
-        evcs_bess_s_rated = [spec.q_max for spec in self._agent_specs[6:12]]
+        evcs_s_rated = [spec.q_max for spec in self._agent_specs[0:n_evcs]]
+        evcs_bess_s_rated = [spec.q_max for spec in self._agent_specs[n_evcs : 2 * n_evcs]]
 
         return {
             "v_bus": v_bus,
@@ -845,27 +913,30 @@ class MicrogridEnv(gym.Env):
         def normalize_vpp(vpp: str) -> str:
             return vpp.replace("_", "")
 
-        evcs_s_rated = env_state.get("evcs_s_rated", [spec.q_max for spec in self._agent_specs[0:6]])
+        n_evcs = self._n_evcs
+        evcs_s_rated = env_state.get(
+            "evcs_s_rated", [spec.q_max for spec in self._agent_specs[0:n_evcs]]
+        )
         evcs_bess_s_rated = env_state.get(
-            "evcs_bess_s_rated", [spec.q_max for spec in self._agent_specs[6:12]]
+            "evcs_bess_s_rated", [spec.q_max for spec in self._agent_specs[n_evcs : 2 * n_evcs]]
         )
 
-        for idx, spec in enumerate(self._agent_specs[0:6]):
+        for idx, spec in enumerate(self._agent_specs[0:n_evcs]):
             p_curt, q = safe_actions["evcs_pv"][idx]
             p_set = spec.p_rated - float(p_curt)
             vpp_totals[normalize_vpp(spec.vpp)] += p_set
             q_total += abs(float(q))
 
-        for idx, spec in enumerate(self._agent_specs[6:12]):
+        for idx, spec in enumerate(self._agent_specs[n_evcs : 2 * n_evcs]):
             p_set, q = safe_actions["evcs_bess"][idx]
             vpp_totals[normalize_vpp(spec.vpp)] += float(p_set)
             q_total += abs(float(q))
 
-        for idx, spec in enumerate(self._agent_specs[12:18]):
+        for idx, spec in enumerate(self._agent_specs[2 * n_evcs : 3 * n_evcs]):
             p_set = safe_actions["evcs_v2g"][idx]
             vpp_totals[normalize_vpp(spec.vpp)] -= float(p_set)
 
-        for idx, spec in enumerate(self._agent_specs[18:]):
+        for idx, spec in enumerate(self._agent_specs[3 * n_evcs :]):
             p_curt, q = safe_actions["dpv"][idx]
             p_set = spec.p_rated - float(p_curt)
             vpp_totals[normalize_vpp(spec.vpp)] += p_set
@@ -889,7 +960,7 @@ class MicrogridEnv(gym.Env):
             r_freq *= 5.0
 
         r_as = 0.0
-        p_flex_up = env_state.get("p_flex_up", np.zeros(30))
+        p_flex_up = env_state.get("p_flex_up", np.zeros(self._n_agents))
         lambda_as = get_price("lambda_as_ffr", 0.0)
         for vpp_idx, vpp in enumerate(["VPP1", "VPP2", "VPP3"], start=1):
             r_as_req = get_price(f"r_as_vpp{vpp_idx}", 0.0)
@@ -902,10 +973,11 @@ class MicrogridEnv(gym.Env):
 
         r_deg = 0.0
         dT = 0.25
-        for idx, spec in enumerate(self._agent_specs[6:12]):
+        n_evcs = self._n_evcs
+        for idx, spec in enumerate(self._agent_specs[n_evcs : 2 * n_evcs]):
             p_set = float(safe_actions["evcs_bess"][idx][0])
             r_deg -= weights["deg"] * 0.02 * abs(p_set) * dT
-        for idx, spec in enumerate(self._agent_specs[12:18]):
+        for idx, spec in enumerate(self._agent_specs[2 * n_evcs : 3 * n_evcs]):
             p_set = float(safe_actions["evcs_v2g"][idx])
             r_deg -= weights["deg"] * 0.05 * p_set * dT
 

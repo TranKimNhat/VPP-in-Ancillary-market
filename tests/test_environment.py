@@ -11,7 +11,7 @@ from src.environment.grid_env import EnvConfig, GridEnvironment
 
 
 def test_environment_reset_and_step_smoke(tmp_path: Path) -> None:
-    net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+    net = build_ieee123_net(mode="matpower", balanced=True, convert_switches=True, slack_zones=None, source_mode="publish")
     buses = [int(b) for b in net.bus.index]
     bus_to_zone_csv = tmp_path / "bus_to_zone.csv"
     vpp_to_zone_csv = tmp_path / "vpp_to_zone.csv"
@@ -51,13 +51,13 @@ def test_environment_reset_and_step_smoke(tmp_path: Path) -> None:
 
 
 def test_environment_static_zoning_guardrail() -> None:
-    net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+    net = build_ieee123_net(mode="matpower", balanced=True, convert_switches=True, slack_zones=None, source_mode="publish")
     with pytest.raises(NotImplementedError):
         GridEnvironment(net=net, config=EnvConfig(zoning_mode="dynamic"))
 
 
 def test_environment_vpp_mode_with_unassigned_buses(tmp_path: Path) -> None:
-    net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+    net = build_ieee123_net(mode="matpower", balanced=True, convert_switches=True, slack_zones=None, source_mode="publish")
 
     all_buses = [int(b) for b in net.bus.index]
     assert len(all_buses) >= 6

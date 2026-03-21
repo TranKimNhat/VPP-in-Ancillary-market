@@ -29,6 +29,7 @@ class VppFormationArtifacts:
     bus_to_vpp_csv: Path
     vpp_to_zone_csv: Path
     vpp_summary_csv: Path
+    bus_to_zone_csv: Path | None = None
 
 
 def _controllable_type(raw_type: object) -> str:
@@ -74,14 +75,83 @@ def _bus_distance_lookup(net: pp.pandapowerNet) -> dict[int, dict[int, int]]:
     return out
 
 
-def _bus_zone_map(net: pp.pandapowerNet, mapping_config: dict[str, Any]) -> dict[int, int]:
+def _resolve_anchor_bus_indices(net: pp.pandapowerNet, zone_anchors: list[int | str]) -> list[int]:
+    name_to_index = {str(row.get("name", "")).strip(): int(bus_idx) for bus_idx, row in net.bus.iterrows()}
+    index_set = {int(bus) for bus in net.bus.index}
+
+    resolved: list[int] = []
+    unresolved: list[str] = []
+    for raw in zone_anchors:
+        token = str(raw).strip()
+        if token in name_to_index:
+            resolved.append(name_to_index[token])
+            continue
+        try:
+            maybe_index = int(token)
+        except ValueError:
+            unresolved.append(token)
+            continue
+        if maybe_index in index_set:
+            resolved.append(maybe_index)
+        else:
+            unresolved.append(token)
+
+    if unresolved:
+        raise ValueError(
+            "zone_anchors contains unknown bus identifiers: "
+            f"{unresolved}. Provide bus names (preferred) or valid bus indices."
+        )
+    return resolved
+
+
+def _zone_map_from_anchors(
+    net: pp.pandapowerNet,
+    zone_anchors: list[int | str],
+    bus_dist: dict[int, dict[int, int]],
+) -> dict[int, int]:
+    anchors = _resolve_anchor_bus_indices(net, zone_anchors)
+    if not anchors:
+        raise ValueError("zone_anchors must not be empty")
+
+    buses = {int(bus) for bus in net.bus.index}
+    anchor_zone_ids = {anchor: zone_id for zone_id, anchor in enumerate(anchors, start=1)}
+    out: dict[int, int] = {}
+    for bus in sorted(buses):
+        nearest_anchor = min(
+            anchors,
+            key=lambda anchor: bus_dist.get(bus, {}).get(anchor, 10**9),
+        )
+        out[bus] = int(anchor_zone_ids[nearest_anchor])
+    return out
+
+
+def _parse_zone_anchors(raw: Any) -> list[int]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        tokens = [token.strip() for token in raw.split(",") if token.strip()]
+        return [int(token) for token in tokens]
+    if isinstance(raw, (list, tuple)):
+        return [int(item) for item in raw]
+    raise ValueError("zone_anchors must be a comma-separated string or a list of bus ids")
+
+
+def _bus_zone_map(
+    net: pp.pandapowerNet,
+    mapping_config: dict[str, Any],
+    bus_dist: dict[int, dict[int, int]],
+) -> tuple[dict[int, int], str]:
+    zone_anchors = _parse_zone_anchors(mapping_config.get("zone_anchors") if mapping_config else None)
+    if zone_anchors:
+        return _zone_map_from_anchors(net, zone_anchors, bus_dist), "anchors"
+
     bus_to_zone_csv = mapping_config.get("bus_to_zone_csv") if mapping_config else None
     if bus_to_zone_csv:
         df = pd.read_csv(bus_to_zone_csv)
         required = {"bus", "zone_id"}
         if not required.issubset(df.columns):
             raise ValueError(f"{bus_to_zone_csv} must contain columns {sorted(required)}")
-        return {int(row.bus): int(row.zone_id) for row in df.itertuples(index=False)}
+        return {int(row.bus): int(row.zone_id) for row in df.itertuples(index=False)}, "csv"
 
     bus_name_to_zone: dict[str, int] = {}
     for zone_id, names in IEEE123_ZONE_BUS_MAP.items():
@@ -91,7 +161,7 @@ def _bus_zone_map(net: pp.pandapowerNet, mapping_config: dict[str, Any]) -> dict
     out: dict[int, int] = {}
     for bus_idx, row in net.bus.iterrows():
         out[int(bus_idx)] = int(bus_name_to_zone.get(str(row.get("name", "")), 1))
-    return out
+    return out, "legacy"
 
 
 def _eligible_der_by_bus(
@@ -286,15 +356,27 @@ def run_vpp_formation(
     output_dir: Path,
     mapping_config: dict[str, Any],
     formation_config: VppFormationConfig | None = None,
+    grid_mode: str = "matpower",
+    source_mode: str = "publish",
+    islanded_override_slack_to_g1: bool = False,
+    g1_bus_name: str = "114",
 ) -> VppFormationArtifacts:
     cfg = formation_config or VppFormationConfig()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+    net = build_ieee123_net(
+        mode=grid_mode,
+        balanced=True,
+        convert_switches=True,
+        slack_zones=None,
+        source_mode=source_mode,
+        islanded_override_slack_to_g1=islanded_override_slack_to_g1,
+        g1_bus_name=g1_bus_name,
+    )
     validate_ieee123_net(net)
 
-    bus_to_zone = _bus_zone_map(net, mapping_config)
     bus_dist = _bus_distance_lookup(net)
+    bus_to_zone, _ = _bus_zone_map(net, mapping_config, bus_dist)
     eligible_df, eligible_stats = _eligible_der_by_bus(net, bus_to_zone, cfg)
     zone_clusters = _build_zone_clusters(eligible_df, bus_dist, cfg)
     bus_to_vpp_df, vpp_to_zone_df, vpp_summary_df = _assign_vpps(
@@ -313,10 +395,20 @@ def run_vpp_formation(
     vpp_to_zone_df.to_csv(vpp_to_zone_csv, index=False)
     vpp_summary_df.to_csv(vpp_summary_csv, index=False)
 
+    bus_to_zone_out: Path | None = None
+    write_bus_to_zone_csv = mapping_config.get("write_bus_to_zone_csv") if mapping_config else None
+    if write_bus_to_zone_csv:
+        bus_to_zone_out = Path(str(write_bus_to_zone_csv))
+        bus_to_zone_out.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(
+            [{"bus": int(bus), "zone_id": int(zone)} for bus, zone in sorted(bus_to_zone.items())]
+        ).to_csv(bus_to_zone_out, index=False)
+
     return VppFormationArtifacts(
         bus_to_vpp_csv=bus_to_vpp_csv,
         vpp_to_zone_csv=vpp_to_zone_csv,
         vpp_summary_csv=vpp_summary_csv,
+        bus_to_zone_csv=bus_to_zone_out,
     )
 
 
@@ -334,6 +426,18 @@ def _parse_args() -> argparse.Namespace:
         default="",
         help="Path to canonical bus_to_zone CSV.",
     )
+    parser.add_argument(
+        "--zone-anchors",
+        type=str,
+        default="",
+        help="Comma-separated bus anchor ids for topology-based zoning (e.g., 18,47,76,114).",
+    )
+    parser.add_argument(
+        "--write-bus-to-zone-csv",
+        type=str,
+        default="",
+        help="Optional output path for writing generated bus_to_zone.csv.",
+    )
     parser.add_argument("--p-min-der-kw", type=float, default=10.0)
     parser.add_argument("--p-min-vpp-kw", type=float, default=50.0)
     parser.add_argument("--n-min-buses", type=int, default=1)
@@ -345,8 +449,12 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     mapping_config: dict[str, Any] = {}
-    if args.bus_to_zone_csv:
+    if args.zone_anchors:
+        mapping_config["zone_anchors"] = args.zone_anchors
+    elif args.bus_to_zone_csv:
         mapping_config["bus_to_zone_csv"] = args.bus_to_zone_csv
+    if args.write_bus_to_zone_csv:
+        mapping_config["write_bus_to_zone_csv"] = args.write_bus_to_zone_csv
 
     artifacts = run_vpp_formation(
         output_dir=args.output_dir,
@@ -362,6 +470,8 @@ def main() -> None:
     print(f"bus_to_vpp: {artifacts.bus_to_vpp_csv}")
     print(f"vpp_to_zone: {artifacts.vpp_to_zone_csv}")
     print(f"vpp_summary: {artifacts.vpp_summary_csv}")
+    if artifacts.bus_to_zone_csv is not None:
+        print(f"bus_to_zone: {artifacts.bus_to_zone_csv}")
 
 
 if __name__ == "__main__":

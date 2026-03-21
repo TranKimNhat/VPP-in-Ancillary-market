@@ -94,11 +94,10 @@ class L0Optimizer:
         alpha = 0.15
         lmps: dict[int, float] = {}
         for z in [1, 2, 4]:
-            deficit = max(0.0, -zone_net[z])
             load_z = max(zone_load[z], 0.5)
-            ratio = deficit / load_z
-            lmps[z] = float(lambda_ref) * (1.0 + alpha * ratio)
-            lmps[z] = max(float(lambda_ref) * 0.85, min(lmps[z], float(lambda_ref) * 1.35))
+            signed_net = zone_net[z]
+            lmps[z] = float(lambda_ref) * (1.0 - alpha * signed_net / load_z)
+            lmps[z] = max(float(lambda_ref) * 0.70, min(lmps[z], float(lambda_ref) * 1.30))
 
         return lmps, zone_net
 

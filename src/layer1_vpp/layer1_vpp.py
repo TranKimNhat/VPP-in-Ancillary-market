@@ -177,7 +177,11 @@ def run_layer1(config: Layer1Config) -> Path:
     bus_count_by_vpp: dict[str, int] = {}
     if config.mapping_bus_to_vpp_csv is not None:
         bus_count_by_vpp = _read_bus_vpp_counts(config.mapping_bus_to_vpp_csv)
-    zone_prices = aggregate_zone_prices(prices_valid, preserve_zone=True)
+    zone_prices = (
+        prices_valid.groupby(["zone_id", "day", "hour"], as_index=False)[["energy_price", "reserve_price"]]
+        .mean()
+        .sort_values(["zone_id", "hour", "day"])
+    )
 
     long_rows: list[pd.DataFrame] = []
     legacy_parts: list[pd.DataFrame] = []

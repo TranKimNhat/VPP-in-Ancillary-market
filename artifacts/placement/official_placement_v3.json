@@ -1,0 +1,378 @@
+{
+  "version": "3.1",
+  "algorithm": "Multi-objective Discrete-Continuous PSO (co-optimization)",
+  "objectives": [
+    "active_power_loss",
+    "voltage_deviation_index",
+    "zone_lmp_divergence"
+  ],
+  "weights": {
+    "w_loss": 0.4,
+    "w_volt": 0.4,
+    "w_lmp": 0.2,
+    "ahp_method": "equal_weight_3obj",
+    "CR": 0.0
+  },
+  "pso_params": {
+    "n_particles": 60,
+    "n_iter": 250,
+    "chi": 0.7298,
+    "c1": 1.4962,
+    "c2": 1.4962,
+    "seeds": [
+      42,
+      123,
+      777
+    ],
+    "reference": "Clerc & Kennedy, IEEE TEC, 2002"
+  },
+  "sizing_bounds": {
+    "evcs_pv_mw": [
+      0.05,
+      0.2
+    ],
+    "evcs_bess_mw": {
+      "z1": [
+        0.2,
+        0.45
+      ],
+      "z2": [
+        0.15,
+        0.4
+      ],
+      "z4": [
+        0.1,
+        0.35
+      ]
+    },
+    "evcs_v2g_caps_mw": {
+      "z12": 0.15,
+      "z4": 0.1
+    },
+    "dpv_mw": [
+      0.15,
+      0.4
+    ],
+    "wind_mw": 3.0,
+    "reference_bounds": "EVCS BESS tiers per PD v3.0; DPV: IEC 61727; Wind: IEC 61400-1 class II"
+  },
+  "gfm": {
+    "G1": {
+      "bus": 114,
+      "bess_mw": 6.0,
+      "bess_mwh": 12.0,
+      "inverter_mva": 7.0,
+      "mode": "VSG",
+      "justification": "Slack bus anchor for islanded operation"
+    },
+    "G2": {
+      "bus": 60,
+      "pv_mw": 2.0,
+      "bess_mw": 3.0,
+      "bess_mwh": 6.0,
+      "inverter_mva": 4.0,
+      "mode": "Droop",
+      "justification": "Bus 60 = 2/3-rule mid-feeder (Acharya 2006)"
+    }
+  },
+  "wind": [
+    {
+      "id": "W1",
+      "bus": 97,
+      "mw": 3.0,
+      "justification": "Zone 3 wind corridor; turbine class IEC 61400-1 II"
+    },
+    {
+      "id": "W2",
+      "bus": 105,
+      "mw": 3.0,
+      "justification": "Zone 3 wind corridor; turbine class IEC 61400-1 II"
+    },
+    {
+      "id": "W3",
+      "bus": 98,
+      "mw": 3.0,
+      "justification": "Zone 3 wind corridor; turbine class IEC 61400-1 II"
+    },
+    {
+      "id": "W4",
+      "bus": 101,
+      "mw": 3.0,
+      "justification": "Zone 3 wind corridor; turbine class IEC 61400-1 II"
+    }
+  ],
+  "evcs": [
+    {
+      "id": "E1",
+      "bus": 34,
+      "zone": 1,
+      "vpp": "VPP_1",
+      "pv_mw": 0.2,
+      "bess_mw": 0.325,
+      "bess_mwh": 0.65,
+      "v2g_mw": 0.1,
+      "inverter_mva": 0.41
+    },
+    {
+      "id": "E2",
+      "bus": 1,
+      "zone": 1,
+      "vpp": "VPP_1",
+      "pv_mw": 0.05,
+      "bess_mw": 0.325,
+      "bess_mwh": 0.65,
+      "v2g_mw": 0.1,
+      "inverter_mva": 0.41
+    },
+    {
+      "id": "E3",
+      "bus": 2,
+      "zone": 1,
+      "vpp": "VPP_1",
+      "pv_mw": 0.05,
+      "bess_mw": 0.325,
+      "bess_mwh": 0.65,
+      "v2g_mw": 0.1,
+      "inverter_mva": 0.41
+    },
+    {
+      "id": "E4",
+      "bus": 49,
+      "zone": 2,
+      "vpp": "VPP_2",
+      "pv_mw": 0.2,
+      "bess_mw": 0.275,
+      "bess_mwh": 0.55,
+      "v2g_mw": 0.1,
+      "inverter_mva": 0.34
+    },
+    {
+      "id": "E5",
+      "bus": 50,
+      "zone": 2,
+      "vpp": "VPP_2",
+      "pv_mw": 0.2,
+      "bess_mw": 0.275,
+      "bess_mwh": 0.55,
+      "v2g_mw": 0.1,
+      "inverter_mva": 0.34
+    },
+    {
+      "id": "E6",
+      "bus": 48,
+      "zone": 2,
+      "vpp": "VPP_2",
+      "pv_mw": 0.2,
+      "bess_mw": 0.275,
+      "bess_mwh": 0.55,
+      "v2g_mw": 0.1,
+      "inverter_mva": 0.34
+    },
+    {
+      "id": "E7",
+      "bus": 52,
+      "zone": 4,
+      "vpp": "VPP_3",
+      "pv_mw": 0.2,
+      "bess_mw": 0.225,
+      "bess_mwh": 0.45,
+      "v2g_mw": 0.075,
+      "inverter_mva": 0.28
+    },
+    {
+      "id": "E8",
+      "bus": 53,
+      "zone": 4,
+      "vpp": "VPP_3",
+      "pv_mw": 0.158,
+      "bess_mw": 0.225,
+      "bess_mwh": 0.45,
+      "v2g_mw": 0.075,
+      "inverter_mva": 0.28
+    },
+    {
+      "id": "E9",
+      "bus": 66,
+      "zone": 4,
+      "vpp": "VPP_3",
+      "pv_mw": 0.2,
+      "bess_mw": 0.225,
+      "bess_mwh": 0.45,
+      "v2g_mw": 0.075,
+      "inverter_mva": 0.28
+    }
+  ],
+  "dpv": [
+    {
+      "id": "PV1",
+      "bus": 6,
+      "zone": 1,
+      "vpp": "VPP_1",
+      "mw": 0.275
+    },
+    {
+      "id": "PV2",
+      "bus": 17,
+      "zone": 1,
+      "vpp": "VPP_1",
+      "mw": 0.275
+    },
+    {
+      "id": "PV3",
+      "bus": 3,
+      "zone": 1,
+      "vpp": "VPP_1",
+      "mw": 0.275
+    },
+    {
+      "id": "PV4",
+      "bus": 4,
+      "zone": 1,
+      "vpp": "VPP_1",
+      "mw": 0.275
+    },
+    {
+      "id": "PV5",
+      "bus": 43,
+      "zone": 2,
+      "vpp": "VPP_2",
+      "mw": 0.275
+    },
+    {
+      "id": "PV6",
+      "bus": 27,
+      "zone": 2,
+      "vpp": "VPP_2",
+      "mw": 0.275
+    },
+    {
+      "id": "PV7",
+      "bus": 47,
+      "zone": 2,
+      "vpp": "VPP_2",
+      "mw": 0.275
+    },
+    {
+      "id": "PV8",
+      "bus": 30,
+      "zone": 2,
+      "vpp": "VPP_2",
+      "mw": 0.275
+    },
+    {
+      "id": "PV9",
+      "bus": 18,
+      "zone": 2,
+      "vpp": "VPP_2",
+      "mw": 0.275
+    },
+    {
+      "id": "PV10",
+      "bus": 45,
+      "zone": 2,
+      "vpp": "VPP_2",
+      "mw": 0.275
+    },
+    {
+      "id": "PV11",
+      "bus": 54,
+      "zone": 4,
+      "vpp": "VPP_3",
+      "mw": 0.275
+    },
+    {
+      "id": "PV12",
+      "bus": 96,
+      "zone": 4,
+      "vpp": "VPP_3",
+      "mw": 0.275
+    },
+    {
+      "id": "PV13",
+      "bus": 55,
+      "zone": 4,
+      "vpp": "VPP_3",
+      "mw": 0.275
+    },
+    {
+      "id": "PV14",
+      "bus": 56,
+      "zone": 4,
+      "vpp": "VPP_3",
+      "mw": 0.275
+    }
+  ],
+  "best_fitness": 0.25595728304044413,
+  "metrics": {
+    "F_composite": 0.25595728304044413,
+    "p_loss_mw": 0.05450291967915342,
+    "p_loss_reduction_pct": 51.990249025363156,
+    "vdi": 2.2579178418341233e-05,
+    "vdi_improvement_pct": 85.56184300394014,
+    "v_min": 0.993704499297946,
+    "v_max": 1.0,
+    "v_violations": 0,
+    "total_cap_mw": 31.608,
+    "zone_lmp": {
+      "1": 5.032827247865236,
+      "2": 5.227123521167597,
+      "4": 5.410340541173342
+    },
+    "zone_net_mw": {
+      "1": -0.4,
+      "2": -2.7674999999999996,
+      "3": 10.110000000000003,
+      "4": -4.999999303723529
+    },
+    "load_scale_mw": 15.705
+  },
+  "zone_lmp_model": {
+    "type": "net_injection_approximate",
+    "alpha": 0.3,
+    "lambda_ref": 5.0
+  },
+  "multi_seed_summary": {
+    "p_loss_reduction_pct": {
+      "mean": 49.284980355034456,
+      "std": 1.9601765176504837,
+      "min": 47.4083431224296,
+      "max": 51.990249025363156
+    },
+    "vdi_improvement_pct": {
+      "mean": 85.78822540457936,
+      "std": 0.1692139213425798,
+      "min": 85.56184300394014,
+      "max": 85.96859757895275
+    },
+    "v_min": {
+      "mean": 0.9937384434355269,
+      "std": 4.286310462390505e-05,
+      "min": 0.993704499297946,
+      "max": 0.9937989093573303
+    },
+    "total_cap_mw": {
+      "mean": 22.463182220833488,
+      "std": 0.020249756051330482,
+      "min": 22.43454474119258,
+      "max": 22.47750122503142
+    },
+    "v_violations": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": 0,
+      "max": 0
+    }
+  },
+  "counts": {
+    "evcs": 9,
+    "dpv": 14,
+    "wind": 4,
+    "gfm": 2
+  },
+  "n_agents": 41,
+  "action_flat_dim": 73,
+  "particle_genes": 68,
+  "fix_log": [
+    "GFM rescaled: G1 6.0MW/12MWh, G2 3.0MW/6MWh+2.0MW PV (baseMVA=1 artefact removed)"
+  ]
+}

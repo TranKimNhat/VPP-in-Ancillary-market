@@ -10,7 +10,7 @@ from src.layer1_vpp.layer1_vpp import Layer1Config, run_layer1
 
 
 def test_layer0_layer1_pipeline_io(tmp_path: Path) -> None:
-    net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+    net = build_ieee123_net(mode="matpower", balanced=True, convert_switches=True, slack_zones=None, source_mode="publish")
     bus_to_zone_csv = tmp_path / "bus_to_zone.csv"
     vpp_to_zone_csv = tmp_path / "vpp_to_zone.csv"
     pd.DataFrame({"bus": [int(b) for b in net.bus.index], "zone_id": [1] * len(net.bus.index)}).to_csv(bus_to_zone_csv, index=False)

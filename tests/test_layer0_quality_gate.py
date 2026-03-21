@@ -95,6 +95,8 @@ def test_publish_defaults_are_strict_and_radial() -> None:
 
     sig_pipeline = inspect.signature(run_layer0_pipeline)
     assert sig_pipeline.parameters["ac_tolerance"].default == pytest.approx(0.01)
+    assert sig_pipeline.parameters["grid_mode"].default == "matpower"
+    assert sig_pipeline.parameters["source_mode"].default == "publish"
 
 
 def test_export_fail_closed_outputs_diagnostics_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -126,6 +128,8 @@ def test_export_fail_closed_outputs_diagnostics_only(tmp_path: Path, monkeypatch
         hourly_results=[result],
         valid_for_layer1=False,
         diagnostics_csv=tmp_path / "layer0_diagnostics.csv",
+        grid_mode="matpower",
+        source_mode="publish",
     )
 
     assert not bundle.valid_for_layer1

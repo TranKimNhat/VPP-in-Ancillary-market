@@ -15,6 +15,12 @@ mappings:
   bus_to_vpp_csv:
   der_to_vpp_csv:
 
+grid_source:
+  mode: matpower
+  source_mode: publish
+  islanded_override_slack_to_g1: false
+  g1_bus_name: 114
+
 reward_weights:
   tracking: 1.0
   voltage: 10.0
