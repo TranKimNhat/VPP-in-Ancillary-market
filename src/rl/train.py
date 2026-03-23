@@ -206,11 +206,11 @@ def rollout_episode(
             r_p2p_old = float(info.get("reward_breakdown", {}).get("r_p2p", 0.0))
             reward = env_reward - r_p2p_old + r_p2p_zone
 
-            buffer.rewards[env_idx * obs.shape[1] : (env_idx + 1) * obs.shape[1]] = [
+            buffer.rewards[env_idx * N_AGENTS : (env_idx + 1) * N_AGENTS] = [
                 reward
-            ] * obs.shape[1]
+            ] * N_AGENTS
             done = bool(dones[env_idx])
-            buffer.dones[env_idx * obs.shape[1] : (env_idx + 1) * obs.shape[1]] = [done] * obs.shape[1]
+            buffer.dones[env_idx * N_AGENTS : (env_idx + 1) * N_AGENTS] = [done] * N_AGENTS
 
         obs = next_obs
 
