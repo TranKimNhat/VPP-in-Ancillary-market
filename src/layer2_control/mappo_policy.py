@@ -68,6 +68,13 @@ class RolloutBuffer:
     def clear(self) -> None:
         self.__init__()
 
+    def get_minibatches(self, minibatch_size: int) -> list[np.ndarray]:
+        n = len(self)
+        if n == 0:
+            return []
+        indices = np.random.permutation(n)
+        return [indices[start : start + minibatch_size] for start in range(0, n, minibatch_size)]
+
 
 class MappoPolicy(nn.Module):
     """Trainable MAPPO policy with shared GAT encoder and centralized critic."""
@@ -296,9 +303,7 @@ class MappoPolicy(nn.Module):
         printed_minibatch = False
 
         for _ in range(self.config.update_epochs):
-            indices = np.random.permutation(n)
-            for start in range(0, n, minibatch):
-                idx = indices[start : start + minibatch]
+            for idx in buffer.get_minibatches(minibatch):
                 idx_t = torch.tensor(idx, dtype=torch.long)
 
                 t0 = time.time()
