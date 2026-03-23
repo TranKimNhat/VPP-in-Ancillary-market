@@ -29,8 +29,7 @@ class MappoPolicyConfig:
 
 class RolloutBuffer:
     def __init__(self) -> None:
-        self.node_features: list[np.ndarray] = []
-        self.adjacency: list[np.ndarray] = []
+        self.embeddings: list[np.ndarray] = []
         self.agent_index: list[int] = []
         self.local_state: list[np.ndarray] = []
         self.global_state: list[np.ndarray] = []
@@ -43,8 +42,7 @@ class RolloutBuffer:
     def add(
         self,
         *,
-        node_features: np.ndarray,
-        adjacency: np.ndarray,
+        embeddings: np.ndarray,
         agent_index: int,
         local_state: np.ndarray,
         global_state: np.ndarray,
@@ -54,8 +52,7 @@ class RolloutBuffer:
         value: float,
         done: bool,
     ) -> None:
-        self.node_features.append(node_features.astype(np.float32))
-        self.adjacency.append(adjacency.astype(np.float32))
+        self.embeddings.append(embeddings.astype(np.float32))
         self.agent_index.append(int(agent_index))
         self.local_state.append(local_state.astype(np.float32))
         self.global_state.append(global_state.astype(np.float32))
@@ -102,6 +99,10 @@ class MappoPolicy(nn.Module):
         obs = GraphObservation(node_features=node_features, adjacency=adjacency)
         return self.encoder.encode(obs)
 
+    def encode(self, node_features: np.ndarray, adjacency: np.ndarray) -> torch.Tensor:
+        embeddings = self._encode(node_features, adjacency)
+        return torch.nan_to_num(embeddings, nan=0.0, posinf=1e6, neginf=-1e6)
+
     def act(self, obs: dict[str, Any]) -> tuple[np.ndarray, float, float]:
         node_features = np.asarray(obs["node_features"], dtype=np.float32)
         adjacency = np.asarray(obs["adjacency"], dtype=np.float32)
@@ -109,8 +110,16 @@ class MappoPolicy(nn.Module):
         global_state = np.asarray(obs["global_state"], dtype=np.float32)
         agent_index = int(obs["agent_index"])
 
-        embeddings = self._encode(node_features, adjacency)
-        embeddings = torch.nan_to_num(embeddings, nan=0.0, posinf=1e6, neginf=-1e6)
+        embeddings = self.encode(node_features, adjacency)
+        return self.act_with_embeddings(embeddings, local_state, global_state, agent_index)
+
+    def act_with_embeddings(
+        self,
+        embeddings: torch.Tensor,
+        local_state: np.ndarray,
+        global_state: np.ndarray,
+        agent_index: int,
+    ) -> tuple[np.ndarray, float, float]:
         graph_embedding = embeddings.mean(dim=0)
         node_embedding = embeddings[agent_index]
 
@@ -127,6 +136,33 @@ class MappoPolicy(nn.Module):
             clipped_action.squeeze(0).detach().cpu().numpy(),
             float(log_prob.item()),
             float(value.squeeze(0).item()),
+        )
+
+    def act_batch(
+        self,
+        embeddings: np.ndarray | torch.Tensor,
+        local_states: np.ndarray | torch.Tensor,
+        global_states: np.ndarray | torch.Tensor,
+        agent_indices: np.ndarray | torch.Tensor,
+    ) -> tuple[np.ndarray, torch.Tensor, torch.Tensor]:
+        device = next(self.parameters()).device
+        emb = torch.as_tensor(embeddings, dtype=torch.float32, device=device)
+        lst = torch.as_tensor(local_states, dtype=torch.float32, device=device)
+        gst = torch.as_tensor(global_states, dtype=torch.float32, device=device)
+
+        actor_out = self.actor_critic.actor(node_embedding=emb, local_state=lst)
+        mean = torch.nan_to_num(actor_out.mean, nan=0.0, posinf=1.0, neginf=-1.0)
+        std = torch.nan_to_num(actor_out.std, nan=1.0, posinf=10.0, neginf=1e-4).clamp_min(1e-4)
+        dist = torch.distributions.Normal(mean, std)
+        action = dist.sample()
+        log_prob = dist.log_prob(action).sum(dim=-1)
+
+        value = self.actor_critic.critic(graph_embedding=emb, global_state=gst).value
+        clipped_action = torch.clamp(action, self.config.action_low, self.config.action_high)
+        return (
+            clipped_action.detach().cpu().numpy(),
+            log_prob.detach().cpu(),
+            value.detach().cpu(),
         )
 
     @torch.no_grad()
@@ -177,8 +213,7 @@ class MappoPolicy(nn.Module):
         returns: np.ndarray,
     ) -> dict[str, torch.Tensor]:
         n = len(buffer)
-        node_features = torch.tensor(np.stack(buffer.node_features), dtype=torch.float32)
-        adjacency = torch.tensor(np.stack(buffer.adjacency), dtype=torch.float32)
+        embeddings = torch.tensor(np.stack(buffer.embeddings), dtype=torch.float32)
         agent_index = torch.tensor(np.array(buffer.agent_index), dtype=torch.long)
         local_state = torch.tensor(np.stack(buffer.local_state), dtype=torch.float32)
         global_state = torch.tensor(np.stack(buffer.global_state), dtype=torch.float32)
@@ -190,8 +225,7 @@ class MappoPolicy(nn.Module):
         advantages_t = (advantages_t - advantages_t.mean()) / (advantages_t.std() + 1e-8)
 
         return {
-            "node_features": node_features.view(n, *node_features.shape[1:]),
-            "adjacency": adjacency.view(n, *adjacency.shape[1:]),
+            "embeddings": embeddings,
             "agent_index": agent_index,
             "local_state": local_state,
             "global_state": global_state,
@@ -203,41 +237,43 @@ class MappoPolicy(nn.Module):
 
     def _evaluate_batch(
         self,
-        node_features: torch.Tensor,
-        adjacency: torch.Tensor,
+        embeddings: torch.Tensor,
         agent_index: torch.Tensor,
         local_state: torch.Tensor,
         global_state: torch.Tensor,
         actions: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        batch_size = node_features.shape[0]
-        all_log_probs: list[torch.Tensor] = []
-        all_entropy: list[torch.Tensor] = []
-        all_values: list[torch.Tensor] = []
+        *,
+        profile: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float, float]:
+        import time
 
-        for i in range(batch_size):
-            embeddings = self.encoder.encode(
-                GraphObservation(node_features=node_features[i], adjacency=adjacency[i])
-            )
-            embeddings = torch.nan_to_num(embeddings, nan=0.0, posinf=1e6, neginf=-1e6)
-            node_embedding = embeddings[agent_index[i]]
-            graph_embedding = embeddings.mean(dim=0)
+        embeddings = torch.nan_to_num(embeddings, nan=0.0, posinf=1e6, neginf=-1e6)
+        graph_embedding = embeddings
 
-            actor_out = self.actor_critic.actor(node_embedding=node_embedding, local_state=local_state[i])
-            mean = torch.nan_to_num(actor_out.mean, nan=0.0, posinf=1.0, neginf=-1.0)
-            std = torch.nan_to_num(actor_out.std, nan=1.0, posinf=10.0, neginf=1e-4).clamp_min(1e-4)
-            dist = torch.distributions.Normal(mean, std)
-            log_prob = dist.log_prob(actions[i].unsqueeze(0)).sum(dim=-1)
-            entropy = dist.entropy().sum(dim=-1)
-            value = self.actor_critic.critic(graph_embedding=graph_embedding, global_state=global_state[i]).value
+        t_eval = 0.0
+        t_val = 0.0
 
-            all_log_probs.append(log_prob.squeeze(0))
-            all_entropy.append(entropy.squeeze(0))
-            all_values.append(value.squeeze(0))
+        if profile:
+            t1 = time.time()
+        actor_out = self.actor_critic.actor(node_embedding=embeddings, local_state=local_state)
+        mean = torch.nan_to_num(actor_out.mean, nan=0.0, posinf=1.0, neginf=-1.0)
+        std = torch.nan_to_num(actor_out.std, nan=1.0, posinf=10.0, neginf=1e-4).clamp_min(1e-4)
+        dist = torch.distributions.Normal(mean, std)
+        log_prob = dist.log_prob(actions).sum(dim=-1)
+        entropy = dist.entropy().sum(dim=-1)
+        if profile:
+            t_eval = time.time() - t1
+            t2 = time.time()
 
-        return torch.stack(all_log_probs), torch.stack(all_entropy), torch.stack(all_values)
+        value = self.actor_critic.critic(graph_embedding=graph_embedding, global_state=global_state).value
+        if profile:
+            t_val = time.time() - t2
+
+        return log_prob, entropy, value, t_eval, t_val
 
     def update(self, buffer: RolloutBuffer, last_value: float = 0.0) -> dict[str, float]:
+        import time
+
         if len(buffer) == 0:
             return {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "total_loss": 0.0}
 
@@ -252,6 +288,12 @@ class MappoPolicy(nn.Module):
         entropy_total = 0.0
         total_loss_total = 0.0
         updates = 0
+        device = next(self.parameters()).device
+
+        total_iters = 0
+        t_compute = 0.0
+        update_start = time.time()
+        printed_minibatch = False
 
         for _ in range(self.config.update_epochs):
             indices = np.random.permutation(n)
@@ -259,19 +301,34 @@ class MappoPolicy(nn.Module):
                 idx = indices[start : start + minibatch]
                 idx_t = torch.tensor(idx, dtype=torch.long)
 
-                log_probs, entropy, values = self._evaluate_batch(
-                    node_features=batch["node_features"][idx_t],
-                    adjacency=batch["adjacency"][idx_t],
-                    agent_index=batch["agent_index"][idx_t],
-                    local_state=batch["local_state"][idx_t],
-                    global_state=batch["global_state"][idx_t],
-                    actions=batch["actions"][idx_t],
+                t0 = time.time()
+                embeddings = batch["embeddings"][idx_t].to(device)
+                agent_index = batch["agent_index"][idx_t].to(device)
+                local_state = batch["local_state"][idx_t].to(device)
+                global_state = batch["global_state"][idx_t].to(device)
+                actions = batch["actions"][idx_t].to(device)
+                old_log_probs = batch["old_log_probs"][idx_t].to(device)
+                adv = batch["advantages"][idx_t].to(device)
+                ret = batch["returns"][idx_t].to(device)
+                t_transfer = time.time() - t0
+
+                if not printed_minibatch:
+                    print(
+                        f"[MINIBATCH] yielding batch of size {len(idx)}, "
+                        f"embeddings.shape={tuple(embeddings.shape)}"
+                    )
+
+                profile = not printed_minibatch
+                log_probs, entropy, values, t_eval, t_val = self._evaluate_batch(
+                    embeddings=embeddings,
+                    agent_index=agent_index,
+                    local_state=local_state,
+                    global_state=global_state,
+                    actions=actions,
+                    profile=profile,
                 )
 
-                old_log_probs = batch["old_log_probs"][idx_t]
-                adv = batch["advantages"][idx_t]
-                ret = batch["returns"][idx_t]
-
+                t2 = time.time()
                 ratio = torch.exp(log_probs - old_log_probs)
                 surr1 = ratio * adv
                 surr2 = torch.clamp(ratio, 1.0 - self.config.clip_ratio, 1.0 + self.config.clip_ratio) * adv
@@ -285,7 +342,9 @@ class MappoPolicy(nn.Module):
                     + self.config.value_coef * value_loss
                     - self.config.entropy_coef * entropy_bonus
                 )
+                t_ppo = time.time() - t2
 
+                t3 = time.time()
                 self.optimizer.zero_grad()
                 total_loss.backward()
                 torch.nn.utils.clip_grad_norm_(
@@ -293,6 +352,18 @@ class MappoPolicy(nn.Module):
                     self.config.max_grad_norm,
                 )
                 self.optimizer.step()
+                t_back = time.time() - t3
+
+                t_compute += time.time() - t0
+                total_iters += 1
+
+                if profile:
+                    print(f"  [LOSS] data transfer: {t_transfer:.4f}s")
+                    print(f"  [LOSS] evaluate_actions: {t_eval:.4f}s")
+                    print(f"  [LOSS] get_values: {t_val:.4f}s")
+                    print(f"  [LOSS] ppo_loss: {t_ppo:.4f}s")
+                    print(f"  [LOSS] backward+step: {t_back:.4f}s")
+                    printed_minibatch = True
 
                 policy_loss_total += float(policy_loss.item())
                 value_loss_total += float(value_loss.item())
@@ -302,6 +373,11 @@ class MappoPolicy(nn.Module):
 
         if updates == 0:
             updates = 1
+
+        total_time = time.time() - update_start
+        print(f"[UPDATE] total_iters={total_iters}")
+        print(f"[UPDATE] t_compute={t_compute:.3f}s")
+        print(f"[UPDATE] t_overhead (total-compute)={total_time - t_compute:.3f}s")
 
         return {
             "policy_loss": policy_loss_total / updates,

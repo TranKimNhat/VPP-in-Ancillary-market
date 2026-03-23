@@ -16,7 +16,7 @@ class GraphObservation:
 
 @dataclass(frozen=True)
 class GATEncoderConfig:
-    in_dim: int = 6
+    in_dim: int = 22
     hidden_dim: int = 32
     output_dim: int = 64
     heads_l1: int = 4
@@ -45,23 +45,51 @@ class _DenseGATLayer(nn.Module):
         nn.init.zeros_(self.bias)
 
     def forward(self, x: torch.Tensor, adjacency: torch.Tensor) -> torch.Tensor:
-        n = x.shape[0]
-        h = self.proj(x).view(n, self.heads, self.out_dim)
+        if x.ndim == 2:
+            n = x.shape[0]
+            h = self.proj(x).view(n, self.heads, self.out_dim)
 
-        e_src = (h * self.attn_src.unsqueeze(0)).sum(dim=-1)
-        e_dst = (h * self.attn_dst.unsqueeze(0)).sum(dim=-1)
+            e_src = (h * self.attn_src.unsqueeze(0)).sum(dim=-1)
+            e_dst = (h * self.attn_dst.unsqueeze(0)).sum(dim=-1)
 
-        logits = e_src.unsqueeze(1) + e_dst.unsqueeze(0)
+            logits = e_src.unsqueeze(1) + e_dst.unsqueeze(0)
+            logits = F.leaky_relu(logits, negative_slope=0.2)
+
+            mask = adjacency > 0
+            very_neg = torch.full_like(logits, -1e9)
+            logits = torch.where(mask.unsqueeze(-1), logits, very_neg)
+
+            alpha = torch.softmax(logits, dim=1)
+            alpha = F.dropout(alpha, p=self.dropout, training=self.training)
+
+            out = torch.einsum("ijh,jhd->ihd", alpha, h).reshape(n, self.heads * self.out_dim)
+            out = out + self.bias
+            return out
+
+        if x.ndim != 3:
+            raise ValueError("node_features must be 2D or 3D tensors.")
+
+        batch_size, n, _ = x.shape
+        h = self.proj(x).view(batch_size, n, self.heads, self.out_dim)
+
+        attn_src = self.attn_src.view(1, 1, self.heads, self.out_dim)
+        attn_dst = self.attn_dst.view(1, 1, self.heads, self.out_dim)
+        e_src = (h * attn_src).sum(dim=-1)
+        e_dst = (h * attn_dst).sum(dim=-1)
+
+        logits = e_src.unsqueeze(2) + e_dst.unsqueeze(1)
         logits = F.leaky_relu(logits, negative_slope=0.2)
 
         mask = adjacency > 0
         very_neg = torch.full_like(logits, -1e9)
         logits = torch.where(mask.unsqueeze(-1), logits, very_neg)
 
-        alpha = torch.softmax(logits, dim=1)
+        alpha = torch.softmax(logits, dim=2)
         alpha = F.dropout(alpha, p=self.dropout, training=self.training)
 
-        out = torch.einsum("ijh,jhd->ihd", alpha, h).reshape(n, self.heads * self.out_dim)
+        out = torch.einsum("bijn,bjhd->bihd", alpha, h).reshape(
+            batch_size, n, self.heads * self.out_dim
+        )
         out = out + self.bias
         return out
 
@@ -96,14 +124,23 @@ class GATEncoder(nn.Module):
         x = self._to_tensor(obs.node_features)
         a = self._to_tensor(obs.adjacency)
 
-        if x.ndim != 2 or a.ndim != 2:
-            raise ValueError("node_features and adjacency must be 2D arrays/tensors.")
-        if a.shape[0] != a.shape[1] or a.shape[0] != x.shape[0]:
-            raise ValueError("adjacency must be square and aligned with node_features.")
+        if x.ndim == 2 and a.ndim == 2:
+            if a.shape[0] != a.shape[1] or a.shape[0] != x.shape[0]:
+                raise ValueError("adjacency must be square and aligned with node_features.")
+        elif x.ndim == 3 and a.ndim == 3:
+            if a.shape[0] != x.shape[0]:
+                raise ValueError("adjacency batch size must match node_features batch size.")
+            if a.shape[1] != a.shape[2] or a.shape[1] != x.shape[1]:
+                raise ValueError("adjacency must be square and aligned with node_features.")
+        else:
+            raise ValueError("node_features and adjacency must be both 2D or both 3D tensors.")
 
         if self.config.add_self_loops:
             a = a.clone()
-            eye = torch.eye(a.shape[0], device=a.device, dtype=a.dtype)
+            if a.ndim == 2:
+                eye = torch.eye(a.shape[0], device=a.device, dtype=a.dtype)
+            else:
+                eye = torch.eye(a.shape[1], device=a.device, dtype=a.dtype).unsqueeze(0)
             a = torch.maximum(a, eye)
 
         h1 = F.elu(self.gat1(x, a))
