@@ -16,7 +16,7 @@ import pandapower as pp
 from pandapower.converter.matpower import from_mpc
 
 from src.env.evcs_model import EVCSModel
-from src.env.freq_model import AnalyticalFrequencyModel
+from src.env.freq_model import AnalyticalFrequencyModel, compute_nadir
 from src.env.safety_layer import apply_safety_layer
 from src.env.IEEE123bus import (
     IEEE123_ZONE_BUS_MAP,
@@ -270,6 +270,7 @@ class MicrogridEnv(gym.Env):
         self._freq_model.reset()
         self._last_freq_state = None
         self.last_freq_event = 0.0
+        self._freq_override_prob: float | None = None
         self._last_safety_info = {
             "stage1_activations": 0,
             "stage2_activations": 0,
@@ -733,6 +734,13 @@ class MicrogridEnv(gym.Env):
         truncated = False
         return obs, float(reward), terminated, truncated, info
 
+    def set_freq_prob(self, prob: float | None) -> None:
+        """
+        None  = dùng freq_event_flag từ parquet (Phase A, B)
+        float = override với xác suất mới (Phase C: 0.15, Phase D: 0.073)
+        """
+        self._freq_override_prob = prob
+
     def _step_precomputed(self, action: np.ndarray):
         if __debug__ and self._data is not None and self._data_checksum is not None:
             assert self._data.iloc[0, 0] == self._data_checksum, (
@@ -749,7 +757,31 @@ class MicrogridEnv(gym.Env):
 
         row_idx = min(self._current_step, len(self._data) - 1)
         row = self._data.iloc[row_idx]
+
+        if self._freq_override_prob is not None:
+            if np.random.random() < self._freq_override_prob:
+                freq_flag = 1
+                delta_p = float(np.random.choice([-0.3, -0.5, -1.0, -1.5, +0.3, +0.5]))
+                freq = compute_nadir(delta_p)
+                f_nadir = float(freq["f_nadir"])
+                rocof = float(freq["rocof"])
+            else:
+                freq_flag = 0
+                delta_p, f_nadir, rocof = 0.0, 50.0, 0.0
+        else:
+            freq_flag = int(row["freq_event_flag"])
+            delta_p = float(row["delta_p_cont"])
+            f_nadir = float(row["f_nadir"])
+            rocof = float(row["rocof"])
+
+        row = row.copy(deep=True)
+        row["freq_event_flag"] = freq_flag
+        row["delta_p_cont"] = delta_p
+        row["f_nadir"] = f_nadir
+        row["rocof"] = rocof
         self.current_row = row
+        self.last_freq_event = float(delta_p)
+        self._last_freq_state = self._freq_model.step(delta_p if freq_flag else 0.0)
 
         actions_dict = self._decode_actions(action)
         safe_actions = self._clip_actions(actions_dict)
@@ -769,6 +801,8 @@ class MicrogridEnv(gym.Env):
 
         obs = self._build_observation(converged=False)
         obs = self._update_obs_from_parquet(row, obs)
+        obs[:, 22] = float(freq_flag)
+        obs[:, 23] = float(delta_p) / 15.705
 
         info = {
             "converged": True,
@@ -780,8 +814,11 @@ class MicrogridEnv(gym.Env):
             "reward_breakdown": breakdown,
             "P_p2p": p_p2p,
             "delta_f": float(self._freq_model.delta_f),
-            "rocof": 0.0,
-            "freq_violated": False,
+            "rocof": float(rocof),
+            "freq_violated": bool(freq_flag),
+            "freq_event_flag": int(freq_flag),
+            "f_nadir": float(f_nadir),
+            "delta_p_cont": float(delta_p),
             "last_freq_event": float(self.last_freq_event),
             **self._last_safety_info,
         }

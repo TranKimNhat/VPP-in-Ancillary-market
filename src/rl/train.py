@@ -22,18 +22,18 @@ ALPHA_P2P = 0.2
 class PhaseConfig:
     fixed_topology: bool
     freq_events: bool
+    freq_event_prob: float
     n_episodes: int
     learning_rate: float
 
 
 PHASES: Dict[str, PhaseConfig] = {
-    "A": PhaseConfig(fixed_topology=True, freq_events=False, n_episodes=2000, learning_rate=3e-4),
-    "B": PhaseConfig(fixed_topology=False, freq_events=False, n_episodes=3000, learning_rate=3e-4),
-    "C": PhaseConfig(fixed_topology=False, freq_events=True, n_episodes=10000, learning_rate=3e-4),
-    "D": PhaseConfig(fixed_topology=False, freq_events=True, n_episodes=15000, learning_rate=3e-4),
-    "E": PhaseConfig(fixed_topology=False, freq_events=True, n_episodes=20000, learning_rate=1e-4),
+    "A": PhaseConfig(fixed_topology=True, freq_events=False, freq_event_prob=0.0, n_episodes=500, learning_rate=3e-4),
+    "B": PhaseConfig(fixed_topology=False, freq_events=True, freq_event_prob=0.073, n_episodes=3000, learning_rate=3e-4),
+    "C": PhaseConfig(fixed_topology=False, freq_events=True, freq_event_prob=0.15, n_episodes=4000, learning_rate=3e-4),
+    "D": PhaseConfig(fixed_topology=False, freq_events=True, freq_event_prob=0.073, n_episodes=2500, learning_rate=1e-4),
 }
-PHASE_ORDER = ["A", "B", "C", "D", "E"]
+PHASE_ORDER = ["A", "B", "C", "D"]
 
 
 class EarlyStopping:
@@ -60,7 +60,7 @@ class EarlyStopping:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Day 12 MAPPO training loop")
     parser.add_argument("--phase", default="A", choices=[*PHASE_ORDER, "full"])
-    parser.add_argument("--n-episodes", type=int, default=10000)
+    parser.add_argument("--n-episodes", type=int, default=None)
     parser.add_argument("--n-envs", type=int, default=8)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--placement", type=str, required=True)
@@ -284,9 +284,25 @@ def main() -> None:
     early_stopper = EarlyStopping(patience=args.patience, min_delta=args.min_delta)
 
     for phase_idx, phase in enumerate(phases_to_run):
-        print(f"\n=== Starting Phase {phase} ===")
         phase_cfg = PHASES[phase]
-        n_episodes = args.n_episodes or phase_cfg.n_episodes
+
+        if not phase_cfg.freq_events:
+            freq_prob = None
+        elif phase_cfg.freq_event_prob == 0.073:
+            freq_prob = None
+        else:
+            freq_prob = phase_cfg.freq_event_prob
+
+        if hasattr(envs, "env_method"):
+            envs.env_method("set_freq_prob", freq_prob)
+
+        print(f"Phase {phase}: freq_prob={freq_prob or 'parquet default'}")
+
+        n_episodes = phase_cfg.n_episodes if args.n_episodes is None else args.n_episodes
+        print(
+            f"\n=== Starting Phase {phase} (episodes={n_episodes}, "
+            f"freq_events={phase_cfg.freq_events}, freq_event_prob={phase_cfg.freq_event_prob:.3f}) ==="
+        )
 
         phase_lr = args.lr if args.lr is not None else phase_cfg.learning_rate
         for param_group in policy.optimizer.param_groups:
