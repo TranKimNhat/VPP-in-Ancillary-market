@@ -60,7 +60,7 @@ class EarlyStopping:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Day 12 MAPPO training loop")
     parser.add_argument("--phase", default="A", choices=[*PHASE_ORDER, "full"])
-    parser.add_argument("--n-episodes", type=int, default=None)
+    parser.add_argument("--n-episodes", type=int, default=10000)
     parser.add_argument("--n-envs", type=int, default=8)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--placement", type=str, required=True)
