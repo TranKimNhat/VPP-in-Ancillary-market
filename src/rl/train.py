@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--minibatch", type=int, default=1024)
     parser.add_argument("--update-epochs", type=int, default=2)
     parser.add_argument("--lr", type=float, default=None)
-    parser.add_argument("--early-stop", action="store_true")
+    parser.add_argument("--early-stop", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--patience", type=int, default=500)
     parser.add_argument("--min-delta", type=float, default=0.5)
     parser.add_argument("--early-stop-warmup", type=int, default=1000)
