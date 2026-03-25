@@ -10,9 +10,9 @@ import torch.nn.functional as F
 
 @dataclass(frozen=True)
 class ActorCriticConfig:
-    local_state_dim: int = 6
+    local_state_dim: int = 24
     graph_emb_dim: int = 64
-    global_state_dim: int = 2
+    global_state_dim: int = 6
     action_dim: int = 2
     actor_hidden: tuple[int, int] = (128, 64)
     critic_hidden: tuple[int, int] = (256, 128)

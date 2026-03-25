@@ -4,7 +4,7 @@ import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Optional
 
 import numpy as np
 import torch
@@ -36,6 +36,44 @@ PHASES: Dict[str, PhaseConfig] = {
 }
 
 
+class EarlyStopping:
+    """
+    Stop training when mean reward stops improving.
+    Saves best checkpoint automatically.
+    """
+
+    def __init__(
+        self,
+        patience: int = 500,
+        min_delta: float = 0.5,
+        checkpoint_dir: Optional[Path] = None,
+    ) -> None:
+        self.patience = patience
+        self.min_delta = min_delta
+        self.best_reward = -np.inf
+        self.counter = 0
+        self.checkpoint_dir = checkpoint_dir
+        self.best_ep = 0
+
+    def step(self, mean_reward: float, episode: int, policy: MappoPolicy) -> bool:
+        if mean_reward > self.best_reward + self.min_delta:
+            self.best_reward = mean_reward
+            self.counter = 0
+            self.best_ep = episode
+            if self.checkpoint_dir is not None:
+                path = self.checkpoint_dir / f"best_ep{episode}.pt"
+                torch.save(policy.state_dict(), path)
+            return False
+        self.counter += 1
+        if self.counter >= self.patience:
+            print(
+                f"Early stop at ep={episode}, best={self.best_reward:.3f} at ep={self.best_ep}"
+            )
+            return True
+        return False
+
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Day 12 MAPPO training loop")
     parser.add_argument("--phase", default="A", choices=sorted(PHASES.keys()))
@@ -46,6 +84,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--precomputed-dir", type=str, required=True)
     parser.add_argument("--checkpoint-dir", type=str, required=True)
     parser.add_argument("--log-interval", type=int, default=100)
+    parser.add_argument("--minibatch", type=int, default=None)
+    parser.add_argument("--lr", type=float, default=None)
+    parser.add_argument("--early-stop", action="store_true")
+    parser.add_argument("--early-stop-patience", type=int, default=500)
+    parser.add_argument("--early-stop-min-delta", type=float, default=0.5)
+    parser.add_argument("--early-stop-warmup", type=int, default=1000)
+    parser.add_argument("--early-stop-window", type=int, default=100)
     return parser.parse_args()
 
 
@@ -233,7 +278,10 @@ def main() -> None:
 
     envs = make_vec_envs(n_envs=args.n_envs, env_kwargs=env_kwargs, seed=args.seeds[0], use_dummy=True)
 
-    policy_config = MappoPolicyConfig(learning_rate=phase_cfg.learning_rate)
+    policy_config = MappoPolicyConfig(
+        learning_rate=args.lr if args.lr is not None else phase_cfg.learning_rate,
+        minibatch_size=args.minibatch if args.minibatch is not None else MappoPolicyConfig.minibatch_size,
+    )
     policy = MappoPolicy(config=policy_config)
 
     buffer = RolloutBuffer()
@@ -245,6 +293,14 @@ def main() -> None:
 
 
     reward_log = []
+    early_stopper = None
+    if args.early_stop:
+        early_stopper = EarlyStopping(
+            patience=args.early_stop_patience,
+            min_delta=args.early_stop_min_delta,
+            checkpoint_dir=checkpoint_dir,
+        )
+
     for episode in range(n_episodes):
         buffer.clear()
         avg_reward = rollout_episode(envs, policy, buffer, vpp_of_agent, n_steps=96)
@@ -256,9 +312,15 @@ def main() -> None:
             mean_recent = float(np.mean(reward_log[-args.log_interval :]))
             print(
                 f"ep={episode:4d} reward={avg_reward:8.3f} mean({args.log_interval})={mean_recent:8.3f} "
-                f"loss={metrics['total_loss']:.3f}"
+                f"loss={metrics['loss']:.3f} entropy={metrics['entropy']:.3f}"
             )
             policy.save_checkpoint(checkpoint_path)
+
+        if early_stopper is not None and episode >= args.early_stop_warmup:
+            window = min(args.early_stop_window, len(reward_log))
+            mean_window = float(np.mean(reward_log[-window:]))
+            if early_stopper.step(mean_window, episode, policy):
+                break
 
     policy.save_checkpoint(checkpoint_path)
 

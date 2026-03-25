@@ -14,7 +14,8 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from src.env.evcs_model import EVSessionGenerator
 from src.env.microgrid_env import MicrogridEnv
-from src.opt.l0_reconfig import L0Optimizer, build_net_data_from_pandapower
+from src.env.freq_model import compute_nadir
+from src.opt.l0_reconfig import L0Optimizer, L0Result, build_net_data_from_pandapower
 from src.opt.l1_dispatch import L1Dispatcher
 
 
@@ -178,7 +179,7 @@ def _generate_day(
     seed: int,
     l0_optimizer: L0Optimizer | None = None,
     l1_dispatcher: L1Dispatcher | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, str]:
     rng = np.random.default_rng(seed + day_idx)
     steps = 96
     hours = np.arange(steps) * 0.25
@@ -241,6 +242,7 @@ def _generate_day(
     }
 
     l0_result = None
+    l0_status = "skipped"
     if l0_optimizer is not None:
         vpp_caps = _build_vpp_caps(placement_totals)
         l0_results: dict[int, L0Result] = {}
@@ -263,6 +265,7 @@ def _generate_day(
                 l0_results[step] = l0_result
             if l0_result is None:
                 continue
+            l0_status = "feasible" if l0_result.status in {"optimal", "optimal_inaccurate"} else "infeasible"
             lambda_p2p[step] = float(l0_result.lambda_p2p)
             lambda_as_ffr[step] = float(l0_result.lambda_as.get("ffr", lambda_as_ffr[step]))
             lambda_as_pfr[step] = float(l0_result.lambda_as.get("pfr", lambda_as_pfr[step]))
@@ -320,6 +323,7 @@ def _generate_day(
                     )
             if l0_input is None:
                 continue
+            l0_status = "feasible" if l0_input.status in {"optimal", "optimal_inaccurate"} else "infeasible"
             l1_result = l1_dispatcher.solve_step(
                 step,
                 {"pv_pu": float(pv_pu[step])},
@@ -335,9 +339,17 @@ def _generate_day(
                 q_commit_vpp[vpp_id - 1][step] = float(l1_result.q_commit.get(vpp_id, q_commit_vpp[vpp_id - 1][step]))
             lambda_p2p[step] = float(l1_result.lambda_p2p)
 
-    freq_event_flag = (rng.random(steps) < 0.83).astype(int)
-    delta_p_cont = _sample_trunc_normal(rng, 2.0, 3.0, 0.5, 5.0, steps)
+    freq_event_flag = (rng.random(steps) < 0.10).astype(int)
+    delta_p_choices = np.array([-1.5, -1.0, -0.5, -0.3, 0.3, 0.5], dtype=np.float32)
+    delta_p_cont = rng.choice(delta_p_choices, size=steps)
     delta_p_cont = delta_p_cont * freq_event_flag
+    f_nadir = np.full(steps, 50.0, dtype=np.float32)
+    rocof = np.zeros(steps, dtype=np.float32)
+    for step in range(steps):
+        if freq_event_flag[step]:
+            freq = compute_nadir(float(delta_p_cont[step]))
+            f_nadir[step] = float(freq["f_nadir"])
+            rocof[step] = float(freq["rocof"])
 
     df = pd.DataFrame(
         {
@@ -380,12 +392,14 @@ def _generate_day(
             "q_commit_vpp3": q_commit_vpp[2],
             "freq_event_flag": freq_event_flag,
             "delta_p_cont": delta_p_cont,
+            "f_nadir": f_nadir,
+            "rocof": rocof,
             "season": [season] * steps,
             "day_type": [day_type] * steps,
         }
     )
 
-    return df
+    return df, l0_status
 
 
 def generate_all_days(
@@ -409,19 +423,25 @@ def generate_all_days(
         l0_optimizer = L0Optimizer(build_net_data_from_pandapower(MicrogridEnv(placement_path, "data/grid_IEEE123_complete.m").base_net))
         l1_dispatcher = L1Dispatcher()
 
+    last_df: pd.DataFrame | None = None
     for day_idx in range(n_days):
-        df = _generate_day(day_idx, placement_totals, seed, l0_optimizer, l1_dispatcher)
+        df, l0_status = _generate_day(day_idx, placement_totals, seed, l0_optimizer, l1_dispatcher)
         df.to_parquet(output_path / f"day_{day_idx:03d}.parquet", index=False)
-
-        if (day_idx + 1) % 20 == 0:
+        last_df = df
+        if use_optimizers:
+            print(f"Generated {day_idx + 1}/{n_days} days | L0={l0_status}")
+        else:
             print(f"Generated {day_idx + 1}/{n_days} days")
 
     eval_days = [f"day_{day_idx:03d}.parquet" for day_idx in range(max(n_days - 20, 0), n_days)]
     (output_path / "eval_days.txt").write_text("\n".join(eval_days))
 
+    if last_df is None:
+        return
+
     schema = [
         {"name": col, "dtype": str(dtype)}
-        for col, dtype in zip(df.columns, df.dtypes, strict=False)
+        for col, dtype in zip(last_df.columns, last_df.dtypes, strict=False)
     ]
 
     metadata = {

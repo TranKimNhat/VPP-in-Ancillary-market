@@ -294,19 +294,14 @@ class MappoPolicy(nn.Module):
         value_loss_total = 0.0
         entropy_total = 0.0
         total_loss_total = 0.0
+        kl_total = 0.0
         updates = 0
         device = next(self.parameters()).device
-
-        total_iters = 0
-        t_compute = 0.0
-        update_start = time.time()
-        printed_minibatch = False
 
         for _ in range(self.config.update_epochs):
             for idx in buffer.get_minibatches(minibatch):
                 idx_t = torch.tensor(idx, dtype=torch.long)
 
-                t0 = time.time()
                 embeddings = batch["embeddings"][idx_t].to(device)
                 agent_index = batch["agent_index"][idx_t].to(device)
                 local_state = batch["local_state"][idx_t].to(device)
@@ -315,25 +310,18 @@ class MappoPolicy(nn.Module):
                 old_log_probs = batch["old_log_probs"][idx_t].to(device)
                 adv = batch["advantages"][idx_t].to(device)
                 ret = batch["returns"][idx_t].to(device)
-                t_transfer = time.time() - t0
 
-                if not printed_minibatch:
-                    print(
-                        f"[MINIBATCH] yielding batch of size {len(idx)}, "
-                        f"embeddings.shape={tuple(embeddings.shape)}"
-                    )
+                adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
-                profile = not printed_minibatch
-                log_probs, entropy, values, t_eval, t_val = self._evaluate_batch(
+                log_probs, entropy, values, _, _ = self._evaluate_batch(
                     embeddings=embeddings,
                     agent_index=agent_index,
                     local_state=local_state,
                     global_state=global_state,
                     actions=actions,
-                    profile=profile,
+                    profile=False,
                 )
 
-                t2 = time.time()
                 ratio = torch.exp(log_probs - old_log_probs)
                 surr1 = ratio * adv
                 surr2 = torch.clamp(ratio, 1.0 - self.config.clip_ratio, 1.0 + self.config.clip_ratio) * adv
@@ -341,15 +329,14 @@ class MappoPolicy(nn.Module):
 
                 value_loss = torch.mean((ret - values) ** 2)
                 entropy_bonus = entropy.mean()
+                kl = (old_log_probs - log_probs).mean()
 
                 total_loss = (
                     policy_loss
                     + self.config.value_coef * value_loss
                     - self.config.entropy_coef * entropy_bonus
                 )
-                t_ppo = time.time() - t2
 
-                t3 = time.time()
                 self.optimizer.zero_grad()
                 total_loss.backward()
                 torch.nn.utils.clip_grad_norm_(
@@ -357,38 +344,21 @@ class MappoPolicy(nn.Module):
                     self.config.max_grad_norm,
                 )
                 self.optimizer.step()
-                t_back = time.time() - t3
-
-                t_compute += time.time() - t0
-                total_iters += 1
-
-                if profile:
-                    print(f"  [LOSS] data transfer: {t_transfer:.4f}s")
-                    print(f"  [LOSS] evaluate_actions: {t_eval:.4f}s")
-                    print(f"  [LOSS] get_values: {t_val:.4f}s")
-                    print(f"  [LOSS] ppo_loss: {t_ppo:.4f}s")
-                    print(f"  [LOSS] backward+step: {t_back:.4f}s")
-                    printed_minibatch = True
 
                 policy_loss_total += float(policy_loss.item())
                 value_loss_total += float(value_loss.item())
                 entropy_total += float(entropy_bonus.item())
                 total_loss_total += float(total_loss.item())
+                kl_total += float(kl.item())
                 updates += 1
 
         if updates == 0:
             updates = 1
 
-        total_time = time.time() - update_start
-        print(f"[UPDATE] total_iters={total_iters}")
-        print(f"[UPDATE] t_compute={t_compute:.3f}s")
-        print(f"[UPDATE] t_overhead (total-compute)={total_time - t_compute:.3f}s")
-
         return {
-            "policy_loss": policy_loss_total / updates,
-            "value_loss": value_loss_total / updates,
+            "loss": total_loss_total / updates,
             "entropy": entropy_total / updates,
-            "total_loss": total_loss_total / updates,
+            "kl": kl_total / updates,
         }
 
     def save_checkpoint(self, path: str | Path) -> None:

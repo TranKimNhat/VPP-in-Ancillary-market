@@ -116,9 +116,6 @@ class L0Optimizer:
         der_by_bus = self.net_data.get("der_by_bus", {})
         zone_totals = self.net_data.get("zone_totals", {})
 
-        print(f"Buses: {len(buses)}")
-        print(f"Branches: {len(branches)}")
-        print(f"DERs: {len(der_by_bus)}")
 
         P_br = cp.Variable(n_br, name="P_branch")
         Q_br = cp.Variable(n_br, name="Q_branch")
@@ -284,7 +281,7 @@ class L0Optimizer:
         try:
             prob.solve(
                 solver=cp.MOSEK,
-                verbose=True,
+                verbose=False,
                 mosek_params={
                     "MSK_IPAR_INTPNT_MAX_ITERATIONS": 200,
                     "MSK_IPAR_INFEAS_REPORT_AUTO": 1,
@@ -294,7 +291,7 @@ class L0Optimizer:
         except Exception:
             prob.solve(
                 solver=cp.MOSEK,
-                verbose=True,
+                verbose=False,
                 mosek_params={
                     "MSK_IPAR_INFEAS_REPORT_AUTO": 1,
                     "MSK_IPAR_INFEAS_REPORT_LEVEL": 10,

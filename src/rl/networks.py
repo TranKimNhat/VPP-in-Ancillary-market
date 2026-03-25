@@ -64,7 +64,7 @@ class ActorOutput:
 
 
 class GATEncoder(nn.Module):
-    def __init__(self, in_dim: int = 22, hidden_dim: int = 32, out_dim: int = 64, heads: int = 4) -> None:
+    def __init__(self, in_dim: int = 24, hidden_dim: int = 32, out_dim: int = 64, heads: int = 4) -> None:
         super().__init__()
         self.gat1 = GATConv(in_dim, hidden_dim, heads=heads, concat=True, dropout=0.1)
         self.gat2 = GATConv(hidden_dim * heads, out_dim, heads=1, concat=True, dropout=0.1)
@@ -82,7 +82,7 @@ class GATEncoder(nn.Module):
 
 
 class TypeConditionedActor(nn.Module):
-    def __init__(self, obs_dim: int = 22, emb_dim: int = 64) -> None:
+    def __init__(self, obs_dim: int = 24, emb_dim: int = 64) -> None:
         super().__init__()
         self.emb_dim = emb_dim
         self.obs_dim = obs_dim

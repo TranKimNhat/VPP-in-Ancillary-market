@@ -16,7 +16,7 @@ class GraphObservation:
 
 @dataclass(frozen=True)
 class GATEncoderConfig:
-    in_dim: int = 22
+    in_dim: int = 24
     hidden_dim: int = 32
     output_dim: int = 64
     heads_l1: int = 4

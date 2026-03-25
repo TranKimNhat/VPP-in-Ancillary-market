@@ -160,6 +160,7 @@ class MicrogridEnv(gym.Env):
         placement_path = Path(placement_path)
         mpc_path = Path(mpc_path)
         self.precomputed_dir = Path(precomputed_dir) if precomputed_dir else None
+        self.use_precomputed = self.precomputed_dir is not None
 
         fixed_mpc = self.pre_fix_mpc(mpc_path)
         net = from_mpc(fixed_mpc)
@@ -203,7 +204,7 @@ class MicrogridEnv(gym.Env):
         self.agent_bus_map = self._agent_bus_map
 
         self.observation_space = gym.spaces.Box(
-            low=-np.inf, high=np.inf, shape=(self._n_agents, 22), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(self._n_agents, 24), dtype=np.float32
         )
         self.action_space = gym.spaces.Box(
             low=-1.0,
@@ -229,6 +230,11 @@ class MicrogridEnv(gym.Env):
         self.zone_load_indices: dict[int, list[int]] = {1: [], 2: [], 3: [], 4: []}
         self.zone_base_loads: dict[int, float] = {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}
 
+        self._all_days: list[pd.DataFrame] = []
+        self._n_days = 0
+        self._data: pd.DataFrame | None = None
+        self._current_step = 0
+
         if self.precomputed_dir and self.precomputed_dir.exists():
             self.parquet_files = sorted(self.precomputed_dir.glob("day_*.parquet"))
             eval_days_path = self.precomputed_dir / "eval_days.txt"
@@ -241,6 +247,10 @@ class MicrogridEnv(gym.Env):
                 self.eval_files = [
                     path for path in self.parquet_files if path.stem in set(eval_days)
                 ]
+
+            if self.use_precomputed:
+                self._all_days = [pd.read_parquet(path) for path in self.parquet_files]
+                self._n_days = len(self._all_days)
 
         self.zone_load_indices, self.zone_base_loads = self._build_zone_load_mappings()
 
@@ -494,18 +504,45 @@ class MicrogridEnv(gym.Env):
             mode = None
             if options:
                 mode = options.get("mode")
-            if mode == "eval" and self.eval_files:
-                day_file = self.rng.choice(self.eval_files)
-            elif self.eval_files:
-                eval_set = set(self.eval_files)
-                train_files = [path for path in self.parquet_files if path not in eval_set]
-                day_file = self.rng.choice(train_files) if train_files else self.rng.choice(self.parquet_files)
+
+            if self.use_precomputed and self._all_days:
+                if mode == "eval" and self.eval_files:
+                    eval_set = set(self.eval_files)
+                    eval_indices = [
+                        idx
+                        for idx, path in enumerate(self.parquet_files)
+                        if path in eval_set
+                    ]
+                    day_idx = int(self.rng.choice(eval_indices)) if eval_indices else int(self.rng.randrange(self._n_days))
+                elif self.eval_files:
+                    eval_set = set(self.eval_files)
+                    train_indices = [
+                        idx
+                        for idx, path in enumerate(self.parquet_files)
+                        if path not in eval_set
+                    ]
+                    day_idx = int(self.rng.choice(train_indices)) if train_indices else int(self.rng.randrange(self._n_days))
+                else:
+                    day_idx = int(self.rng.randrange(self._n_days))
+                self._data = self._all_days[day_idx]
+                self._current_step = 0
+                self._day_data = self._data
+                self.current_day_data = self._data
+                if not self._data.empty:
+                    self.current_row = self._data.iloc[0]
             else:
-                day_file = self.rng.choice(self.parquet_files)
-            self._day_data = pd.read_parquet(day_file)
-            self.current_day_data = self._day_data
-            if self.current_day_data is not None and not self.current_day_data.empty:
-                self.current_row = self.current_day_data.iloc[0]
+                if mode == "eval" and self.eval_files:
+                    day_file = self.rng.choice(self.eval_files)
+                elif self.eval_files:
+                    eval_set = set(self.eval_files)
+                    train_files = [path for path in self.parquet_files if path not in eval_set]
+                    day_file = self.rng.choice(train_files) if train_files else self.rng.choice(self.parquet_files)
+                else:
+                    day_file = self.rng.choice(self.parquet_files)
+                self._day_data = pd.read_parquet(day_file)
+                self.current_day_data = self._day_data
+                if self.current_day_data is not None and not self.current_day_data.empty:
+                    self.current_row = self.current_day_data.iloc[0]
 
         if not self.net.storage.empty:
             self.net.storage["soc_percent"] = 50.0
@@ -548,6 +585,7 @@ class MicrogridEnv(gym.Env):
                 "r_s_margin": 0.0,
                 "r_q_revenue": 0.0,
             },
+            "P_p2p": np.zeros(self._n_agents, dtype=np.float32),
             "delta_f": float(self._freq_model.delta_f),
             "rocof": 0.0,
             "freq_violated": False,
@@ -557,6 +595,11 @@ class MicrogridEnv(gym.Env):
         return obs, info
 
     def step(self, action: np.ndarray):
+        if self.use_precomputed:
+            return self._step_precomputed(action)
+        return self._step_live(action)
+
+    def _step_live(self, action: np.ndarray):
         action = np.asarray(action, dtype=np.float32).reshape(-1)
         expected_dim = int(self.action_space.shape[0])
         if action.shape[0] != expected_dim:
@@ -575,6 +618,17 @@ class MicrogridEnv(gym.Env):
         )
         self._last_safety_info = safety_info
         self._apply_actions(safe_actions)
+
+        p_p2p = np.zeros(self._n_agents, dtype=np.float32)
+        n_evcs = self._n_evcs
+        for idx, spec in enumerate(self._agent_specs[0:n_evcs]):
+            p_p2p[idx] = spec.p_rated - float(safe_actions["evcs_pv"][idx][0])
+        for idx, spec in enumerate(self._agent_specs[n_evcs : 2 * n_evcs]):
+            p_p2p[idx + n_evcs] = float(safe_actions["evcs_bess"][idx][0])
+        for idx, spec in enumerate(self._agent_specs[2 * n_evcs : 3 * n_evcs]):
+            p_p2p[idx + 2 * n_evcs] = -float(safe_actions["evcs_v2g"][idx])
+        for idx, spec in enumerate(self._agent_specs[3 * n_evcs :]):
+            p_p2p[idx + 3 * n_evcs] = spec.p_rated - float(safe_actions["dpv"][idx][0])
 
         converged = True
         try:
@@ -614,6 +668,7 @@ class MicrogridEnv(gym.Env):
                     "r_s_margin": 0.0,
                     "r_q_revenue": 0.0,
                 },
+                "P_p2p": p_p2p,
                 "delta_f": float(self._freq_model.delta_f),
                 "rocof": 0.0,
                 "freq_violated": False,
@@ -647,6 +702,7 @@ class MicrogridEnv(gym.Env):
                 "p_loss_mw": p_loss,
                 "step": self.step_count,
                 "reward_breakdown": breakdown,
+                "P_p2p": p_p2p,
                 "delta_f": float(self._freq_model.delta_f),
                 "rocof": float(self._last_freq_state.rocof) if self._last_freq_state else 0.0,
                 "freq_violated": bool(self._last_freq_state.freq_violated)
@@ -658,6 +714,60 @@ class MicrogridEnv(gym.Env):
 
         self.step_count += 1
         terminated = self.step_count >= 96
+        truncated = False
+        return obs, float(reward), terminated, truncated, info
+
+    def _step_precomputed(self, action: np.ndarray):
+        action = np.asarray(action, dtype=np.float32).reshape(-1)
+        expected_dim = int(self.action_space.shape[0])
+        if action.shape[0] != expected_dim:
+            raise ValueError(f"Expected action shape ({expected_dim},), got {action.shape}")
+
+        if self._data is None or self._data.empty:
+            raise RuntimeError("Precomputed data not loaded. Call reset() first.")
+
+        row_idx = min(self._current_step, len(self._data) - 1)
+        row = self._data.iloc[row_idx]
+        self.current_row = row
+
+        actions_dict = self._decode_actions(action)
+        safe_actions = self._clip_actions(actions_dict)
+
+        p_p2p = np.zeros(self._n_agents, dtype=np.float32)
+        n_evcs = self._n_evcs
+        for idx, spec in enumerate(self._agent_specs[0:n_evcs]):
+            p_p2p[idx] = spec.p_rated - float(safe_actions["evcs_pv"][idx][0])
+        for idx, spec in enumerate(self._agent_specs[n_evcs : 2 * n_evcs]):
+            p_p2p[idx + n_evcs] = float(safe_actions["evcs_bess"][idx][0])
+        for idx, spec in enumerate(self._agent_specs[2 * n_evcs : 3 * n_evcs]):
+            p_p2p[idx + 2 * n_evcs] = -float(safe_actions["evcs_v2g"][idx])
+        for idx, spec in enumerate(self._agent_specs[3 * n_evcs :]):
+            p_p2p[idx + 3 * n_evcs] = spec.p_rated - float(safe_actions["dpv"][idx][0])
+
+        reward, breakdown = self._compute_reward_from_row(safe_actions, row)
+
+        obs = self._build_observation(converged=False)
+        obs = self._update_obs_from_parquet(row, obs)
+
+        info = {
+            "converged": True,
+            "v_min": 0.0,
+            "v_max": 0.0,
+            "v_violations": 0,
+            "p_loss_mw": 0.0,
+            "step": self._current_step,
+            "reward_breakdown": breakdown,
+            "P_p2p": p_p2p,
+            "delta_f": float(self._freq_model.delta_f),
+            "rocof": 0.0,
+            "freq_violated": False,
+            "last_freq_event": float(self.last_freq_event),
+            **self._last_safety_info,
+        }
+
+        self._current_step += 1
+        self.step_count = self._current_step
+        terminated = self._current_step >= 96
         truncated = False
         return obs, float(reward), terminated, truncated, info
 
@@ -709,6 +819,94 @@ class MicrogridEnv(gym.Env):
             "dpv": dpv,
         }
 
+    def _clip_actions(self, actions_dict: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
+        safe_actions = {
+            "evcs_pv": [list(item) for item in actions_dict.get("evcs_pv", [])],
+            "evcs_bess": [list(item) for item in actions_dict.get("evcs_bess", [])],
+            "evcs_v2g": [float(item) for item in actions_dict.get("evcs_v2g", [])],
+            "dpv": [list(item) for item in actions_dict.get("dpv", [])],
+        }
+
+        evcs_cfgs = self._evcs_configs or []
+        n_evcs = len(evcs_cfgs)
+        dpv_p_rated = [spec.p_rated for spec in self._agent_specs[3 * n_evcs :]]
+        dpv_s_rated = [spec.q_max for spec in self._agent_specs[3 * n_evcs :]]
+
+        s_margin_pen = 0.0
+
+        for i, (p_curt, q) in enumerate(safe_actions["evcs_pv"]):
+            cfg = evcs_cfgs[i]
+            p_curt_new = float(np.clip(p_curt, 0.0, float(cfg["pv_mw"])))
+            s_rated = float(cfg.get("inverter_mva", cfg["pv_mw"]))
+            q_max = 0.436 * s_rated
+            q_new = float(np.clip(q, -q_max, q_max))
+            safe_actions["evcs_pv"][i] = [p_curt_new, q_new]
+
+        for i, (p, q) in enumerate(safe_actions["evcs_bess"]):
+            cfg = evcs_cfgs[i]
+            p_new = float(np.clip(p, -float(cfg["bess_mw"]), float(cfg["bess_mw"])))
+            s_rated = float(cfg.get("inverter_mva", cfg["bess_mw"]))
+            q_max = 0.436 * s_rated
+            q_new = float(np.clip(q, -q_max, q_max))
+            safe_actions["evcs_bess"][i] = [p_new, q_new]
+
+        for i, p in enumerate(safe_actions["evcs_v2g"]):
+            cfg = evcs_cfgs[i]
+            p_cap = min(float(cfg["v2g_mw"]), 0.75)
+            p_new = float(np.clip(p, 0.0, p_cap))
+            safe_actions["evcs_v2g"][i] = p_new
+
+        for i, (p_curt, q) in enumerate(safe_actions["dpv"]):
+            p_rated = float(dpv_p_rated[i])
+            p_curt_new = float(np.clip(p_curt, 0.0, p_rated))
+            s_rated = float(dpv_s_rated[i])
+            q_max = 0.436 * s_rated
+            q_new = float(np.clip(q, -q_max, q_max))
+            safe_actions["dpv"][i] = [p_curt_new, q_new]
+
+        for i, (p_curt, q) in enumerate(safe_actions["evcs_pv"]):
+            cfg = evcs_cfgs[i]
+            s_rated = float(cfg.get("inverter_mva", cfg["pv_mw"]))
+            p_set = float(cfg["pv_mw"]) - p_curt
+            s_sq = p_set * p_set + q * q
+            if s_sq > s_rated * s_rated:
+                q_allowed = float(np.sqrt(max(0.0, s_rated * s_rated - p_set * p_set)))
+                q_new = float(np.clip(q, -q_allowed, q_allowed))
+                s_margin_pen += max(0.0, (s_sq - s_rated * s_rated) / (s_rated * s_rated))
+                safe_actions["evcs_pv"][i][1] = q_new
+
+        for i, (p, q) in enumerate(safe_actions["evcs_bess"]):
+            cfg = evcs_cfgs[i]
+            s_rated = float(cfg.get("inverter_mva", cfg["bess_mw"]))
+            s_sq = p * p + q * q
+            if s_sq > s_rated * s_rated:
+                q_allowed = float(np.sqrt(max(0.0, s_rated * s_rated - p * p)))
+                q_new = float(np.clip(q, -q_allowed, q_allowed))
+                s_margin_pen += max(0.0, (s_sq - s_rated * s_rated) / (s_rated * s_rated))
+                safe_actions["evcs_bess"][i][1] = q_new
+
+        for i, (p_curt, q) in enumerate(safe_actions["dpv"]):
+            s_rated = float(dpv_s_rated[i])
+            p_set = float(dpv_p_rated[i]) - p_curt
+            s_sq = p_set * p_set + q * q
+            if s_sq > s_rated * s_rated:
+                q_allowed = float(np.sqrt(max(0.0, s_rated * s_rated - p_set * p_set)))
+                q_new = float(np.clip(q, -q_allowed, q_allowed))
+                s_margin_pen += max(0.0, (s_sq - s_rated * s_rated) / (s_rated * s_rated))
+                safe_actions["dpv"][i][1] = q_new
+
+        self._last_safety_info = {
+            "stage1_activations": 0,
+            "stage2_activations": 0,
+            "stage3_activations": 0,
+            "stage4_activations": 0,
+            "stage5_activations": 0,
+            "total_safety_activations": 0,
+            "s_margin_pen": float(s_margin_pen),
+        }
+
+        return safe_actions
+
     def _apply_actions(self, actions_dict: Dict[str, List[Any]]) -> None:
         n_evcs = self._n_evcs
 
@@ -735,7 +933,7 @@ class MicrogridEnv(gym.Env):
             self.net.sgen.at[spec.element_idx, "q_mvar"] = float(q_set)
 
     def _build_observation(self, converged: bool) -> np.ndarray:
-        obs = np.zeros((self._n_agents, 22), dtype=np.float32)
+        obs = np.zeros((self._n_agents, 24), dtype=np.float32)
         if not converged:
             self._encode_types(obs)
             return obs
@@ -810,6 +1008,8 @@ class MicrogridEnv(gym.Env):
         hour = float(row.get("hour", 0.0))
         obs[:, 13] = float(math.sin(hour * math.pi / 12.0))
         obs[:, 14] = float(math.cos(hour * math.pi / 12.0))
+        obs[:, 22] = float(row.get("freq_event_flag", 0.0))
+        obs[:, 23] = float(row.get("delta_p_cont", 0.0)) / 15.705
         return obs
 
     def _build_env_state(self, converged: bool) -> Dict[str, Any]:
@@ -954,10 +1154,18 @@ class MicrogridEnv(gym.Env):
             violations = np.maximum(0.0, np.abs(v.to_numpy() - 1.0) - 0.05)
             r_volt = -weights["volt"] * float(np.sum(violations**2))
 
-        delta_f = float(self._freq_model.delta_f)
-        r_freq = -weights["freq"] * delta_f * delta_f
-        if self._last_freq_state and self._last_freq_state.freq_violated:
-            r_freq *= 5.0
+        freq_event_flag = bool(day_row.get("freq_event_flag", 0))
+        if freq_event_flag:
+            delta_p_cont = float(day_row.get("delta_p_cont", 0.0))
+            bess_v2g_dispatch = 0.0
+            for idx in range(self._n_evcs):
+                bess_v2g_dispatch += float(safe_actions["evcs_bess"][idx][0])
+                bess_v2g_dispatch += float(safe_actions["evcs_v2g"][idx])
+            required = abs(delta_p_cont) * 0.8
+            shortfall = max(0.0, required - bess_v2g_dispatch)
+            r_freq = -15.0 * (shortfall / (required + 1e-6))
+        else:
+            r_freq = 0.0
 
         r_as = 0.0
         p_flex_up = env_state.get("p_flex_up", np.zeros(self._n_agents))
@@ -991,9 +1199,14 @@ class MicrogridEnv(gym.Env):
             if evcs_result.get("obligation_violated", False):
                 r_oblig -= weights["oblig"]
 
-        lambda_p2p = get_price("lambda_p2p", 0.0)
-        p2p_net = max(0.0, sum(vpp_totals.values()))
-        r_p2p = weights["p2p"] * lambda_p2p * p2p_net
+        vpp_zone_price = {
+            "VPP1": get_price("lambda_p2p_z1", get_price("lambda_p2p", 0.0)),
+            "VPP2": get_price("lambda_p2p_z2", get_price("lambda_p2p", 0.0)),
+            "VPP3": get_price("lambda_p2p_z4", get_price("lambda_p2p", 0.0)),
+        }
+        r_p2p = 0.0
+        for vpp, total in vpp_totals.items():
+            r_p2p += weights["p2p"] * vpp_zone_price[vpp] * max(0.0, total)
 
         r_s_margin = -weights["s_margin"] * s_margin_pen
 
@@ -1025,6 +1238,35 @@ class MicrogridEnv(gym.Env):
             "r_q_revenue": float(r_q_revenue),
         }
         return total, breakdown
+
+    def _compute_reward_from_row(
+        self,
+        safe_actions: Dict[str, List[Any]],
+        row: pd.Series,
+    ) -> Tuple[float, Dict[str, float]]:
+        day_row = row.to_dict()
+        dummy_env_state = {
+            "p_flex_up": np.zeros(self._n_agents),
+            "p_flex_down": np.zeros(self._n_agents),
+            "evcs_s_rated": [spec.q_max for spec in self._agent_specs[0 : self._n_evcs]],
+            "evcs_bess_s_rated": [spec.q_max for spec in self._agent_specs[self._n_evcs : 2 * self._n_evcs]],
+        }
+        safety_info = {"s_margin_pen": self._last_safety_info.get("s_margin_pen", 0.0)}
+
+        reward, breakdown = self._compute_reward(dummy_env_state, safe_actions, safety_info, day_row)
+        breakdown["r_volt"] = 0.0
+        reward = (
+            breakdown["r_track"]
+            + breakdown["r_freq"]
+            + breakdown["r_as"]
+            + breakdown["r_deg"]
+            + breakdown["r_oblig"]
+            + breakdown["r_p2p"]
+            + breakdown["r_s_margin"]
+            + breakdown["r_q_revenue"]
+        )
+        reward = float(np.clip(reward / 100.0, -10.0, 2.0))
+        return reward, breakdown
 
     def _encode_types(self, obs: np.ndarray) -> None:
         for i, spec in enumerate(self._agent_specs):
