@@ -4,15 +4,14 @@ import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict
 
 import numpy as np
-import torch
 
 from src.env.microgrid_env import MicrogridEnv
 from src.env.make_env import make_vec_envs
 from src.layer2_control.mappo_policy import MappoPolicy, MappoPolicyConfig, RolloutBuffer
-from src.rl.networks import AGENT_TYPES, V2G_AGENT_INDICES, build_edge_index
+from src.rl.networks import AGENT_TYPES
 
 N_AGENTS = 41
 ACTION_DIM_FLAT = 73
@@ -34,61 +33,46 @@ PHASES: Dict[str, PhaseConfig] = {
     "D": PhaseConfig(fixed_topology=False, freq_events=True, n_episodes=15000, learning_rate=3e-4),
     "E": PhaseConfig(fixed_topology=False, freq_events=True, n_episodes=20000, learning_rate=1e-4),
 }
+PHASE_ORDER = ["A", "B", "C", "D", "E"]
 
 
 class EarlyStopping:
-    """
-    Stop training when mean reward stops improving.
-    Saves best checkpoint automatically.
-    """
-
-    def __init__(
-        self,
-        patience: int = 500,
-        min_delta: float = 0.5,
-        checkpoint_dir: Optional[Path] = None,
-    ) -> None:
+    def __init__(self, patience: int = 500, min_delta: float = 0.5) -> None:
         self.patience = patience
         self.min_delta = min_delta
-        self.best_reward = -np.inf
+        self.best = -np.inf
         self.counter = 0
-        self.checkpoint_dir = checkpoint_dir
-        self.best_ep = 0
 
-    def step(self, mean_reward: float, episode: int, policy: MappoPolicy) -> bool:
-        if mean_reward > self.best_reward + self.min_delta:
-            self.best_reward = mean_reward
+    def reset(self) -> None:
+        self.best = -np.inf
+        self.counter = 0
+
+    def step(self, mean_reward: float) -> bool:
+        if mean_reward > self.best + self.min_delta:
+            self.best = mean_reward
             self.counter = 0
-            self.best_ep = episode
-            if self.checkpoint_dir is not None:
-                path = self.checkpoint_dir / f"best_ep{episode}.pt"
-                torch.save(policy.state_dict(), path)
             return False
         self.counter += 1
-        if self.counter >= self.patience:
-            print(
-                f"Early stop at ep={episode}, best={self.best_reward:.3f} at ep={self.best_ep}"
-            )
-            return True
-        return False
+        return self.counter >= self.patience
 
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Day 12 MAPPO training loop")
-    parser.add_argument("--phase", default="A", choices=sorted(PHASES.keys()))
+    parser.add_argument("--phase", default="A", choices=[*PHASE_ORDER, "full"])
     parser.add_argument("--n-episodes", type=int, default=None)
     parser.add_argument("--n-envs", type=int, default=8)
-    parser.add_argument("--seeds", type=int, nargs="*", default=[42])
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--placement", type=str, required=True)
     parser.add_argument("--precomputed-dir", type=str, required=True)
     parser.add_argument("--checkpoint-dir", type=str, required=True)
     parser.add_argument("--log-interval", type=int, default=100)
-    parser.add_argument("--minibatch", type=int, default=None)
+    parser.add_argument("--minibatch", type=int, default=1024)
+    parser.add_argument("--update-epochs", type=int, default=2)
     parser.add_argument("--lr", type=float, default=None)
     parser.add_argument("--early-stop", action="store_true")
-    parser.add_argument("--early-stop-patience", type=int, default=500)
-    parser.add_argument("--early-stop-min-delta", type=float, default=0.5)
+    parser.add_argument("--patience", type=int, default=500)
+    parser.add_argument("--min-delta", type=float, default=0.5)
     parser.add_argument("--early-stop-warmup", type=int, default=1000)
     parser.add_argument("--early-stop-window", type=int, default=100)
     return parser.parse_args()
@@ -175,69 +159,72 @@ def rollout_episode(
     envs,
     policy: MappoPolicy,
     buffer: RolloutBuffer,
-    vpp_of_agent: Dict[int, int],
     n_steps: int,
+    agent_bus_indices: list[int],
+    bus_adjacency: np.ndarray,
 ) -> float:
     obs = envs.reset()
     episode_rewards = np.zeros(envs.num_envs, dtype=np.float32)
 
-    agent_bus_indices = build_agent_bus_indices(envs.envs[0])
-    bus_adjacency = build_bus_adjacency(envs.envs[0])
+    n_envs = envs.num_envs
+    n_agents = N_AGENTS
     n_buses = bus_adjacency.shape[0]
+    agent_bus_idx_arr = np.asarray(agent_bus_indices, dtype=np.int64)
 
     for _ in range(n_steps):
-        actions_batch = []
-        for env_idx in range(envs.num_envs):
-            obs_env = obs[env_idx]
-            if obs_env.shape[0] != N_AGENTS:
-                raise ValueError(f"Expected {N_AGENTS} agents, got {obs_env.shape[0]}")
-            day_row = envs.envs[env_idx].current_row.to_dict() if envs.envs[env_idx].current_row is not None else {}
+        if obs.shape[1] != N_AGENTS:
+            raise ValueError(f"Expected {N_AGENTS} agents, got {obs.shape[1]}")
 
-            node_features = np.zeros((n_buses, obs_env.shape[1]), dtype=np.float32)
-            for agent_idx, bus_idx in enumerate(agent_bus_indices):
-                node_features[bus_idx] = obs_env[agent_idx]
+        node_features_batch = np.zeros((n_envs, n_buses, obs.shape[2]), dtype=np.float32)
+        node_features_batch[:, agent_bus_idx_arr, :] = obs.astype(np.float32)
 
-            embeddings = policy.encode(node_features, bus_adjacency)
-            embeddings_np = embeddings.detach().cpu().numpy()
+        adj_batch = np.broadcast_to(bus_adjacency, (n_envs, n_buses, n_buses)).astype(np.float32)
+        embeddings = policy.encode(node_features_batch, adj_batch)
+        embeddings_np = embeddings.detach().cpu().numpy().astype(np.float32)
 
-            agent_bus_idx_arr = np.asarray(agent_bus_indices, dtype=np.int64)
-            emb_per_agent = embeddings_np[agent_bus_idx_arr]
-            local_states = obs_env.astype(np.float32)
-            global_states = np.stack(
-                [build_global_state(day_row, vpp_of_agent.get(i, 0)) for i in range(obs_env.shape[0])],
-                axis=0,
-            ).astype(np.float32)
+        emb_per_agent = embeddings_np[:, agent_bus_idx_arr, :]
+        local_states = obs.astype(np.float32)
+        global_states = np.zeros((n_envs, n_agents, 6), dtype=np.float32)
+        global_states[:, :, 2] = local_states[:, :, 13]
+        global_states[:, :, 3] = local_states[:, :, 14]
+        global_states[:, :, 4] = local_states[:, :, 11]
+        global_states[:, :, 5] = local_states[:, :, 12]
 
-            actions, log_probs, values = policy.act_batch(
-                emb_per_agent,
-                local_states,
-                global_states,
-                agent_bus_idx_arr,
-            )
+        actions, log_probs, values = policy.act_batch(
+            emb_per_agent.reshape(n_envs * n_agents, -1),
+            local_states.reshape(n_envs * n_agents, -1),
+            global_states.reshape(n_envs * n_agents, -1),
+            np.tile(np.arange(n_agents, dtype=np.int64), n_envs),
+        )
 
-            agent_actions = actions.astype(np.float32)
-            for agent_idx in range(obs_env.shape[0]):
+        actions = actions.reshape(n_envs, n_agents, -1).astype(np.float32)
+        log_probs = log_probs.reshape(n_envs, n_agents)
+        values = values.reshape(n_envs, n_agents)
+
+        actions_batch = np.zeros((n_envs, ACTION_DIM_FLAT), dtype=np.float32)
+        for env_idx in range(n_envs):
+            for agent_idx in range(n_agents):
                 agent_bus_idx = agent_bus_indices[agent_idx]
                 buffer.add(
-                    embeddings=embeddings_np[agent_bus_idx],
+                    embeddings=embeddings_np[env_idx, agent_bus_idx],
                     agent_index=agent_bus_idx,
-                    local_state=local_states[agent_idx],
-                    global_state=global_states[agent_idx],
-                    action=agent_actions[agent_idx],
-                    log_prob=float(log_probs[agent_idx].item()),
+                    local_state=local_states[env_idx, agent_idx],
+                    global_state=global_states[env_idx, agent_idx],
+                    action=actions[env_idx, agent_idx],
+                    log_prob=float(log_probs[env_idx, agent_idx].item()),
                     reward=0.0,
-                    value=float(values[agent_idx].item()),
+                    value=float(values[env_idx, agent_idx].item()),
                     done=False,
                 )
 
-            flat_action = flatten_actions(agent_actions)
+            flat_action = flatten_actions(actions[env_idx])
             if flat_action.shape[0] != ACTION_DIM_FLAT:
                 raise ValueError(
                     f"Expected flat action dim {ACTION_DIM_FLAT}, got {flat_action.shape[0]}"
                 )
-            actions_batch.append(flat_action)
+            actions_batch[env_idx] = flat_action
 
-        next_obs, rewards, dones, infos = envs.step(np.asarray(actions_batch, dtype=np.float32))
+        next_obs, rewards, dones, infos = envs.step(actions_batch)
         episode_rewards += rewards
 
         for env_idx in range(envs.num_envs):
@@ -264,65 +251,101 @@ def rollout_episode(
 
 def main() -> None:
     args = parse_args()
-    phase_cfg = PHASES[args.phase]
-    n_episodes = args.n_episodes or phase_cfg.n_episodes
 
-    placement = load_placement(args.placement)
-    vpp_of_agent = build_vpp_of_agent(placement)
+    preloaded_days = MicrogridEnv.load_all_days(args.precomputed_dir)
 
     env_kwargs = {
         "placement_path": args.placement,
         "mpc_path": "data/grid_IEEE123_complete.m",
         "precomputed_dir": args.precomputed_dir,
+        "preloaded_days": preloaded_days,
     }
 
-    envs = make_vec_envs(n_envs=args.n_envs, env_kwargs=env_kwargs, seed=args.seeds[0], use_dummy=True)
+    probe_env = MicrogridEnv(**env_kwargs, seed=args.seed)
+    agent_bus_indices = build_agent_bus_indices(probe_env)
+    bus_adjacency = build_bus_adjacency(probe_env)
+    probe_env.close()
 
-    policy_config = MappoPolicyConfig(
-        learning_rate=args.lr if args.lr is not None else phase_cfg.learning_rate,
-        minibatch_size=args.minibatch if args.minibatch is not None else MappoPolicyConfig.minibatch_size,
-    )
-    policy = MappoPolicy(config=policy_config)
+    envs = make_vec_envs(n_envs=args.n_envs, env_kwargs=env_kwargs, seed=args.seed, use_dummy=True)
 
-    buffer = RolloutBuffer()
     checkpoint_dir = Path(args.checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = checkpoint_dir / f"phase_{args.phase.lower()}_latest.pt"
-    if checkpoint_path.exists():
-        policy.load_checkpoint(checkpoint_path)
 
+    phases_to_run = PHASE_ORDER if args.phase == "full" else [args.phase]
 
-    reward_log = []
-    early_stopper = None
-    if args.early_stop:
-        early_stopper = EarlyStopping(
-            patience=args.early_stop_patience,
-            min_delta=args.early_stop_min_delta,
-            checkpoint_dir=checkpoint_dir,
-        )
+    current_lr = args.lr if args.lr is not None else PHASES[phases_to_run[0]].learning_rate
+    policy_config = MappoPolicyConfig(
+        learning_rate=current_lr,
+        minibatch_size=args.minibatch,
+        update_epochs=args.update_epochs,
+    )
+    policy = MappoPolicy(config=policy_config)
+    buffer = RolloutBuffer()
+    early_stopper = EarlyStopping(patience=args.patience, min_delta=args.min_delta)
 
-    for episode in range(n_episodes):
-        buffer.clear()
-        avg_reward = rollout_episode(envs, policy, buffer, vpp_of_agent, n_steps=96)
-        last_value = 0.0
-        metrics = policy.update(buffer, last_value=last_value)
+    for phase_idx, phase in enumerate(phases_to_run):
+        print(f"\n=== Starting Phase {phase} ===")
+        phase_cfg = PHASES[phase]
+        n_episodes = args.n_episodes or phase_cfg.n_episodes
 
-        reward_log.append(avg_reward)
-        if (episode + 1) % args.log_interval == 0 or episode == 0:
-            mean_recent = float(np.mean(reward_log[-args.log_interval :]))
-            print(
-                f"ep={episode:4d} reward={avg_reward:8.3f} mean({args.log_interval})={mean_recent:8.3f} "
-                f"loss={metrics['loss']:.3f} entropy={metrics['entropy']:.3f}"
+        phase_lr = args.lr if args.lr is not None else phase_cfg.learning_rate
+        for param_group in policy.optimizer.param_groups:
+            param_group["lr"] = phase_lr
+
+        latest_ckpt = checkpoint_dir / f"phase_{phase.lower()}_latest.pt"
+        final_ckpt = checkpoint_dir / f"phase_{phase}_final.pt"
+
+        if phase_idx == 0 and latest_ckpt.exists():
+            policy.load_checkpoint(latest_ckpt)
+        elif phase_idx > 0:
+            prev_phase = phases_to_run[phase_idx - 1]
+            prev_final_ckpt = checkpoint_dir / f"phase_{prev_phase}_final.pt"
+            if prev_final_ckpt.exists():
+                policy.load_checkpoint(prev_final_ckpt)
+                print(f"Loaded checkpoint from {prev_final_ckpt}")
+
+        reward_log = []
+        early_stopper.reset()
+        apply_early_stop = args.early_stop and phase != "A"
+
+        avg_reward = float("nan")
+        for episode in range(n_episodes):
+            buffer.clear()
+            avg_reward = rollout_episode(
+                envs,
+                policy,
+                buffer,
+                n_steps=96,
+                agent_bus_indices=agent_bus_indices,
+                bus_adjacency=bus_adjacency,
             )
-            policy.save_checkpoint(checkpoint_path)
+            last_value = 0.0
+            metrics = policy.update(buffer, last_value=last_value)
 
-        if early_stopper is not None and episode >= args.early_stop_warmup:
-            window = min(args.early_stop_window, len(reward_log))
-            mean_window = float(np.mean(reward_log[-window:]))
-            if early_stopper.step(mean_window, episode, policy):
-                break
+            reward_log.append(avg_reward)
+            if (episode + 1) % args.log_interval == 0 or episode == 0:
+                mean_recent = float(np.mean(reward_log[-args.log_interval :]))
+                print(
+                    f"phase={phase} ep={episode:5d} reward={avg_reward:8.3f} mean({args.log_interval})={mean_recent:8.3f} "
+                    f"loss={metrics['loss']:.3f} entropy={metrics['entropy']:.3f}"
+                )
+                policy.save_checkpoint(latest_ckpt)
 
-    policy.save_checkpoint(checkpoint_path)
+            if apply_early_stop and episode >= args.early_stop_warmup:
+                window = min(args.early_stop_window, len(reward_log))
+                mean_window = float(np.mean(reward_log[-window:]))
+                if early_stopper.step(mean_window):
+                    print(
+                        f"Phase {phase} early stopped at ep={episode}, "
+                        f"best={early_stopper.best:.3f} — moving to next phase"
+                    )
+                    break
+
+        policy.save_checkpoint(latest_ckpt)
+        policy.save_checkpoint(final_ckpt)
+        print(f"Phase {phase} complete. Best reward: {early_stopper.best:.3f}")
+
+    envs.close()
 
 
 if __name__ == "__main__":

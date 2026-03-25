@@ -147,12 +147,19 @@ class MicrogridEnv(gym.Env):
             _fix_mpc_file(str(mpc_path))
         return str(fixed_path)
 
+    @classmethod
+    def load_all_days(cls, precomputed_dir: str | Path) -> list[pd.DataFrame]:
+        precomputed_path = Path(precomputed_dir)
+        parquet_files = sorted(precomputed_path.glob("day_*.parquet"))
+        return [pd.read_parquet(path) for path in parquet_files]
+
     def __init__(
         self,
         placement_path: str | Path,
         mpc_path: str | Path,
         precomputed_dir: str | Path | None = None,
         seed: int = 42,
+        preloaded_days: list[pd.DataFrame] | None = None,
     ) -> None:
         super().__init__()
         self.rng = random.Random(seed)
@@ -233,6 +240,7 @@ class MicrogridEnv(gym.Env):
         self._all_days: list[pd.DataFrame] = []
         self._n_days = 0
         self._data: pd.DataFrame | None = None
+        self._data_checksum: object | None = None
         self._current_step = 0
 
         if self.precomputed_dir and self.precomputed_dir.exists():
@@ -249,7 +257,10 @@ class MicrogridEnv(gym.Env):
                 ]
 
             if self.use_precomputed:
-                self._all_days = [pd.read_parquet(path) for path in self.parquet_files]
+                if preloaded_days is not None:
+                    self._all_days = preloaded_days
+                else:
+                    self._all_days = self.load_all_days(self.precomputed_dir)
                 self._n_days = len(self._all_days)
 
         self.zone_load_indices, self.zone_base_loads = self._build_zone_load_mappings()
@@ -499,6 +510,7 @@ class MicrogridEnv(gym.Env):
         self._day_data = None
         self.current_day_data = None
         self.current_row = None
+        self._data_checksum = None
 
         if self.parquet_files:
             mode = None
@@ -524,7 +536,11 @@ class MicrogridEnv(gym.Env):
                     day_idx = int(self.rng.choice(train_indices)) if train_indices else int(self.rng.randrange(self._n_days))
                 else:
                     day_idx = int(self.rng.randrange(self._n_days))
-                self._data = self._all_days[day_idx]
+                self._data = self._all_days[day_idx].copy(deep=False)
+                if __debug__ and not self._data.empty:
+                    self._data_checksum = self._data.iloc[0, 0]
+                else:
+                    self._data_checksum = None
                 self._current_step = 0
                 self._day_data = self._data
                 self.current_day_data = self._data
@@ -718,6 +734,11 @@ class MicrogridEnv(gym.Env):
         return obs, float(reward), terminated, truncated, info
 
     def _step_precomputed(self, action: np.ndarray):
+        if __debug__ and self._data is not None and self._data_checksum is not None:
+            assert self._data.iloc[0, 0] == self._data_checksum, (
+                "DataFrame mutated! Check for in-place writes."
+            )
+
         action = np.asarray(action, dtype=np.float32).reshape(-1)
         expected_dim = int(self.action_space.shape[0])
         if action.shape[0] != expected_dim:
