@@ -8,6 +8,6 @@
     "pyomo_vs_tie": 0.0
   },
   "alpha_star_count": 5,
-  "cvx_market_status": "infeasible",
+  "cvx_market_status": "optimal",
   "diagnostics": []
 }
