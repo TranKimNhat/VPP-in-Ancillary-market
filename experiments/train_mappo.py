@@ -3,10 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 import argparse
 import csv
+import json
+import random
+import time
 import warnings
 
 import numpy as np
 import pandas as pd
+import torch
 import yaml
 
 from src.env.IEEE123bus import build_ieee123_net, validate_ieee123_net
@@ -23,6 +27,35 @@ from src.layer2_control.mappo_policy import MappoPolicy, MappoPolicyConfig, Roll
 def _load_yaml(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
+
+
+def set_all_seeds(seed: int, deterministic: bool = False) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    if deterministic:
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    else:
+        torch.backends.cudnn.deterministic = False
+        torch.backends.cudnn.benchmark = True
+
+
+def benchmark_rolloutbuffer_throughput(steps: int = 1000) -> dict[str, float]:
+    buf = RolloutBuffer(seed=42)
+    for _ in range(steps):
+        buf.rewards.append(1.0)
+    t0 = time.perf_counter()
+    _ = buf.get_minibatches(64)
+    elapsed = max(time.perf_counter() - t0, 1e-9)
+    return {
+        "steps": float(steps),
+        "seconds": elapsed,
+        "steps_per_sec": float(steps / elapsed),
+    }
 
 
 def _resolve_runtime_modes(train_cfg: dict, env_cfg: dict) -> tuple[bool, dict[str, object]]:
@@ -77,10 +110,18 @@ def _build_env(env_cfg: dict, repo_root: Path, *, vpp_mode: bool, mapping_cfg: d
     )
 
     signals = env_cfg.get("signals", {})
-    layer1_csv = repo_root / signals.get("layer1_pref_csv", "") if signals.get("layer1_pref_csv") else None
-    market_csv = repo_root / signals.get("market_signal_csv", "") if signals.get("market_signal_csv") else None
+    layer1_rel = str(signals.get("layer1_pref_csv", "")).strip()
+    market_rel = str(signals.get("market_signal_csv", "")).strip()
+    layer1_csv = repo_root / layer1_rel if layer1_rel and (repo_root / layer1_rel).exists() else None
+    market_csv = repo_root / market_rel if market_rel and (repo_root / market_rel).exists() else None
 
-    net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+    net = build_ieee123_net(
+        mode=str(env_cfg.get("grid_mode", "matpower")),
+        balanced=True,
+        convert_switches=True,
+        slack_zones=None,
+        source_mode=str(env_cfg.get("source_mode", "publish")),
+    )
     validate_ieee123_net(net)
     return GridEnvironment(
         net=net,
@@ -156,6 +197,8 @@ def _run_layer0_layer1(
     *,
     vpp_mode: bool,
     mappings_cfg: dict[str, object],
+    grid_mode: str = "matpower",
+    source_mode: str = "publish",
 ) -> tuple[Path, Path]:
     signals = env_cfg.get("signals", {})
 
@@ -214,7 +257,13 @@ def _run_layer0_layer1(
     )
     run_layer1(layer1_cfg)
 
-    net = build_ieee123_net(mode="feeder123", balanced=True, convert_switches=True, slack_zones=None)
+    net = build_ieee123_net(
+        mode=grid_mode,
+        balanced=True,
+        convert_switches=True,
+        slack_zones=None,
+        source_mode=source_mode,
+    )
     validate_ieee123_net(net)
     mappings = load_canonical_mappings(net, mappings_cfg)
     report = build_partition_report(net, mappings)
@@ -224,7 +273,13 @@ def _run_layer0_layer1(
     return layer0_bundle.zone_prices_csv, layer1_csv
 
 
-def run_training(train_cfg_path: Path, env_cfg_path: Path, bootstrap_tri_layer: bool = False) -> None:
+def run_training(
+    train_cfg_path: Path,
+    env_cfg_path: Path,
+    bootstrap_tri_layer: bool = False,
+    seed_override: int | None = None,
+    deterministic: bool = False,
+) -> dict[str, float | int | str]:
     repo_root = Path(__file__).resolve().parents[1]
     train_cfg = _load_yaml(train_cfg_path)
     env_cfg = _load_yaml(env_cfg_path)
@@ -236,12 +291,14 @@ def run_training(train_cfg_path: Path, env_cfg_path: Path, bootstrap_tri_layer: 
             env_cfg,
             vpp_mode=vpp_mode,
             mappings_cfg=mappings_cfg,
+            grid_mode=str(env_cfg.get("grid_mode", "matpower")),
+            source_mode=str(env_cfg.get("source_mode", "publish")),
         )
         print(f"Layer0 output: {layer0_out}")
         print(f"Layer1 output: {layer1_out}")
 
-    seed = int(train_cfg.get("seed", 42))
-    np.random.seed(seed)
+    seed = int(seed_override if seed_override is not None else train_cfg.get("seed", 42))
+    set_all_seeds(seed, deterministic=deterministic)
 
     env = _build_env(env_cfg, repo_root, vpp_mode=vpp_mode, mapping_cfg=mappings_cfg)
     policy = _build_policy(train_cfg)
@@ -256,6 +313,8 @@ def run_training(train_cfg_path: Path, env_cfg_path: Path, bootstrap_tri_layer: 
 
     log_path = repo_root / str(train_cfg.get("log_path", "artifacts/logs/train_metrics.csv"))
     log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    last_eval_reward = float("nan")
 
     with log_path.open("w", newline="", encoding="utf-8") as log_file:
         writer = csv.DictWriter(
@@ -276,27 +335,34 @@ def run_training(train_cfg_path: Path, env_cfg_path: Path, bootstrap_tri_layer: 
 
         obs, _ = env.reset(seed=seed)
         for update in range(1, updates + 1):
-            buffer = RolloutBuffer()
+            buffer = RolloutBuffer(seed=seed + update)
             reward_trace: list[float] = []
 
             for _ in range(rollout_steps):
                 actions: dict[str, np.ndarray] = {}
-                action_meta: dict[str, tuple[float, float]] = {}
+                action_meta: dict[str, tuple[float, float, np.ndarray]] = {}
                 for agent, agent_obs in obs.items():
                     action, log_prob, value = policy.act(agent_obs)
                     actions[agent] = action
-                    action_meta[agent] = (log_prob, value)
+                    embeddings = policy.encode(
+                        np.asarray(agent_obs["node_features"], dtype=np.float32),
+                        np.asarray(agent_obs["adjacency"], dtype=np.float32),
+                    )
+                    action_meta[agent] = (
+                        log_prob,
+                        value,
+                        np.asarray(embeddings[int(agent_obs["agent_index"])].detach().cpu().numpy(), dtype=np.float32),
+                    )
 
                 next_obs, rewards, terminated, truncated, _ = env.step(actions)
                 done_all = bool(terminated.get("__all__", False) or truncated.get("__all__", False))
 
                 for agent, agent_obs in obs.items():
-                    log_prob, value = action_meta[agent]
+                    log_prob, value, embeddings = action_meta[agent]
                     reward = float(rewards.get(agent, 0.0))
                     reward_trace.append(reward)
                     buffer.add(
-                        node_features=np.asarray(agent_obs["node_features"], dtype=np.float32),
-                        adjacency=np.asarray(agent_obs["adjacency"], dtype=np.float32),
+                        embeddings=np.asarray(embeddings, dtype=np.float32),
                         agent_index=int(agent_obs["agent_index"]),
                         local_state=np.asarray(agent_obs["local_state"], dtype=np.float32),
                         global_state=np.asarray(agent_obs["global_state"], dtype=np.float32),
@@ -314,17 +380,21 @@ def run_training(train_cfg_path: Path, env_cfg_path: Path, bootstrap_tri_layer: 
             last_obs = next(iter(obs.values()))
             last_value = policy.evaluate_value(last_obs)
             losses = policy.update(buffer, last_value=last_value)
+            total_loss = float(losses.get("total_loss", losses.get("loss", float("nan"))))
+            policy_loss = float(losses.get("policy_loss", total_loss))
+            value_loss = float(losses.get("value_loss", 0.0))
+            entropy = float(losses.get("entropy", 0.0))
 
-            if not np.isfinite(losses["total_loss"]):
+            if not np.isfinite(total_loss):
                 raise RuntimeError("Training diverged: total_loss is NaN/Inf.")
 
             metrics = env.metrics()
             row = {
                 "update": update,
-                "policy_loss": losses["policy_loss"],
-                "value_loss": losses["value_loss"],
-                "entropy": losses["entropy"],
-                "total_loss": losses["total_loss"],
+                "policy_loss": policy_loss,
+                "value_loss": value_loss,
+                "entropy": entropy,
+                "total_loss": total_loss,
                 "reward_mean": float(np.mean(reward_trace)) if reward_trace else 0.0,
                 "tracking_error": metrics["tracking_error"],
                 "voltage_violation": metrics["voltage_violation"],
@@ -338,6 +408,7 @@ def run_training(train_cfg_path: Path, env_cfg_path: Path, bootstrap_tri_layer: 
 
             if update % eval_interval == 0:
                 eval_metrics = _eval_episode(env, policy)
+                last_eval_reward = float(eval_metrics.get("episode_reward", float("nan")))
                 print(
                     f"[eval] update={update} reward={eval_metrics['episode_reward']:.4f} "
                     f"v_viol={eval_metrics['voltage_violation']:.6f} "
@@ -373,8 +444,26 @@ def run_training(train_cfg_path: Path, env_cfg_path: Path, bootstrap_tri_layer: 
                     print("Triggered Layer1 re-optimization from Layer2 curtailment feedback.")
 
     policy.save_checkpoint(checkpoint_dir / "mappo_final.pt")
+
+    run_results_dir = repo_root / "artifacts" / "runs"
+    run_results_dir.mkdir(parents=True, exist_ok=True)
+    result_payload = {
+        "seed": int(seed),
+        "status": "ok",
+        "mode": "train",
+        "final_reward": float(last_eval_reward),
+        "updates": int(updates),
+        "log_path": str(log_path),
+        "checkpoint_path": str(checkpoint_dir / "mappo_final.pt"),
+    }
+    result_path = run_results_dir / f"seed_{seed}.json"
+    result_path.write_text(json.dumps(result_payload, indent=2), encoding="utf-8")
+
     print(f"Training complete. Logs: {log_path}")
     print(f"Checkpoint: {checkpoint_dir / 'mappo_final.pt'}")
+    print(f"MULTISEED_RESULT_JSON={result_path.as_posix()}")
+
+    return result_payload
 
 
 def _parse_args() -> argparse.Namespace:
@@ -396,12 +485,42 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run Layer0->Layer1 pipeline before training.",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Override training seed from config.",
+    )
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Enable deterministic torch behavior for debugging/repro runs.",
+    )
+    parser.add_argument(
+        "--benchmark-steps",
+        type=int,
+        default=1000,
+        help="Number of steps for rollout-buffer throughput benchmark.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
-    run_training(args.training_config, args.env_config, bootstrap_tri_layer=args.bootstrap_tri_layer)
+    benchmark_stats = benchmark_rolloutbuffer_throughput(steps=args.benchmark_steps)
+    print(
+        f"RolloutBuffer benchmark ({args.benchmark_steps} steps): "
+        f"{benchmark_stats['steps_per_sec']:.1f} steps/sec"
+    )
+    run_result = run_training(
+        args.training_config,
+        args.env_config,
+        bootstrap_tri_layer=args.bootstrap_tri_layer,
+        seed_override=args.seed,
+        deterministic=args.deterministic,
+    )
+    if "final_reward" in run_result:
+        print(f"MULTISEED_FINAL_REWARD={float(run_result['final_reward'])}")
 
 
 if __name__ == "__main__":
