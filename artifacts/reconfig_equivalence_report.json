@@ -1,8 +1,10 @@
 {
   "feasibility_match": true,
-  "obj_gap_pct": null,
-  "hamming_dist": {
+  "topology_edge_symmetric_diff": {
     "pyomo_vs_tie": 0
+  },
+  "topology_edge_jaccard": {
+    "pyomo_vs_tie": 1.0
   },
   "v_band_violation_pct": {
     "pyomo_vs_tie": 0.0

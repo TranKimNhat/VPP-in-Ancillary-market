@@ -27,20 +27,38 @@ def _build_snapshot() -> pp.pandapowerNet:
     return net
 
 
-def _hamming(a: dict[str, bool], b: dict[str, bool]) -> int:
-    keys = set(a.keys()) | set(b.keys())
-    return int(sum(bool(a.get(k, False)) != bool(b.get(k, False)) for k in keys))
+TopologyEdge = tuple[int, int]
 
 
-def _extract_cb_status(net: pp.pandapowerNet) -> dict[str, bool]:
-    if not hasattr(net, "switch") or net.switch.empty or "name" not in net.switch.columns:
-        return {}
-    out: dict[str, bool] = {}
-    for _, row in net.switch.iterrows():
-        name = str(row.get("name", ""))
-        if name in {"CB-A", "CB-B", "CB-C"}:
-            out[name] = bool(row.get("closed", True))
-    return out
+def _edge_key(from_bus: int, to_bus: int) -> TopologyEdge:
+    a = int(from_bus)
+    b = int(to_bus)
+    return (a, b) if a <= b else (b, a)
+
+
+def _realized_topology_edges(net: pp.pandapowerNet) -> set[TopologyEdge]:
+    edges: set[TopologyEdge] = set()
+
+    if not net.line.empty:
+        for _, row in net.line.iterrows():
+            if not bool(row.get("in_service", True)):
+                continue
+            edges.add(_edge_key(int(row["from_bus"]), int(row["to_bus"])))
+
+    if hasattr(net, "switch") and not net.switch.empty:
+        for _, row in net.switch.iterrows():
+            if str(row.get("et", "")) != "b" or not bool(row.get("closed", True)):
+                continue
+            edges.add(_edge_key(int(row["bus"]), int(row["element"])))
+
+    return edges
+
+
+def _edge_jaccard(a: set[TopologyEdge], b: set[TopologyEdge]) -> float:
+    union = a | b
+    if not union:
+        return 1.0
+    return float(len(a & b) / len(union))
 
 
 def _apply_alpha_star(net: pp.pandapowerNet, alpha_star: dict[int, int]) -> pp.pandapowerNet:
@@ -78,8 +96,8 @@ def _write_report(report: dict[str, object]) -> None:
 def test_reconfiguration_equivalence_report_smoke() -> None:
     report: dict[str, object] = {
         "feasibility_match": None,
-        "obj_gap_pct": None,
-        "hamming_dist": None,
+        "topology_edge_symmetric_diff": None,
+        "topology_edge_jaccard": None,
         "v_band_violation_pct": None,
         "alpha_star_count": 0,
         "cvx_market_status": None,
@@ -115,20 +133,24 @@ def test_reconfiguration_equivalence_report_smoke() -> None:
     tie_net, _, _ = tie_reconfig.select_optimal(load_scale=1.0, pv_scale=0.8)
     tie_v = _runpp_voltage(tie_net)
 
-    pyomo_cb = _extract_cb_status(pyomo_net)
-    tie_cb = _extract_cb_status(tie_net)
+    pyomo_edges = _realized_topology_edges(pyomo_net)
+    tie_edges = _realized_topology_edges(tie_net)
 
-    hamming_pyomo_tie = _hamming(pyomo_cb, tie_cb)
+    topology_edge_symmetric_diff = len(pyomo_edges ^ tie_edges)
+    topology_edge_jaccard = _edge_jaccard(pyomo_edges, tie_edges)
     v_band_pyomo_tie = _voltage_band_violation_pct(pyomo_v, tie_v)
 
-    # Soft-equivalence acceptance: do not over-constrain to exact same switches.
-    assert hamming_pyomo_tie <= 3
+    # Soft-equivalence acceptance: topology can differ, but should remain close on realized edge set.
+    assert topology_edge_jaccard >= 0.95
 
     report.update(
         {
             "feasibility_match": True,
-            "hamming_dist": {
-                "pyomo_vs_tie": hamming_pyomo_tie,
+            "topology_edge_symmetric_diff": {
+                "pyomo_vs_tie": topology_edge_symmetric_diff,
+            },
+            "topology_edge_jaccard": {
+                "pyomo_vs_tie": topology_edge_jaccard,
             },
             "v_band_violation_pct": {
                 "pyomo_vs_tie": v_band_pyomo_tie,

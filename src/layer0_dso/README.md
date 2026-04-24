@@ -6,4 +6,4 @@
 
 `src/opt/tie_switch_reconfig.py` is a fast heuristic baseline for RL environment sampling. It is not expected to reproduce the MISOCP optimum exactly; it is accepted when it remains connected, power-flow feasible, and close on downstream voltage invariants.
 
-Use `tests/test_reconfig_equivalence.py` to generate `artifacts/reconfig_equivalence_report.json` with Hamming distance and voltage-band metrics for reviewer-facing evidence. The MATPOWER fixture raises placeholder `max_i_ka` ratings to at least 2.0 kA so equivalence is measured on topology behavior rather than an already-overloaded base snapshot.
+Use `tests/test_reconfig_equivalence.py` to generate `artifacts/reconfig_equivalence_report.json` with realized-topology edge-set metrics (symmetric diff and Jaccard) plus voltage-band metrics for reviewer-facing evidence. The MATPOWER fixture raises placeholder `max_i_ka` ratings to at least 2.0 kA so equivalence is measured on topology behavior rather than an already-overloaded base snapshot. Importer-level realistic line ratings remain a deferred tech-debt item.
