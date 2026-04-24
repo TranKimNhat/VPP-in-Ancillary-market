@@ -1,0 +1,13 @@
+{
+  "feasibility_match": true,
+  "obj_gap_pct": null,
+  "hamming_dist": {
+    "pyomo_vs_tie": 0
+  },
+  "v_band_violation_pct": {
+    "pyomo_vs_tie": 0.0
+  },
+  "alpha_star_count": 5,
+  "cvx_market_status": "infeasible",
+  "diagnostics": []
+}
