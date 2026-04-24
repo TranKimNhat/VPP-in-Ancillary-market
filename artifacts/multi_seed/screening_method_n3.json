@@ -1,0 +1,38 @@
+{
+  "train_config": "configs\\training_config_method.yaml",
+  "env_config": "configs\\env_config.yaml",
+  "seeds": [
+    42,
+    1337,
+    2024
+  ],
+  "deterministic": false,
+  "mode": "train",
+  "individual": [
+    {
+      "seed": 42,
+      "status": "ok",
+      "mode": "train",
+      "final_reward": -1467.4266587846275,
+      "result_json": "C:\\Users\\admin\\Desktop\\VPP in Ancillary market in 100% renewable islanded microgrid - Copy\\artifacts\\runs\\seed_42.json"
+    },
+    {
+      "seed": 1337,
+      "status": "ok",
+      "mode": "train",
+      "final_reward": -1533.797245573282,
+      "result_json": "C:\\Users\\admin\\Desktop\\VPP in Ancillary market in 100% renewable islanded microgrid - Copy\\artifacts\\runs\\seed_1337.json"
+    },
+    {
+      "seed": 2024,
+      "status": "ok",
+      "mode": "train",
+      "final_reward": -1640.554198406713,
+      "result_json": "C:\\Users\\admin\\Desktop\\VPP in Ancillary market in 100% renewable islanded microgrid - Copy\\artifacts\\runs\\seed_2024.json"
+    }
+  ],
+  "metric": "final_reward",
+  "mean": -1547.2593675882074,
+  "std": 71.31716853024831,
+  "n_success": 3
+}

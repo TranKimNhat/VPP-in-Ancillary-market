@@ -906,7 +906,8 @@ Nếu ablation cho thấy method mới **không** beat baseline (hoặc chỉ be
 - [x] `experiments/run_multi_seed.py` implement và test pass trên toy problem.
 - [x] `scripts/compare_methods.py` output đúng format table.
 - [x] `docs/paper_protocol.md` đã có template caption và checklist gate.
-- [ ] Mỗi ablation trong paper có file `.json` trong `artifacts/multi_seed/` (pending khi chạy training thật).
+- [x] Mỗi ablation trong paper có file `.json` trong `artifacts/multi_seed/` (2026-04-24 screening N=3 complete; see `screening_baseline_n3.json` and `screening_method_n3.json`, STOP decision applied per pre-registered d>=0.5 rule).
+- [ ] Phase D.5 metric-swap evaluation: re-evaluate existing N=3 checkpoints on additional paper metrics (voltage violation rate, THD_V max, ancillary revenue, P2P trade fraction) without retraining.
 
 ### 14.5 Compute budget warning
 
