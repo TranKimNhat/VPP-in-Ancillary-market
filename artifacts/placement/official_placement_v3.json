@@ -78,7 +78,7 @@
   "wind": [
     {
       "id": "W1",
-      "bus": 97,
+      "bus": 67,
       "mw": 3.0,
       "justification": "Zone 3 wind corridor; turbine class IEC 61400-1 II"
     },
