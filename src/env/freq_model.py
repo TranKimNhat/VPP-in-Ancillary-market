@@ -21,17 +21,21 @@ class AnalyticalFrequencyModel:
     """
 
     def __init__(self) -> None:
-        self.H_sys = 10.0
-        self.S_base = 11.0
-        self.D_sys = 2.0
+        # LOW-INERTIA ISLANDED MICROGRID parameters for FFR evaluation
+        # Reference: ENTSO-E RoCoF limits, Nordic FFR specifications
+        # H_sys reduced to simulate 100% inverter-based system (synthetic inertia only)
+        self.H_sys = 2.0  # seconds - low inertia for islanded microgrid
+        self.S_base = 15.7  # MVA - IEEE 123 system base
+        self.D_sys = 1.0  # pu - reduced damping
         self.f0 = 50.0
-        self.RoCoF_max = 1.5
-        self.delta_f_max = 0.5
+        self.RoCoF_max = 2.0  # Hz/s - higher limit for islanded system
+        self.delta_f_max = 0.8  # Hz - wider band before UFLS
 
-        self.event_prob = 0.83
-        self.event_mean = 2.0
-        self.event_sigma = 3.0
-        self.event_max = 5.0
+        # Severe contingency parameters for FFR stress testing
+        self.event_prob = 0.90  # 90% chance of event per step
+        self.event_mean = 3.5  # MW - larger average disturbance
+        self.event_sigma = 2.5  # MW - moderate variance
+        self.event_max = 6.0  # MW - allow larger events (~40% of system)
 
         self.delta_f = 0.0
         self.rng = np.random.default_rng()
