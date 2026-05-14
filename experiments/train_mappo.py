@@ -20,7 +20,8 @@ from src.layer0_dso.layer0_dso import run_layer0_pipeline
 from src.layer0_dso.vpp_formation import run_vpp_formation
 from src.layer1_vpp.layer1_vpp import Layer1Config, run_layer1
 from src.layer2_control.actor_critic import ActorCritic, ActorCriticConfig
-from src.layer2_control.gat_encoder import GATEncoder, GATEncoderConfig
+from src.layer2_control.graph_sage_encoder import GraphSAGEEncoder
+from src.layer2_control.mlp_encoder import MLPEncoder
 from src.layer2_control.mappo_policy import MappoPolicy, MappoPolicyConfig, RolloutBuffer
 
 
@@ -86,27 +87,17 @@ def _resolve_runtime_modes(train_cfg: dict, env_cfg: dict) -> tuple[bool, dict[s
 
 
 def _build_env(env_cfg: dict, repo_root: Path, *, vpp_mode: bool, mapping_cfg: dict[str, object]) -> GridEnvironment:
-    reward_weights = env_cfg.get("reward_weights", {})
-
     cfg = EnvConfig(
         max_steps=int(env_cfg.get("max_steps", 96)),
         voltage_tolerance=float(env_cfg.get("voltage_tolerance", 0.05)),
         action_scale_p=float(env_cfg.get("action_scale_p", 0.2)),
         action_scale_q=float(env_cfg.get("action_scale_q", 0.2)),
-    )
-    cfg = EnvConfig(
-        max_steps=cfg.max_steps,
-        voltage_tolerance=cfg.voltage_tolerance,
-        action_scale_p=cfg.action_scale_p,
-        action_scale_q=cfg.action_scale_q,
-        reward_weights=cfg.reward_weights.__class__(
-            tracking=float(reward_weights.get("tracking", cfg.reward_weights.tracking)),
-            voltage=float(reward_weights.get("voltage", cfg.reward_weights.voltage)),
-            curtailment=float(reward_weights.get("curtailment", cfg.reward_weights.curtailment)),
-        ),
         zoning_mode=str(env_cfg.get("zoning_mode", "static")),
         vpp_mode=vpp_mode,
         mapping_config=mapping_cfg,
+        scenario_type=str(env_cfg.get("scenario_type", "em_normal")),
+        lambda_cap=float(env_cfg.get("lambda_cap", 50.0)),
+        lambda_act=float(env_cfg.get("lambda_act", 100.0)),
     )
 
     signals = env_cfg.get("signals", {})
@@ -123,33 +114,53 @@ def _build_env(env_cfg: dict, repo_root: Path, *, vpp_mode: bool, mapping_cfg: d
         source_mode=str(env_cfg.get("source_mode", "publish")),
     )
     validate_ieee123_net(net)
+    dlmp_rel = str(signals.get("dlmp_per_bus_csv", "")).strip()
+    dlmp_csv = repo_root / dlmp_rel if dlmp_rel and (repo_root / dlmp_rel).exists() else None
+
     return GridEnvironment(
         net=net,
         config=cfg,
         layer1_pref_csv=layer1_csv,
         market_signal_csv=market_csv,
+        dlmp_per_bus_csv=dlmp_csv,
         mapping_config=mapping_cfg,
     )
 
 
-def _build_policy(train_cfg: dict) -> MappoPolicy:
+def _assert_signal_health(env: GridEnvironment) -> None:
+    eps = 1e-9
+
+    has_dlmp_signal = any(np.any(np.abs(arr) > eps) for arr in env._lambda_e_by_bus.values())
+    has_dlmp_signal = has_dlmp_signal or any(np.any(np.abs(arr) > eps) for arr in env._lambda_q_by_bus.values())
+
+    has_dispatch_signal = bool(np.any(np.abs(env._p_ref_series) > eps))
+    has_dispatch_signal = has_dispatch_signal or bool(np.any(np.abs(env._q_ref_series) > eps))
+    has_dispatch_signal = has_dispatch_signal or bool(np.any(np.abs(env._r_commit_series) > eps))
+
+    if not has_dlmp_signal and not has_dispatch_signal:
+        raise RuntimeError(
+            "Signal inputs are degenerate (DLMP and Layer1 references are all zero). "
+            "Regenerate signal CSVs before training."
+        )
+
+
+def _build_policy(train_cfg: dict, encoder_type: str = "sage") -> MappoPolicy:
     model_cfg = train_cfg.get("model", {})
     policy_cfg = train_cfg.get("policy", {})
 
-    encoder = GATEncoder(
-        GATEncoderConfig(
-            in_dim=int(model_cfg.get("in_dim", 6)),
-            hidden_dim=int(model_cfg.get("hidden_dim", 32)),
-            output_dim=int(model_cfg.get("output_dim", 64)),
-            heads_l1=int(model_cfg.get("heads_l1", 4)),
-            dropout=float(model_cfg.get("dropout", 0.1)),
-        )
-    )
+    in_dim = int(model_cfg.get("in_dim", 6))
+    hidden_dim = int(model_cfg.get("hidden_dim", 64))
+    out_dim = int(model_cfg.get("output_dim", 64))
+
+    if encoder_type == "mlp":
+        encoder = MLPEncoder(in_dim=in_dim, hidden_dim=128, out_dim=out_dim)
+    else:
+        encoder = GraphSAGEEncoder(in_dim=in_dim, hidden_dim=hidden_dim, out_dim=out_dim)
     actor_critic = ActorCritic(
         ActorCriticConfig(
             local_state_dim=int(model_cfg.get("local_state_dim", 6)),
             graph_emb_dim=int(model_cfg.get("output_dim", 64)),
-            global_state_dim=int(model_cfg.get("global_state_dim", 2)),
+            global_state_dim=int(model_cfg.get("global_state_dim", 7)),
             action_dim=int(model_cfg.get("action_dim", 2)),
             actor_hidden=tuple(model_cfg.get("actor_hidden", [128, 64])),
             critic_hidden=tuple(model_cfg.get("critic_hidden", [256, 128])),
@@ -235,13 +246,11 @@ def _run_layer0_layer1(
             f"{layer0_bundle.diagnostics_csv} before running Layer1."
         )
 
-    mapping_vpp_to_zone_csv = mappings_cfg.get("vpp_to_zone_csv")
-    if mapping_vpp_to_zone_csv:
-        mapping_vpp_to_zone_csv = repo_root / mapping_vpp_to_zone_csv
+    mapping_vpp_to_zone_raw = mappings_cfg.get("vpp_to_zone_csv")
+    mapping_vpp_to_zone_csv = repo_root / str(mapping_vpp_to_zone_raw) if mapping_vpp_to_zone_raw else None
 
-    mapping_bus_to_vpp_csv = mappings_cfg.get("bus_to_vpp_csv")
-    if mapping_bus_to_vpp_csv:
-        mapping_bus_to_vpp_csv = repo_root / mapping_bus_to_vpp_csv
+    mapping_bus_to_vpp_raw = mappings_cfg.get("bus_to_vpp_csv")
+    mapping_bus_to_vpp_csv = repo_root / str(mapping_bus_to_vpp_raw) if mapping_bus_to_vpp_raw else None
 
     layer1_cfg = Layer1Config(
         input_csv=layer0_bundle.zone_prices_csv,
@@ -279,6 +288,10 @@ def run_training(
     bootstrap_tri_layer: bool = False,
     seed_override: int | None = None,
     deterministic: bool = False,
+    checkpoint_dir_override: Path | None = None,
+    log_path_override: Path | None = None,
+    result_json_override: Path | None = None,
+    encoder_type: str = "sage",
 ) -> dict[str, float | int | str]:
     repo_root = Path(__file__).resolve().parents[1]
     train_cfg = _load_yaml(train_cfg_path)
@@ -301,19 +314,21 @@ def run_training(
     set_all_seeds(seed, deterministic=deterministic)
 
     env = _build_env(env_cfg, repo_root, vpp_mode=vpp_mode, mapping_cfg=mappings_cfg)
-    policy = _build_policy(train_cfg)
+    _assert_signal_health(env)
+    policy = _build_policy(train_cfg, encoder_type=encoder_type)
 
     updates = int(train_cfg.get("updates", 20))
     rollout_steps = int(train_cfg.get("rollout_steps", 128))
     eval_interval = int(train_cfg.get("eval_interval", 5))
     save_interval = int(train_cfg.get("save_interval", 5))
 
-    checkpoint_dir = repo_root / str(train_cfg.get("checkpoint_dir", "artifacts/checkpoints"))
+    checkpoint_dir = checkpoint_dir_override or (repo_root / str(train_cfg.get("checkpoint_dir", "artifacts/checkpoints")))
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    log_path = repo_root / str(train_cfg.get("log_path", "artifacts/logs/train_metrics.csv"))
+    log_path = log_path_override or (repo_root / str(train_cfg.get("log_path", "artifacts/logs/train_metrics.csv")))
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
+    eval_rewards: list[float] = []
     last_eval_reward = float("nan")
 
     with log_path.open("w", newline="", encoding="utf-8") as log_file:
@@ -329,6 +344,10 @@ def run_training(
                 "tracking_error",
                 "voltage_violation",
                 "curtailment_ratio",
+                "action_clip_ratio",
+                "vm_min",
+                "vm_max",
+                "voltage_exceed_bus_frac",
             ],
         )
         writer.writeheader()
@@ -346,12 +365,13 @@ def run_training(
                     actions[agent] = action
                     embeddings = policy.encode(
                         np.asarray(agent_obs["node_features"], dtype=np.float32),
-                        np.asarray(agent_obs["adjacency"], dtype=np.float32),
+                        np.asarray(agent_obs["edge_index"], dtype=np.int64),
                     )
+                    agent_index = int(np.asarray(agent_obs["agent_index"]).item())
                     action_meta[agent] = (
                         log_prob,
                         value,
-                        np.asarray(embeddings[int(agent_obs["agent_index"])].detach().cpu().numpy(), dtype=np.float32),
+                        np.asarray(embeddings[agent_index].detach().cpu().numpy(), dtype=np.float32),
                     )
 
                 next_obs, rewards, terminated, truncated, _ = env.step(actions)
@@ -363,7 +383,7 @@ def run_training(
                     reward_trace.append(reward)
                     buffer.add(
                         embeddings=np.asarray(embeddings, dtype=np.float32),
-                        agent_index=int(agent_obs["agent_index"]),
+                        agent_index=int(np.asarray(agent_obs.get("agent_index", 0), dtype=np.int64).item()),
                         local_state=np.asarray(agent_obs["local_state"], dtype=np.float32),
                         global_state=np.asarray(agent_obs["global_state"], dtype=np.float32),
                         action=np.asarray(actions[agent], dtype=np.float32),
@@ -399,6 +419,10 @@ def run_training(
                 "tracking_error": metrics["tracking_error"],
                 "voltage_violation": metrics["voltage_violation"],
                 "curtailment_ratio": metrics["curtailment_ratio"],
+                "action_clip_ratio": metrics["action_clip_ratio"],
+                "vm_min": metrics["vm_min"],
+                "vm_max": metrics["vm_max"],
+                "voltage_exceed_bus_frac": metrics["voltage_exceed_bus_frac"],
             }
             writer.writerow(row)
             log_file.flush()
@@ -409,6 +433,8 @@ def run_training(
             if update % eval_interval == 0:
                 eval_metrics = _eval_episode(env, policy)
                 last_eval_reward = float(eval_metrics.get("episode_reward", float("nan")))
+                if np.isfinite(last_eval_reward):
+                    eval_rewards.append(last_eval_reward)
                 print(
                     f"[eval] update={update} reward={eval_metrics['episode_reward']:.4f} "
                     f"v_viol={eval_metrics['voltage_violation']:.6f} "
@@ -417,14 +443,12 @@ def run_training(
 
                 if eval_metrics.get("curtailment_ratio", 0.0) > 0.05:
                     signals = env_cfg.get("signals", {})
-                    layer1_csv = repo_root / signals.get("layer1_pref_csv", "data/oedisi-ieee123-main/profiles/layer1_vpp/layer1_pref.csv")
-                    layer0_csv = repo_root / signals.get("market_signal_csv", "data/oedisi-ieee123-main/profiles/layer0_hourly/layer0_zone_prices.csv")
-                    mapping_vpp_to_zone_csv = mappings_cfg.get("vpp_to_zone_csv")
-                    if mapping_vpp_to_zone_csv:
-                        mapping_vpp_to_zone_csv = repo_root / mapping_vpp_to_zone_csv
-                    mapping_bus_to_vpp_csv = mappings_cfg.get("bus_to_vpp_csv")
-                    if mapping_bus_to_vpp_csv:
-                        mapping_bus_to_vpp_csv = repo_root / mapping_bus_to_vpp_csv
+                    layer1_csv = repo_root / str(signals.get("layer1_pref_csv", "data/oedisi-ieee123-main/profiles/layer1_vpp/layer1_pref.csv"))
+                    layer0_csv = repo_root / str(signals.get("market_signal_csv", "data/oedisi-ieee123-main/profiles/layer0_hourly/layer0_zone_prices.csv"))
+                    mapping_vpp_to_zone_raw = mappings_cfg.get("vpp_to_zone_csv")
+                    mapping_vpp_to_zone_csv = repo_root / str(mapping_vpp_to_zone_raw) if mapping_vpp_to_zone_raw else None
+                    mapping_bus_to_vpp_raw = mappings_cfg.get("bus_to_vpp_csv")
+                    mapping_bus_to_vpp_csv = repo_root / str(mapping_bus_to_vpp_raw) if mapping_bus_to_vpp_raw else None
 
                     feedback_cfg = Layer1Config(
                         input_csv=layer0_csv,
@@ -447,16 +471,24 @@ def run_training(
 
     run_results_dir = repo_root / "artifacts" / "runs"
     run_results_dir.mkdir(parents=True, exist_ok=True)
+    result_path = result_json_override or (run_results_dir / f"seed_{seed}.json")
+
+    mean_eval_reward = float(np.mean(eval_rewards)) if eval_rewards else float("nan")
+    best_eval_reward = float(np.max(eval_rewards)) if eval_rewards else float("nan")
+
     result_payload = {
         "seed": int(seed),
         "status": "ok",
         "mode": "train",
         "final_reward": float(last_eval_reward),
+        "mean_eval_reward": mean_eval_reward,
+        "best_eval_reward": best_eval_reward,
+        "n_eval_points": int(len(eval_rewards)),
         "updates": int(updates),
         "log_path": str(log_path),
         "checkpoint_path": str(checkpoint_dir / "mappo_final.pt"),
     }
-    result_path = run_results_dir / f"seed_{seed}.json"
+    result_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.write_text(json.dumps(result_payload, indent=2), encoding="utf-8")
 
     print(f"Training complete. Logs: {log_path}")
@@ -502,6 +534,31 @@ def _parse_args() -> argparse.Namespace:
         default=1000,
         help="Number of steps for rollout-buffer throughput benchmark.",
     )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        default=None,
+        help="Optional override for checkpoint directory (for per-run isolation).",
+    )
+    parser.add_argument(
+        "--log-path",
+        type=Path,
+        default=None,
+        help="Optional override for training log CSV path (for per-run isolation).",
+    )
+    parser.add_argument(
+        "--result-json",
+        type=Path,
+        default=None,
+        help="Optional override for run result JSON path.",
+    )
+    parser.add_argument(
+        "--encoder",
+        type=str,
+        choices=["sage", "mlp"],
+        default="sage",
+        help="Encoder type: 'sage' (GraphSAGE) or 'mlp' (ablation baseline).",
+    )
     return parser.parse_args()
 
 
@@ -518,6 +575,10 @@ def main() -> None:
         bootstrap_tri_layer=args.bootstrap_tri_layer,
         seed_override=args.seed,
         deterministic=args.deterministic,
+        checkpoint_dir_override=args.checkpoint_dir,
+        log_path_override=args.log_path,
+        result_json_override=args.result_json,
+        encoder_type=args.encoder,
     )
     if "final_reward" in run_result:
         print(f"MULTISEED_FINAL_REWARD={float(run_result['final_reward'])}")
