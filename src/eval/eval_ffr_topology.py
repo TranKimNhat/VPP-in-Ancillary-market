@@ -271,10 +271,18 @@ class FixedDroopPolicy:
 class GraphSAGEMAPPOPolicy:
     """Our method: GraphSAGE-MAPPO trained agent."""
     def __init__(self, checkpoint_path: Path, env: MicrogridEnvDual):
-        ckpt = torch.load(checkpoint_path, map_location="cpu")
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
         # Extract dimensions from checkpoint
         agent_state = ckpt.get("agent_state_dict", ckpt)
+
+        # Infer hidden_dim and embed_dim from checkpoint weights
+        hidden_dim = 64
+        embed_dim = 64
+        if "encoder.encoder.layer2.w_self.weight" in agent_state:
+            embed_dim = agent_state["encoder.encoder.layer2.w_self.weight"].shape[0]
+        if "encoder.encoder.layer1.w_self.weight" in agent_state:
+            hidden_dim = agent_state["encoder.encoder.layer1.w_self.weight"].shape[0]
 
         # Build agent
         sample_obs_fast, _, _ = env.reset()
@@ -292,6 +300,8 @@ class GraphSAGEMAPPOPolicy:
             n_agents=env.n_agents,
             n_bus=n_bus,
             agent_bus_indices=agent_bus_indices,
+            hidden_dim=hidden_dim,
+            embed_dim=embed_dim,
         )
         self.agent.load_state_dict(agent_state)
         self.agent.eval()
@@ -456,7 +466,7 @@ class FFRTopologyEvaluator:
     def build_table2_topology_adaptation(self, n_runs: int = 10) -> pd.DataFrame:
         """Table 2: Topology generalization - train vs unseen topologies."""
         # Use gen_trip as stress test scenario
-        event = self.scenarios["gen_trip_3MW"]
+        event = self.scenarios["S2_gen_trip"]
         rows = []
 
         for policy_name, policy in self.policies.items():
@@ -545,7 +555,7 @@ class FFRTopologyEvaluator:
         df.to_csv(self.output_dir / "table3_severity_scaling.csv", index=False)
         return df
 
-    def plot_frequency_traces(self, scenario_name: str = "gen_trip_3MW") -> None:
+    def plot_frequency_traces(self, scenario_name: str = "S2_gen_trip") -> None:
         """Plot frequency traces comparing methods."""
         event = self.scenarios.get(scenario_name)
         if event is None:
@@ -597,7 +607,7 @@ class FFRTopologyEvaluator:
             print("GraphSAGE-MAPPO not loaded, skipping topology plot")
             return
 
-        event = self.scenarios["gen_trip_3MW"]
+        event = self.scenarios["S2_gen_trip"]
 
         # Collect per-topology success rates
         results = {"train": [], "unseen": []}
@@ -650,8 +660,8 @@ class FFRTopologyEvaluator:
         table3 = self.build_table3_severity_scaling(n_runs=max(n_runs // 2, 5))
 
         print("\n[4/5] Plotting frequency traces...")
-        self.plot_frequency_traces("gen_trip_3MW")
-        self.plot_frequency_traces("load_step_4MW")
+        self.plot_frequency_traces("S2_gen_trip")
+        self.plot_frequency_traces("S1_load_step")
 
         print("\n[5/5] Plotting topology comparison...")
         self.plot_topology_comparison()
