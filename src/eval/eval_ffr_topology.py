@@ -365,11 +365,12 @@ class FFRTopologyEvaluator:
 
         # Contingency scenarios (Section VI - 4 scenarios aligned with IEEE 1547)
         # S_BASE = 15.705 MW, H_SYS = 1.18s
+        # Generator locations: bus 67 (3MW), 105 (3MW), 101 (3MW), 98 (3MW), 60 (2MW)
         self.scenarios = {
             "S1_load_step": EventConfig(type="load_step", delta_P_mw=2.5, location=45, t_inject=30.0),   # 16% S_BASE, RoCoF=-3.36
-            "S2_gen_trip": EventConfig(type="gen_trip", delta_P_mw=-3.9, location=97, t_inject=30.0),    # 25% S_BASE, RoCoF=+5.24
-            "S3_line_trip": EventConfig(type="line_trip", delta_P_mw=-2.4, location=97098, t_inject=30.0),  # 15% S_BASE, topology change
-            "S4_gen_trip_severe": EventConfig(type="gen_trip", delta_P_mw=-5.5, location=97, t_inject=30.0),  # 35% S_BASE, extreme
+            "S2_gen_trip": EventConfig(type="gen_trip", delta_P_mw=-3.0, location=67, t_inject=30.0),    # Trip 3MW wind at bus 67
+            "S3_line_trip": EventConfig(type="line_trip", delta_P_mw=-2.4, location=67068, t_inject=30.0),  # Line 67-68, topology change
+            "S4_gen_trip_severe": EventConfig(type="gen_trip", delta_P_mw=-5.0, location=105, t_inject=30.0),  # Trip 3MW at 105 + cascade
         }
 
         # Topology splits using farthest-point selection

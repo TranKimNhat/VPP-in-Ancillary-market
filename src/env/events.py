@@ -42,6 +42,11 @@ class EventInjector:
         self._event_types = np.asarray(["load_step", "gen_trip", "line_trip", "high_ren"], dtype=object)
         self._event_probs = np.asarray([0.3, 0.3, 0.2, 0.2], dtype=np.float64)
         self._events_disabled = False
+        self.max_delta_p_mw: float = 6.3  # Max event magnitude for curriculum
+
+    def set_max_delta_p_mw(self, max_mw: float) -> None:
+        """Set maximum event magnitude for curriculum learning."""
+        self.max_delta_p_mw = float(max_mw)
 
     def set_probs(self, probs_dict: dict[str, float]) -> None:
         probs = np.asarray([float(probs_dict.get(str(ev), 0.0)) for ev in self._event_types], dtype=np.float64)
@@ -126,6 +131,7 @@ class EventInjector:
             # Sudden load increase: 10-25% of S_BASE (N-1 to severe)
             # Ref: Bitew et al. (2025) - 500kW MG tested with load surges
             delta = float(self.rng.choice(np.asarray([1.6, 2.5, 3.9], dtype=float)))
+            delta = min(delta, self.max_delta_p_mw)  # Clamp to curriculum limit
 
         elif event_type == "gen_trip":
             location = int(self.rng.choice(np.asarray(WIND_BUSES, dtype=np.int64)))
@@ -133,13 +139,14 @@ class EventInjector:
             # Ref: Seneviratne et al. (2016) - large generator loss with RES penetration
             # Ref: Knap et al. (2016) - contingency event sizing for ESS
             delta = -float(self.rng.choice(np.asarray([2.4, 3.9, 5.5], dtype=float)))
+            delta = max(delta, -self.max_delta_p_mw)  # Clamp (negative)
 
         elif event_type == "line_trip":
             pair = CRITICAL_LINES[int(self.rng.integers(0, len(CRITICAL_LINES)))]
             location = int(pair[0] * 1000 + pair[1])
             # Line trip: ~15% equivalent power island/imbalance
             # Ref: Farooq et al. (2022) - transmission line tripping causes gen-load mismatch
-            delta = -2.4
+            delta = -min(2.4, self.max_delta_p_mw)  # Clamp to curriculum limit
 
         else:  # high_ren
             location = int(self.rng.choice(np.asarray(WIND_BUSES, dtype=np.int64)))
@@ -147,6 +154,7 @@ class EventInjector:
             # Ref: Kerdphol et al. (2019, 186 citations) - high RES penetration events
             # Causes over-frequency, tests upward FFR capability
             delta = float(self.rng.choice(np.asarray([3.1, 4.7, 6.3], dtype=float)))
+            delta = min(delta, self.max_delta_p_mw)  # Clamp to curriculum limit
 
         return EventConfig(type=event_type, delta_P_mw=delta, location=location, t_inject=30.0)
 
@@ -224,7 +232,8 @@ class EventInjector:
                 if net.gen.at[idx, "p_mw"] <= 1e-6:
                     net.gen.at[idx, "in_service"] = False
 
-            delta_p = -trip_amount
+            # Gen trip = loss of generation = equivalent to load increase = positive delta_p
+            delta_p = +trip_amount
 
         elif event.type == "line_trip":
             line_idx: int | None
@@ -241,7 +250,8 @@ class EventInjector:
                 raise ValueError("No line found for line_trip event")
             net.line.at[line_idx, "in_service"] = False
             topology_changed = True
-            delta_p = -abs(delta_p)
+            # Line trip causing power loss = equivalent to load increase = positive delta_p
+            delta_p = +abs(delta_p)
 
         elif event.type == "high_ren":
             bus_pp = self._busnum_to_pp_idx(net, int(event.location))
