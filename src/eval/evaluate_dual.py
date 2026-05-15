@@ -65,7 +65,7 @@ class FixedDroopPolicy:
 
 class DeterministicDualPolicy:
     def __init__(self, checkpoint_path: Path) -> None:
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
         required_keys = {
             "encoder",
@@ -178,9 +178,13 @@ class DualEvaluator:
                 print(f"[evaluate_dual] Skip method '{name}': {exc}")
 
         self.scenarios = {
-            "S1_load_step": EventConfig(type="load_step", delta_P_mw=1.5, location=45, t_inject=30.0),
-            "S2_gen_trip": EventConfig(type="gen_trip", delta_P_mw=-1.5, location=97, t_inject=30.0),
-            "S3_line_trip": EventConfig(type="line_trip", delta_P_mw=-1.0, location=108, t_inject=30.0),
+            # Main benchmark tier (moderate->severe, literature-aligned)
+            "S1_load_step": EventConfig(type="load_step", delta_P_mw=2.4, location=45, t_inject=30.0),
+            "S2_gen_trip": EventConfig(type="gen_trip", delta_P_mw=-3.9, location=97, t_inject=30.0),
+            "S3_line_trip": EventConfig(type="line_trip", delta_P_mw=-2.4, location=108, t_inject=30.0),
+            # Stress tier (extreme)
+            "S4_high_ren_extreme": EventConfig(type="high_ren", delta_P_mw=4.7, location=97, t_inject=30.0),
+            "S5_gen_trip_extreme": EventConfig(type="gen_trip", delta_P_mw=-5.5, location=97, t_inject=30.0),
         }
 
         self._agent_p_rated_mw = np.asarray(
@@ -315,14 +319,53 @@ class DualEvaluator:
         }
 
     @staticmethod
-    def compute_freq_metrics(f_traj: np.ndarray, rocof_traj: np.ndarray, f_nominal: float = 50.0) -> dict[str, float]:
+    def compute_freq_metrics(
+        f_traj: np.ndarray,
+        rocof_traj: np.ndarray,
+        f_nominal: float = 50.0,
+        event_start: float = 30.0,
+        post_window_steps: int = 50,
+        f_limit_hz: float = 0.5,
+        settle_band_hz: float = 0.02,
+    ) -> dict[str, float]:
         delta_f = f_traj - float(f_nominal)
+        under_mask = delta_f < -f_limit_hz
+        over_mask = delta_f > f_limit_hz
+        any_mask = np.logical_or(under_mask, over_mask)
+
+        start_idx = int(max(0, round(event_start)))
+        end_idx = int(min(delta_f.size, start_idx + max(int(post_window_steps), 0)))
+        if end_idx > start_idx:
+            post_delta_f = delta_f[start_idx:end_idx]
+            post_any_mask = any_mask[start_idx:end_idx]
+            post_rocof = rocof_traj[start_idx:end_idx]
+        else:
+            post_delta_f = np.zeros((0,), dtype=np.float32)
+            post_any_mask = np.zeros((0,), dtype=bool)
+            post_rocof = np.zeros((0,), dtype=np.float32)
+
+        # Settling time after disturbance: first index such that all remaining points stay inside deadband.
+        settle_time_s = float(post_window_steps)
+        if post_delta_f.size > 0:
+            abs_post = np.abs(post_delta_f)
+            for i in range(abs_post.size):
+                if np.all(abs_post[i:] <= settle_band_hz):
+                    settle_time_s = float(i)
+                    break
+
         return {
             "nadir": float(np.min(f_traj)) if f_traj.size else float(f_nominal),
             "delta_f_max": float(np.max(np.abs(delta_f))) if delta_f.size else 0.0,
             "rocof_max": float(np.max(np.abs(rocof_traj))) if rocof_traj.size else 0.0,
             "IAE": float(np.trapezoid(np.abs(delta_f), dx=1.0)) if delta_f.size else 0.0,
-            "time_violation": float(np.sum(np.abs(delta_f) > 0.5)) if delta_f.size else 0.0,
+            "IAE_post": float(np.trapezoid(np.abs(post_delta_f), dx=1.0)) if post_delta_f.size else 0.0,
+            "rocof_post_max": float(np.max(np.abs(post_rocof))) if post_rocof.size else 0.0,
+            "time_violation": float(np.sum(any_mask)) if delta_f.size else 0.0,
+            "time_violation_under": float(np.sum(under_mask)) if delta_f.size else 0.0,
+            "time_violation_over": float(np.sum(over_mask)) if delta_f.size else 0.0,
+            "time_violation_post": float(np.sum(post_any_mask)),
+            "settling_time_s": settle_time_s,
+            "ffr_success": float((np.min(f_traj) >= (f_nominal - f_limit_hz)) and (np.max(np.abs(post_rocof)) <= 1.0 if post_rocof.size else True)),
         }
 
     def build_table1(self, n_runs: int = 20) -> pd.DataFrame:
@@ -334,11 +377,32 @@ class DualEvaluator:
                 ffr_energy: list[float] = []
                 for _ in range(int(n_runs)):
                     ep = self.run_episode(method=method, force_event=event)
-                    run_metrics.append(self.compute_freq_metrics(ep["f_traj"], ep["rocof_traj"]))
+                    run_metrics.append(
+                        self.compute_freq_metrics(
+                            ep["f_traj"],
+                            ep["rocof_traj"],
+                            event_start=float(event.t_inject),
+                            post_window_steps=50,
+                            f_limit_hz=0.5,
+                        )
+                    )
                     ffr_activations.append(int(ep.get("ffr_activations", 0)))
                     ffr_energy.append(float(ep.get("ffr_energy_mwh", 0.0)))
 
-                for metric in ["delta_f_max", "rocof_max", "IAE", "time_violation", "nadir"]:
+                for metric in [
+                    "delta_f_max",
+                    "rocof_max",
+                    "IAE",
+                    "IAE_post",
+                    "rocof_post_max",
+                    "time_violation",
+                    "time_violation_under",
+                    "time_violation_over",
+                    "time_violation_post",
+                    "settling_time_s",
+                    "ffr_success",
+                    "nadir",
+                ]:
                     vals = np.asarray([m[metric] for m in run_metrics], dtype=np.float32)
                     rows.append(
                         {
@@ -399,7 +463,15 @@ class DualEvaluator:
             for _ in range(int(n_runs)):
                 ep = self.run_episode(method=method, force_topology=topo_idx)
                 m = self.compute_freq_metrics(ep["f_traj"], ep["rocof_traj"])
-                scores.append(-(m["delta_f_max"] + m["rocof_max"] + m["IAE"]))
+                # Higher is better: reward FFR success and penalize post-event instability.
+                score = (
+                    10.0 * m["ffr_success"]
+                    - 2.0 * m["time_violation_post"]
+                    - 1.5 * m["IAE_post"]
+                    - 1.0 * m["rocof_post_max"]
+                    - 0.5 * m["settling_time_s"]
+                )
+                scores.append(float(score))
         return float(np.mean(scores)) if scores else 0.0
 
     def build_table3(self, n_runs: int = 20) -> pd.DataFrame:
@@ -418,16 +490,63 @@ class DualEvaluator:
             method = self.methods[method_key]
             train_score = self._generalization_score(method, train_topos, n_runs)
             test_score = self._generalization_score(method, test_topos, n_runs)
-            denom = train_score if abs(train_score) > 1e-8 else 1.0
+            denom = abs(train_score) if abs(train_score) > 1e-8 else 1.0
             drop = (train_score - test_score) / denom * 100.0
+            retained = test_score / train_score if abs(train_score) > 1e-8 else 0.0
             rows.append(
                 {
                     "encoder": label,
                     "train_score": float(train_score),
                     "test_score": float(test_score),
                     "drop_percent": float(drop),
+                    "retained_ratio": float(retained),
                 }
             )
+        return pd.DataFrame(rows)
+
+    def build_ffr_topology_table(self, n_runs: int = 20) -> pd.DataFrame:
+        method_names = [m for m in ["MAPPO no-GNN", "GAT", "GNN-MAPPO"] if m in self.methods]
+        if not method_names:
+            return pd.DataFrame()
+
+        train_topos = list(range(15))
+        test_topos = list(range(15, 20))
+        scenario = self.scenarios["S3_line_trip"]
+        rows: list[dict[str, float | str]] = []
+
+        for method_name in method_names:
+            method = self.methods[method_name]
+            for split_name, topo_indices in (("train_topology", train_topos), ("unseen_topology", test_topos)):
+                ffr_success_vals: list[float] = []
+                iae_post_vals: list[float] = []
+                settling_vals: list[float] = []
+                ffr_energy_vals: list[float] = []
+
+                for topo_idx in topo_indices:
+                    for _ in range(int(n_runs)):
+                        ep = self.run_episode(method=method, force_event=scenario, force_topology=topo_idx)
+                        freq = self.compute_freq_metrics(
+                            ep["f_traj"],
+                            ep["rocof_traj"],
+                            event_start=float(scenario.t_inject),
+                            post_window_steps=50,
+                            f_limit_hz=0.5,
+                        )
+                        ffr_success_vals.append(float(freq["ffr_success"]))
+                        iae_post_vals.append(float(freq["IAE_post"]))
+                        settling_vals.append(float(freq["settling_time_s"]))
+                        ffr_energy_vals.append(float(ep.get("ffr_energy_mwh", 0.0)))
+
+                rows.append(
+                    {
+                        "method": method_name,
+                        "topology_split": split_name,
+                        "ffr_success_rate": float(np.mean(ffr_success_vals)) if ffr_success_vals else 0.0,
+                        "iae_post": float(np.mean(iae_post_vals)) if iae_post_vals else 0.0,
+                        "settling_time_s": float(np.mean(settling_vals)) if settling_vals else 0.0,
+                        "ffr_energy_mwh": float(np.mean(ffr_energy_vals)) if ffr_energy_vals else 0.0,
+                    }
+                )
         return pd.DataFrame(rows)
 
     def plot_fig4(self, trajectories: dict[str, np.ndarray]) -> None:
@@ -575,10 +694,12 @@ class DualEvaluator:
         table1_final = self.build_table1(n_runs=n_runs)
         table2_final = self.build_table2(n_runs=n_runs)
         table3_final = self.build_table3(n_runs=n_runs)
+        table_ffr_topology = self.build_ffr_topology_table(n_runs=n_runs)
 
         table1_final.to_csv(self.output_dir / "table1.csv", index=False)
         table2_final.to_csv(self.output_dir / "table2.csv", index=False)
         table3_final.to_csv(self.output_dir / "table3.csv", index=False)
+        table_ffr_topology.to_csv(self.output_dir / "table_ffr_topology.csv", index=False)
 
         return table1, table2_final, table3_final
 

@@ -1,0 +1,1059 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from pathlib import Path
+import json
+import math
+import random
+from typing import Any
+
+import gymnasium as gym
+import numpy as np
+import pandapower as pp
+from pandapower.converter.matpower import from_mpc
+
+from src.env.day_context import DayContextLoader
+from src.env.events import EventConfig, EventInjector
+from src.env.evcs_model import EVBatteryConfig, EVBatteryModel, mpc_correction
+from src.env.freq_dynamics import FrequencyDynamics
+from src.env.IEEE123bus import convert_near_zero_branches_to_switches
+from src.env.microgrid_env import _read_matpower_bus_numbers, _fix_mpc_file, _from_mpc_compat
+from src.opt.tie_switch_reconfig import TieSwitchReconfiguration
+
+
+class VPPSecondaryControl:
+    """AGC (secondary control) for each VPP using integral action."""
+
+    def __init__(self, n_agents: int, K_i: float = 0.1) -> None:
+        self.n_agents = n_agents
+        self.K_i = K_i
+        self.integral = 0.0
+
+    def step(self, frequency: float, dt: float) -> float:
+        """AGC power command from integral action.
+
+        Args:
+            frequency: Current system frequency (Hz)
+            dt: Time step (s)
+
+        Returns:
+            p_agc: Power adjustment (pu) for entire VPP
+        """
+        error = frequency - 50.0
+        self.integral += error * dt
+        self.integral = float(np.clip(self.integral, -20, 20))
+        p_agc = -self.K_i * self.integral
+        p_agc = float(np.clip(p_agc, -1.0, 1.0))
+        return p_agc
+
+
+class BatterySecondaryControl:
+    """AGC specifically for battery units (faster integral action)."""
+
+    def __init__(self, n_bess: int, K_i: float = 0.5) -> None:
+        self.n_bess = n_bess
+        self.K_i = K_i
+        self.integral = 0.0
+
+    def step(self, frequency: float, dt: float) -> float:
+        """AGC power command from integral action (higher gain than VPP).
+
+        Args:
+            frequency: Current system frequency (Hz)
+            dt: Time step (s)
+
+        Returns:
+            p_agc: Power adjustment (pu) for battery fleet
+        """
+        error = frequency - 50.0
+        self.integral += error * dt
+        self.integral = float(np.clip(self.integral, -10, 10))
+        p_agc = -self.K_i * self.integral
+        p_agc = float(np.clip(p_agc, -1.0, 1.0))
+        return p_agc
+
+
+class MicrogridEnvDual(gym.Env):
+    metadata = {"render.modes": []}
+
+    def __init__(
+        self,
+        placement_path: str | Path,
+        mpc_path: str | Path,
+        seed: int = 42,
+        topology_cache: list[tuple[Any, np.ndarray, set[int]]] | None = None,
+        topology_cache_path: str | Path | None = None,
+        precomputed_dir: str | Path = "data/precomputed_365d_97to67",
+    ) -> None:
+        super().__init__()
+        self.rng = random.Random(seed)
+        self.np_rng = np.random.default_rng(seed)
+
+        placement_path = Path(placement_path)
+        mpc_path = Path(mpc_path)
+
+        with open(placement_path, encoding="utf-8") as f:
+            self.placement = json.load(f)
+
+        fixed_mpc = self._pre_fix_mpc(mpc_path)
+        base_net = _from_mpc_compat(fixed_mpc)
+        bus_numbers = _read_matpower_bus_numbers(Path(fixed_mpc))
+        base_net.bus["bus_id"] = bus_numbers
+        convert_near_zero_branches_to_switches(base_net, bus_numbers=bus_numbers)
+
+        self._bus_map = {
+            int(bus_id): int(idx)
+            for idx, bus_id in base_net.bus["bus_id"].items()
+            if not np.isnan(bus_id)
+        }
+
+        base_net.load["p_mw"] = base_net.load["p_mw"] * 8.5
+        base_net.load["q_mvar"] = base_net.load["q_mvar"] * 8.5
+        base_net.bus["vn_kv"] = 22.0
+
+        self._agent_specs: list[dict[str, Any]] = []
+        self._inject_assets(base_net)
+        self._order_agents()
+
+        self.n_agents = len(self._agent_specs)
+        if self.n_agents != 41:
+            raise ValueError(f"Expected 41 agents from placement, got {self.n_agents}")
+
+        self._evcs_count = len(self.placement.get("evcs", []))
+
+        # VPP-level FFR: 3 VPPs instead of 18 individual droop agents
+        # VPP_1: E1-E3 (agents 0-2 for EVCS, 9-11 for BESS, 18-20 for V2G)
+        # VPP_2: E4-E6 (agents 3-5 for EVCS, 12-14 for BESS, 21-23 for V2G)
+        # VPP_3: E7-E9 (agents 6-8 for EVCS, 15-17 for BESS, 24-26 for V2G)
+        self._vpp_ids = ["VPP_1", "VPP_2", "VPP_3"]
+        self._vpp_droop_agents: dict[str, list[int]] = {
+            "VPP_1": list(range(9, 12)) + list(range(18, 21)),   # BESS + V2G for E1-E3
+            "VPP_2": list(range(12, 15)) + list(range(21, 24)),  # BESS + V2G for E4-E6
+            "VPP_3": list(range(15, 18)) + list(range(24, 27)),  # BESS + V2G for E7-E9
+        }
+        self._n_vpps = len(self._vpp_ids)
+
+        self.observation_space_fast = gym.spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(self.n_agents, 7),
+            dtype=np.float32,
+        )
+        self.observation_space_slow = gym.spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(self.n_agents, 7),
+            dtype=np.float32,
+        )
+
+        self.action_space_fast = gym.spaces.Box(
+            low=-1.0,
+            high=1.0,
+            shape=(44,),  # 41 agents + 3 VPP k_droop
+            dtype=np.float32,
+        )
+        self.action_space_slow = gym.spaces.Box(
+            low=-1.0,
+            high=1.0,
+            shape=(82,),
+            dtype=np.float32,
+        )
+
+        self.base_net = deepcopy(base_net)
+        self.net = deepcopy(base_net)
+
+        self.event_injector = EventInjector(seed=seed)
+        self.freq_dyn = FrequencyDynamics()
+        self.reconfig = TieSwitchReconfiguration(self.base_net, seed=seed)
+        self.context_loader = DayContextLoader(precomputed_dir=precomputed_dir, seed=seed)
+        self.day_ctx = None
+        self.day_step = 0
+        self._last_topology_fallback_reason: str | None = None
+
+        cache_path = Path(topology_cache_path) if topology_cache_path is not None else Path("data/tie_switch_cache.pkl")
+        if topology_cache is not None:
+            sanitized_cache, _ = self.reconfig._sanitize_cache_entries(topology_cache)
+            self.reconfig._cache = sanitized_cache
+            self.reconfig._active_topologies = len(sanitized_cache)
+            self.reconfig._optimal_cache.clear()
+            if (not self.reconfig._cache) or (not self._is_topology_cache_compatible(self.reconfig._cache)):
+                self.reconfig.generate_scenarios(n=20)
+                self.reconfig.save_cache(cache_path)
+        else:
+            loaded = self.reconfig.load_cache(cache_path)
+            if (not loaded) or (not self._is_topology_cache_compatible(self.reconfig._cache)):
+                self.reconfig.generate_scenarios(n=20)
+                self.reconfig.save_cache(cache_path)
+
+        self.fast_step_count = 0
+        self.slow_step_count = 0
+        self.episode_done = False
+        self.current_event = None
+        self.edge_index = np.zeros((2, 0), dtype=np.int64)
+        self.current_open_set: set[int] = set()
+        self.event_delta_p_pu = 0.0
+        self.dt_fast_s = 1.0
+        self.dt_ode_s = 0.01
+        self.n_ode_substeps = max(1, int(round(self.dt_fast_s / self.dt_ode_s)))
+        self._topology_just_changed = False
+
+        # GFM bus mapping for topology-aware frequency dynamics
+        self._gfm_bus_map: dict[str, int] = {}
+        for gfm_id, gfm_data in self.placement.get("gfm", {}).items():
+            bus_id = int(gfm_data.get("bus", 0))
+            pp_idx = self._bus_map.get(bus_id, -1)
+            if pp_idx >= 0:
+                self._gfm_bus_map[gfm_id] = pp_idx
+
+        self.soc = np.full((self.n_agents,), 0.5, dtype=np.float32)
+        self.p_set = np.zeros((self.n_agents,), dtype=np.float32)
+        self.q_set = np.zeros((self.n_agents,), dtype=np.float32)
+        self.delta_p_set = np.zeros((self.n_agents,), dtype=np.float32)
+        self.k_droop_vpp = np.zeros((self._n_vpps,), dtype=np.float32)  # 3 VPP-level droop coefficients
+
+        # FFR activation trigger thresholds (ENTSO-E compliant)
+        # Ref: ENTSO-E Network Code RfG, SO GL, Nordic FFR specifications
+        # FCR activation: ±200 mHz (Continental Europe)
+        # FFR for low-inertia/islanded: stricter RoCoF trigger (Nordic: 1.0 Hz/s)
+        self.ffr_threshold_df = 0.2      # Hz - ENTSO-E FCR activation threshold
+        self.ffr_threshold_rocof = 1.0   # Hz/s - Nordic FFR RoCoF trigger
+        self.ffr_deactivation_df = 0.1   # Hz - hysteresis for deactivation (50% of threshold)
+        self.ffr_active = False          # Current FFR activation state
+        self.ffr_activation_count = 0    # Number of activations in episode
+        self.ffr_energy_delivered = 0.0  # MWh delivered during FFR
+
+        # UFLS thresholds per ENTSO-E emergency standards
+        self.ufls_stage1 = 49.0  # Hz - first load shedding stage
+        self.ufls_stage2 = 48.5  # Hz - second load shedding stage
+        self.ufls_stage3 = 48.0  # Hz - critical stage
+
+        # AGC (Secondary Control) - Distributed integral action for frequency recovery
+        # Total system capacity ≈ 15.7 MW (3 VPPs × 5 MW + Battery × 2 MW)
+        # K_i distributed proportionally by capacity for effective secondary control
+        # Higher K_i provides faster recovery: K_i=0.3-0.5 for ~40-60s recovery time
+        total_capacity_mw = 15.7
+        k_i_sys = 0.4  # Increased from 0.15 for stronger recovery
+        vpp_capacity_mw = 5.0
+
+        self.vpp_agc = [
+            VPPSecondaryControl(n_agents=6, K_i=k_i_sys * (vpp_capacity_mw / total_capacity_mw))
+            for _ in range(self._n_vpps)
+        ]
+        self.bess_agc = BatterySecondaryControl(n_bess=18, K_i=k_i_sys * (2.0 / total_capacity_mw))
+
+        # Inter-VPP coordination: SOC-weighted FFR contribution
+        self._vpp_soc_weight = np.ones(self._n_vpps, dtype=np.float32)
+
+        # Feasibility feedback: track constraint violations
+        self.feasibility_violations = {
+            "voltage": 0,      # Count of voltage violations
+            "soc": 0,          # Count of SOC limit violations
+            "power": 0,        # Count of power limit violations
+            "thermal": 0,      # Count of thermal/line limit violations
+        }
+        self.feasibility_ok = True  # Overall feasibility flag
+
+        self.zone_lmp = {1: 45.0, 2: 50.0, 3: 55.0, 4: 60.0}
+        self._slow_baseline = np.zeros((82,), dtype=np.float32)
+
+        self._agent_elements = np.asarray([str(spec["element"]) for spec in self._agent_specs], dtype=object)
+        self._agent_idx_labels = np.asarray([int(spec["idx"]) for spec in self._agent_specs], dtype=np.int64)
+        self._agent_p_rated = np.asarray([max(float(spec["p_rated"]), 1e-6) for spec in self._agent_specs], dtype=np.float32)
+        self._agent_bus_pp = np.asarray([self._pp_idx(int(spec["bus"])) for spec in self._agent_specs], dtype=np.int64)
+
+        self._mask_sgen_agents = self._agent_elements == "sgen"
+        self._mask_storage_agents = self._agent_elements == "storage"
+        self._mask_load_agents = self._agent_elements == "load"
+
+        self._sgen_agent_pos = np.zeros((0,), dtype=np.int64)
+        self._storage_agent_pos = np.zeros((0,), dtype=np.int64)
+        self._load_agent_pos = np.zeros((0,), dtype=np.int64)
+        self._zone_lmp_vec = np.zeros((self.n_agents,), dtype=np.float32)
+        self._k_p_evcs = 0.1
+        self._k_i_evcs = 0.05
+        self._k_p_dpv = 0.05
+        self._k_i_dpv = 0.02
+
+        self._batt_agent_indices = list(range(9, 27))
+        self.batt_models = [
+            EVBatteryModel(
+                EVBatteryConfig(
+                    E_cap_kwh=50.0,
+                    P_rated_kw=50.0,
+                    SoC_min=0.20,
+                    SoC_max=0.90,
+                )
+            )
+            for _ in range(len(self._batt_agent_indices))
+        ]
+        self._batt_soc = np.full((len(self._batt_agent_indices),), 0.5, dtype=np.float32)
+        self._batt_vbat = np.full((len(self._batt_agent_indices),), 400.0, dtype=np.float32)
+        self._batt_ib = np.zeros((len(self._batt_agent_indices),), dtype=np.float32)
+        self.w_soc = 5.0
+        self.w_dcob = 1.0
+        self.w_v2g = 0.1
+
+    def _is_topology_cache_compatible(self, cache: list[tuple[Any, np.ndarray, set[int]]]) -> bool:
+        if not cache:
+            return False
+        for item in cache:
+            try:
+                net_i = item[0]
+                sgen_idx = {int(i) for i in net_i.sgen.index.to_numpy(dtype=np.int64, copy=False)}
+                storage_idx = {int(i) for i in net_i.storage.index.to_numpy(dtype=np.int64, copy=False)}
+                load_idx = {int(i) for i in net_i.load.index.to_numpy(dtype=np.int64, copy=False)}
+            except Exception:
+                return False
+
+            if not self.reconfig._is_topology_valid(deepcopy(net_i), run_power_flow=True):
+                return False
+
+            for spec in self._agent_specs:
+                elm = str(spec["element"])
+                idx = int(spec["idx"])
+                if elm == "sgen" and idx not in sgen_idx:
+                    return False
+                if elm == "storage" and idx not in storage_idx:
+                    return False
+                if elm == "load" and idx not in load_idx:
+                    return False
+        return True
+
+    def _find_connected_gfms(self) -> set[str]:
+        """Determine which GFMs are electrically connected to main network.
+
+        Uses NetworkX to find connected components and checks which GFM buses
+        are in the same component as the main slack bus (G1 @ bus 114).
+        """
+        import networkx as nx
+
+        G = nx.Graph()
+        for _, row in self.net.bus.iterrows():
+            G.add_node(int(row.name))
+
+        for _, row in self.net.line.iterrows():
+            if row.get("in_service", True):
+                G.add_edge(int(row["from_bus"]), int(row["to_bus"]))
+
+        if len(self.net.switch) > 0:
+            for _, row in self.net.switch.iterrows():
+                if row.get("closed", False) and row.get("et") == "b":
+                    G.add_edge(int(row["bus"]), int(row["element"]))
+
+        # Find component containing G1 (main slack)
+        g1_pp_idx = self._gfm_bus_map.get("G1", -1)
+        if g1_pp_idx < 0 or g1_pp_idx not in G:
+            return set(self._gfm_bus_map.keys())
+
+        main_component = set(nx.node_connected_component(G, g1_pp_idx))
+
+        connected_gfms = set()
+        for gfm_id, pp_idx in self._gfm_bus_map.items():
+            if pp_idx in main_component:
+                connected_gfms.add(gfm_id)
+
+        return connected_gfms
+
+    def _update_freq_dyn_topology(self) -> None:
+        """Update frequency dynamics model based on current network topology."""
+        connected_gfms = self._find_connected_gfms()
+        self.freq_dyn.update_topology(connected_gfms)
+
+    @staticmethod
+    def _pre_fix_mpc(mpc_path: Path) -> str:
+        fixed = mpc_path.with_name(f"{mpc_path.stem}_ppfix.m")
+        if not fixed.exists():
+            _fix_mpc_file(str(mpc_path))
+        return str(fixed)
+
+    def _pp_idx(self, mpc_id: int) -> int:
+        return self._bus_map[int(mpc_id)]
+
+    def _inject_assets(self, net: pp.pandapowerNet) -> None:
+        gfm_buses: list[int] = []
+
+        for ev in self.placement.get("evcs", []):
+            bus = self._pp_idx(ev["bus"])
+            pv_idx = pp.create_sgen(net, bus=bus, p_mw=ev["pv_mw"], q_mvar=0.0, controllable=True)
+            bess_idx = pp.create_storage(
+                net,
+                bus=bus,
+                p_mw=0.0,
+                max_p_mw=ev["bess_mw"],
+                min_p_mw=-ev["bess_mw"],
+                max_e_mwh=ev["bess_mwh"],
+                soc_percent=50.0,
+            )
+            v2g_idx = pp.create_load(net, bus=bus, p_mw=0.0, q_mvar=0.0, controllable=True)
+
+            inv_mva = float(ev.get("inverter_mva", ev["pv_mw"]))
+            q_max_pv = inv_mva * math.sin(math.acos(0.9))
+            q_max_bess = float(ev.get("inverter_mva", ev["bess_mw"])) * math.sin(math.acos(0.9))
+
+            self._agent_specs.append({"type": "EVCS_PV", "zone": int(ev.get("zone", 1)), "bus": int(ev["bus"]), "element": "sgen", "idx": int(pv_idx), "p_rated": float(ev["pv_mw"]), "q_max": float(q_max_pv)})
+            self._agent_specs.append({"type": "EVCS_BESS", "zone": int(ev.get("zone", 1)), "bus": int(ev["bus"]), "element": "storage", "idx": int(bess_idx), "p_rated": float(ev["bess_mw"]), "q_max": float(q_max_bess)})
+            self._agent_specs.append({"type": "EVCS_V2G", "zone": int(ev.get("zone", 1)), "bus": int(ev["bus"]), "element": "load", "idx": int(v2g_idx), "p_rated": float(ev["v2g_mw"]), "q_max": 0.0})
+
+        for pv in self.placement.get("dpv", []):
+            bus = self._pp_idx(pv["bus"])
+            pv_idx = pp.create_sgen(net, bus=bus, p_mw=pv["mw"], q_mvar=0.0, controllable=True)
+            inv_mva = float(pv.get("inverter_mva", pv.get("sn_mva", pv["mw"])))
+            q_max = inv_mva * math.sin(math.acos(0.9))
+            self._agent_specs.append({"type": "DPV", "zone": int(pv.get("zone", 1)), "bus": int(pv["bus"]), "element": "sgen", "idx": int(pv_idx), "p_rated": float(pv["mw"]), "q_max": float(q_max)})
+
+        for gfm_data in self.placement.get("gfm", {}).values():
+            if not isinstance(gfm_data, dict):
+                continue
+            bus_id = int(gfm_data.get("bus", 0))
+            if bus_id <= 0:
+                continue
+            pp_bus = self._bus_map.get(bus_id)
+            if pp_bus is None:
+                continue
+            gfm_buses.append(int(pp_bus))
+
+        existing_ext_grid_buses = set(net.ext_grid["bus"].astype(int).tolist()) if not net.ext_grid.empty else set()
+        for gfm_bus in gfm_buses:
+            if gfm_bus in existing_ext_grid_buses:
+                continue
+            pp.create_ext_grid(net, bus=gfm_bus, vm_pu=1.0, name=f"gfm_{gfm_bus}")
+
+    def _order_agents(self) -> None:
+        evcs = self.placement.get("evcs", [])
+        dpv = self.placement.get("dpv", [])
+
+        def find_spec(agent_type: str, bus: int) -> dict[str, Any]:
+            for spec in self._agent_specs:
+                if spec["type"] == agent_type and int(spec["bus"]) == int(bus):
+                    return spec
+            raise KeyError(f"Agent spec not found for {agent_type} at bus {bus}")
+
+        ordered: list[dict[str, Any]] = []
+        for ev in evcs:
+            ordered.append(find_spec("EVCS_PV", ev["bus"]))
+        for ev in evcs:
+            ordered.append(find_spec("EVCS_BESS", ev["bus"]))
+        for ev in evcs:
+            ordered.append(find_spec("EVCS_V2G", ev["bus"]))
+        for pv in dpv:
+            ordered.append(find_spec("DPV", pv["bus"]))
+        self._agent_specs = ordered
+
+    def _sample_zone_lmp(self) -> None:
+        self.zone_lmp = {
+            1: float(self.np_rng.uniform(40.0, 60.0)),
+            2: float(self.np_rng.uniform(45.0, 65.0)),
+            3: float(self.np_rng.uniform(50.0, 70.0)),
+            4: float(self.np_rng.uniform(42.0, 62.0)),
+        }
+        self._zone_lmp_vec = np.asarray(
+            [self.zone_lmp.get(int(spec["zone"]), 50.0) for spec in self._agent_specs],
+            dtype=np.float32,
+        )
+
+    def set_slow_baseline(self, action_slow: np.ndarray) -> None:
+        a = np.asarray(action_slow, dtype=np.float32).reshape(-1)
+        if a.shape[0] != 82:
+            raise ValueError(f"action_slow baseline must have shape (82,), got {a.shape}")
+        self._slow_baseline = a.copy()
+
+    def _zone_prices_vector(self) -> np.ndarray:
+        return self._zone_lmp_vec
+
+    def _agent_p_net(self) -> np.ndarray:
+        p_net = np.zeros((self.n_agents,), dtype=np.float32)
+        if np.any(self._mask_sgen_agents):
+            p_net[self._mask_sgen_agents] = self.net.sgen["p_mw"].to_numpy(dtype=np.float32, copy=False)[self._sgen_agent_pos]
+        if np.any(self._mask_storage_agents):
+            p_net[self._mask_storage_agents] = self.net.storage["p_mw"].to_numpy(dtype=np.float32, copy=False)[self._storage_agent_pos]
+        if np.any(self._mask_load_agents):
+            p_net[self._mask_load_agents] = -self.net.load["p_mw"].to_numpy(dtype=np.float32, copy=False)[self._load_agent_pos]
+        return p_net
+
+    def _agent_q_net(self) -> np.ndarray:
+        q_net = np.zeros((self.n_agents,), dtype=np.float32)
+        for i, spec in enumerate(self._agent_specs):
+            elm = spec["element"]
+            idx = spec["idx"]
+            if elm == "sgen":
+                q_net[i] = float(self.net.sgen.at[idx, "q_mvar"])
+            elif elm == "storage":
+                q_net[i] = float(self.net.storage.at[idx, "q_mvar"]) if "q_mvar" in self.net.storage.columns else 0.0
+            else:
+                q_net[i] = -float(self.net.load.at[idx, "q_mvar"])
+        return q_net
+
+    def _agent_v_bus(self) -> np.ndarray:
+        if hasattr(self.net, "res_bus") and not self.net.res_bus.empty and "vm_pu" in self.net.res_bus.columns:
+            v = np.asarray(
+                [float(self.net.res_bus.at[self._pp_idx(spec["bus"]), "vm_pu"]) for spec in self._agent_specs],
+                dtype=np.float32,
+            )
+            return np.nan_to_num(v, nan=1.0, posinf=1.1, neginf=0.9)
+        return np.ones((self.n_agents,), dtype=np.float32)
+
+    def _compute_virtual_md(self, agent_idx: int) -> tuple[float, float]:
+        if agent_idx < self._evcs_count:
+            kp = self._k_p_evcs
+            ki = self._k_i_evcs
+        else:
+            kp = self._k_p_dpv
+            ki = self._k_i_dpv
+        m_j = 1.0 / kp
+        d_j = ki / kp
+        return float(m_j), float(d_j)
+
+    def _build_obs_fast(self) -> np.ndarray:
+        st = self.freq_dyn.get_state()
+        p_net = np.nan_to_num(self._agent_p_net(), nan=0.0, posinf=1e3, neginf=-1e3)
+        obs = np.zeros((self.n_agents, 7), dtype=np.float32)
+        obs[:, 0] = np.float32(np.clip(float(st.delta_f_hz), -5.0, 5.0))
+        obs[:, 1] = np.float32(np.clip(float(st.rocof_hz_s), -10.0, 10.0))
+        obs[:, 2] = np.clip(p_net, -1e3, 1e3).astype(np.float32)
+        obs[:, 4] = np.clip(self._zone_lmp_vec, 0.0, 1e3).astype(np.float32)
+        for i in range(self.n_agents):
+            if i in self._batt_agent_indices:
+                batt_idx = i - self._batt_agent_indices[0]
+                ev = self.batt_models[batt_idx]
+                dcob_norm = min(ev.dcob() / ev.cfg.P_rated_kw, 1.0)
+            else:
+                dcob_norm = 0.0
+            obs[i, 3] = np.float32(dcob_norm)
+            m_j, d_j = self._compute_virtual_md(i)
+            obs[i, 5] = np.float32(m_j / 20.0)
+            obs[i, 6] = np.float32(d_j / 2.0)
+        return np.nan_to_num(obs, nan=0.0, posinf=1e3, neginf=-1e3)
+
+    def _apply_day_context(self, day_ctx, step: int) -> None:
+        if day_ctx is None or len(day_ctx) == 0:
+            return
+        step_idx = int(np.clip(step, 0, len(day_ctx) - 1))
+        row = day_ctx.iloc[step_idx]
+        self.zone_lmp = {
+            1: float(row.get("lambda_p2p_z1", row.get("lambda_p2p", 50.0))),
+            2: float(row.get("lambda_p2p_z2", row.get("lambda_p2p", 50.0))),
+            3: float(row.get("lambda_p2p", 50.0)),
+            4: float(row.get("lambda_p2p_z4", row.get("lambda_p2p", 50.0))),
+        }
+        self._zone_lmp_vec = np.asarray(
+            [self.zone_lmp.get(int(spec["zone"]), 50.0) for spec in self._agent_specs],
+            dtype=np.float32,
+        )
+
+    def _build_obs_slow(self) -> np.ndarray:
+        v_bus = np.nan_to_num(self._agent_v_bus(), nan=1.0, posinf=1.1, neginf=0.9)
+        p_net = np.nan_to_num(self._agent_p_net(), nan=0.0, posinf=1e3, neginf=-1e3)
+        q_net = np.nan_to_num(self._agent_q_net(), nan=0.0, posinf=1e3, neginf=-1e3)
+        price = np.nan_to_num(self._zone_prices_vector(), nan=50.0, posinf=100.0, neginf=0.0)
+        obs = np.zeros((self.n_agents, 7), dtype=np.float32)
+        for i in range(self.n_agents):
+            if i in self._batt_agent_indices:
+                batt_idx = i - self._batt_agent_indices[0]
+                ev = self.batt_models[batt_idx]
+                dcob_norm = min(ev.dcob() / ev.cfg.P_rated_kw, 1.0)
+            else:
+                dcob_norm = 0.0
+            m_j, d_j = self._compute_virtual_md(i)
+            obs[i, 0] = np.float32(v_bus[i] - 1.0)
+            obs[i, 1] = np.float32(q_net[i])
+            obs[i, 2] = np.float32(p_net[i])
+            obs[i, 3] = np.float32(dcob_norm)
+            obs[i, 4] = np.float32(price[i])
+            obs[i, 5] = np.float32(m_j / 20.0)
+            obs[i, 6] = np.float32(d_j / 2.0)
+        return np.nan_to_num(obs, nan=0.0, posinf=1e3, neginf=-1e3)
+
+    def reset(self, seed: int | None = None, options: dict | None = None):
+        super().reset(seed=seed)
+        options = options or {}
+        if seed is not None:
+            self.rng.seed(seed)
+            self.np_rng = np.random.default_rng(seed)
+
+        self.net = deepcopy(self.base_net)
+        self.fast_step_count = 0
+        self.slow_step_count = 0
+        self.episode_done = False
+        self.event_delta_p_pu = 0.0
+
+        self.soc.fill(0.5)
+        self.p_set.fill(0.0)
+        self.q_set.fill(0.0)
+        self.delta_p_set.fill(0.0)
+        self.k_droop_vpp.fill(0.0)
+
+        # Reset FFR activation state
+        self.ffr_active = False
+        self.ffr_activation_count = 0
+        self.ffr_energy_delivered = 0.0
+
+        # Reset Inter-VPP coordination and feasibility state
+        self._vpp_soc_weight = np.ones(self._n_vpps, dtype=np.float32)
+        self.feasibility_violations = {"voltage": 0, "soc": 0, "power": 0, "thermal": 0}
+        self.feasibility_ok = True
+
+        for ev in self.batt_models:
+            soc_init = float(self.np_rng.uniform(0.3, 0.7))
+            t_dep_h = float(self.np_rng.uniform(2.0, 8.0))
+            ev.reset(SoC_init=soc_init, t_dep_h=t_dep_h)
+        self._batt_soc[:] = np.asarray([ev.SoC for ev in self.batt_models], dtype=np.float32)
+
+        self._sample_zone_lmp()
+        self.day_ctx = self.context_loader.sample_day()
+        self.day_step = int(self.np_rng.integers(0, 96))
+        self._apply_day_context(self.day_ctx, self.day_step)
+        self.freq_dyn.reset(f0=50.0)
+        self.event_injector.reset_cache()
+        self._last_topology_fallback_reason = None
+
+        force_topology = options.get("force_topology", None)
+        if force_topology is not None:
+            topo_idx = int(force_topology)
+            if topo_idx < 0 or topo_idx >= len(self.reconfig._cache):
+                raise IndexError(f"force_topology index {topo_idx} out of range [0, {len(self.reconfig._cache) - 1}]")
+            sampled_net, sampled_edge, selected_open_set = self.reconfig._cache[topo_idx]
+            self.net = deepcopy(sampled_net)
+            self.edge_index = np.asarray(sampled_edge, dtype=np.int64).copy()
+            self.current_open_set = set(selected_open_set)
+        else:
+            try:
+                row = self.day_ctx.iloc[int(np.clip(self.day_step, 0, len(self.day_ctx) - 1))] if self.day_ctx is not None else None
+                load_cols = ["load_z1", "load_z2", "load_z3", "load_z4"]
+                if row is not None and all(col in row for col in load_cols):
+                    load_scale = float(np.mean([float(row[col]) for col in load_cols]))
+                else:
+                    load_scale = 1.0
+                if row is not None and ("pv_pu" in row):
+                    pv_scale = float(row["pv_pu"])
+                else:
+                    pv_scale = 0.8
+
+                sampled_net, sampled_edge, selected_open_set = self.reconfig.select_optimal(load_scale=load_scale, pv_scale=pv_scale)
+                self.net = deepcopy(sampled_net)
+                self.edge_index = np.asarray(sampled_edge, dtype=np.int64)
+                self.current_open_set = set(selected_open_set)
+            except Exception as exc:
+                self._last_topology_fallback_reason = str(exc)
+                self.current_open_set = set()
+                self.edge_index = self.event_injector.rebuild_edge_index(self.net)
+
+        # Update frequency dynamics based on topology (which GFMs are connected)
+        self._update_freq_dyn_topology()
+
+        force_event = options.get("force_event", None)
+        if force_event is not None:
+            if isinstance(force_event, EventConfig):
+                self.current_event = deepcopy(force_event)
+            else:
+                self.current_event = EventConfig(
+                    type=str(force_event["type"]),
+                    delta_P_mw=float(force_event["delta_P_mw"]),
+                    location=int(force_event["location"]),
+                    t_inject=float(force_event.get("t_inject", 30.0)),
+                    injected=bool(force_event.get("injected", False)),
+                )
+        else:
+            self.current_event = self.event_injector.sample()
+            if not bool(getattr(self.event_injector, "_events_disabled", False)):
+                self.current_event.t_inject = 30.0
+        self.current_event.injected = False
+
+        sgen_index_map = {int(idx): pos for pos, idx in enumerate(self.net.sgen.index.to_numpy(dtype=np.int64, copy=False))}
+        storage_index_map = {int(idx): pos for pos, idx in enumerate(self.net.storage.index.to_numpy(dtype=np.int64, copy=False))}
+        load_index_map = {int(idx): pos for pos, idx in enumerate(self.net.load.index.to_numpy(dtype=np.int64, copy=False))}
+
+        self._sgen_agent_pos = np.asarray(
+            [sgen_index_map[int(idx)] for idx in self._agent_idx_labels[self._mask_sgen_agents]],
+            dtype=np.int64,
+        )
+        self._storage_agent_pos = np.asarray(
+            [storage_index_map[int(idx)] for idx in self._agent_idx_labels[self._mask_storage_agents]],
+            dtype=np.int64,
+        )
+        self._load_agent_pos = np.asarray(
+            [load_index_map[int(idx)] for idx in self._agent_idx_labels[self._mask_load_agents]],
+            dtype=np.int64,
+        )
+
+        self._topology_just_changed = False
+        obs_fast = self._build_obs_fast()
+        obs_slow = self._build_obs_slow()
+        info = {
+            "edge_index": np.asarray(self.edge_index, dtype=np.int64),
+            "topology_changed": False,
+            "event_type": None,
+            "topology_fallback_reason": self._last_topology_fallback_reason,
+        }
+        return obs_fast, obs_slow, info
+
+    def _apply_fast_actions(self, action_fast: np.ndarray) -> None:
+        af = np.asarray(action_fast, dtype=np.float32).reshape(-1)
+        if af.shape[0] != 44:
+            raise ValueError(f"action_fast must have shape (44,), got {af.shape}")
+
+        self.delta_p_set = af[: self.n_agents].copy()
+        self.k_droop_vpp = af[self.n_agents :].copy()  # 3 VPP-level droop coefficients
+
+        delta_mw = (self.delta_p_set * 0.1 * self._agent_p_rated).astype(np.float32)
+
+        if self._sgen_agent_pos.size > 0:
+            sgen_p = self.net.sgen["p_mw"].to_numpy(dtype=np.float32, copy=False)
+            sgen_delta = delta_mw[self._mask_sgen_agents]
+            sgen_rated = self._agent_p_rated[self._mask_sgen_agents]
+            sgen_p[self._sgen_agent_pos] = np.clip(
+                sgen_p[self._sgen_agent_pos] + sgen_delta,
+                0.0,
+                2.0 * sgen_rated,
+            )
+
+        if self._storage_agent_pos.size > 0:
+            storage_p = self.net.storage["p_mw"].to_numpy(dtype=np.float32, copy=False)
+            storage_delta = delta_mw[self._mask_storage_agents]
+            storage_rated = self._agent_p_rated[self._mask_storage_agents]
+            storage_p[self._storage_agent_pos] = np.clip(
+                storage_p[self._storage_agent_pos] + storage_delta,
+                -2.0 * storage_rated,
+                2.0 * storage_rated,
+            )
+
+        if self._load_agent_pos.size > 0:
+            load_p = self.net.load["p_mw"].to_numpy(dtype=np.float32, copy=False)
+            load_delta = delta_mw[self._mask_load_agents]
+            load_rated = self._agent_p_rated[self._mask_load_agents]
+            load_p[self._load_agent_pos] = np.clip(
+                load_p[self._load_agent_pos] - load_delta,
+                0.0,
+                2.0 * load_rated,
+            )
+
+        mean_abs = float(np.mean(np.abs(self.delta_p_set)))
+        self.soc = np.clip(self.soc - 0.002 * mean_abs, 0.05, 0.95)
+
+    def _severity_gamma(
+        self,
+        rocof: float,
+        alpha_roc: float = 0.5,
+        rocof_ref: float = 0.5,
+        gamma_max: float = 3.0,
+    ) -> float:
+        severity = np.clip(abs(rocof) / rocof_ref, 0.0, gamma_max)
+        return float(1.0 + alpha_roc * severity)
+
+    def _compute_vpp_soc_weights(self) -> np.ndarray:
+        """Inter-VPP Coordination: VPPs with higher SOC contribute more FFR.
+
+        Weight formula: w_vpp = clip(avg_soc / 0.5, 0.2, 2.0)
+        - SOC=50% → weight=1.0 (baseline)
+        - SOC=80% → weight=1.6 (contribute more)
+        - SOC=20% → weight=0.4 (contribute less, preserve capacity)
+        """
+        weights = np.ones(self._n_vpps, dtype=np.float32)
+        for vpp_idx, vpp_id in enumerate(self._vpp_ids):
+            agent_indices = self._vpp_droop_agents[vpp_id]
+            # Get SOC from BESS models for this VPP's agents
+            soc_values = []
+            for agent_idx in agent_indices:
+                if agent_idx in self._batt_agent_indices:
+                    batt_idx = self._batt_agent_indices.index(agent_idx)
+                    soc_values.append(float(self.batt_models[batt_idx].SoC))
+            if soc_values:
+                avg_soc = float(np.mean(soc_values))
+                # Higher SOC → higher weight (more FFR contribution)
+                weights[vpp_idx] = float(np.clip(avg_soc / 0.5, 0.2, 2.0))
+        return weights
+
+    def _check_feasibility(self) -> dict[str, int]:
+        """Check constraint violations for feasibility feedback.
+
+        Returns dict with violation counts for each constraint type.
+        """
+        violations = {"voltage": 0, "soc": 0, "power": 0, "thermal": 0}
+
+        # SOC violations
+        for ev in self.batt_models:
+            if ev.SoC < ev.cfg.SoC_min:
+                violations["soc"] += 1
+            elif ev.SoC > ev.cfg.SoC_max:
+                violations["soc"] += 1
+
+        # Power limit violations
+        for idx, agent_i in enumerate(self._batt_agent_indices):
+            p_cmd_kw = abs(self.delta_p_set[agent_i]) * self._agent_p_rated[agent_i] * 1000.0
+            p_rated_kw = float(self.batt_models[idx].cfg.P_rated_kw)
+            if p_cmd_kw > p_rated_kw * 1.05:  # 5% tolerance
+                violations["power"] += 1
+
+        # Voltage violations (simplified - check if bus voltages exist)
+        if hasattr(self.net, 'res_bus') and len(self.net.res_bus) > 0:
+            v_pu = self.net.res_bus['vm_pu'].values
+            v_violations = np.sum((v_pu < 0.95) | (v_pu > 1.05))
+            violations["voltage"] = int(v_violations)
+
+        return violations
+
+    def step_fast(self, action_fast: np.ndarray):
+        if self.episode_done:
+            obs = self._build_obs_fast()
+            return obs, 0.0, True, False, {"error": "episode done; call reset"}
+
+        af = np.asarray(action_fast, dtype=np.float32).reshape(-1)
+        if af.shape[0] != 44:
+            raise ValueError(f"action_fast must have shape (44,), got {af.shape}")
+
+        delta_p_raw = af[: self.n_agents].copy()
+        k_droop_vpp_raw = af[self.n_agents :].copy()  # 3 VPP-level droop coefficients
+
+        for idx, agent_i in enumerate(self._batt_agent_indices):
+            p_kw = delta_p_raw[agent_i] * self._agent_p_rated[agent_i] * 1000.0
+            p_rated_kw = float(self.batt_models[idx].cfg.P_rated_kw)
+            p_kw_clipped = np.clip(p_kw, -p_rated_kw, p_rated_kw)
+            delta_p_raw[agent_i] = p_kw_clipped / (self._agent_p_rated[agent_i] * 1000.0)
+
+        action_fast = np.concatenate([delta_p_raw, k_droop_vpp_raw], axis=0)
+        self._apply_fast_actions(action_fast)
+
+        t_current = float(self.fast_step_count)
+        event_now = False
+        if self.current_event is None:
+            self.current_event = self.event_injector.sample()
+            if not bool(getattr(self.event_injector, "_events_disabled", False)):
+                self.current_event.t_inject = 30.0
+            self.current_event.injected = False
+
+        prev_edge = np.asarray(self.edge_index, dtype=np.int64)
+        self.net, self.edge_index, delta_p_pu = self.event_injector.inject(
+            self.net,
+            self.current_event,
+            t_current=t_current,
+        )
+        curr_edge = np.asarray(self.edge_index, dtype=np.int64)
+        self._topology_just_changed = not np.array_equal(prev_edge, curr_edge)
+        if abs(delta_p_pu) > 0.0:
+            self.event_delta_p_pu = float(delta_p_pu)
+            event_now = True
+
+        prev_df = float(self.freq_dyn.get_state().delta_f_hz)
+        current_rocof = float(self.freq_dyn.rocof)
+
+        # FFR Activation Trigger: activate when |Δf| > threshold OR |RoCoF| > threshold
+        ffr_should_activate = (
+            abs(prev_df) > self.ffr_threshold_df or
+            abs(current_rocof) > self.ffr_threshold_rocof
+        )
+
+        if ffr_should_activate and not self.ffr_active:
+            # Transition to ACTIVE state
+            self.ffr_active = True
+            self.ffr_activation_count += 1
+
+        if self.ffr_active:
+            # FFR is ACTIVE: apply full droop response with severity scaling
+            gamma = self._severity_gamma(current_rocof)
+            # Inter-VPP Coordination: weight by SOC (high SOC → more FFR contribution)
+            self._vpp_soc_weight = self._compute_vpp_soc_weights()
+            k_droop_vpp_eff = np.clip(self.k_droop_vpp * gamma * self._vpp_soc_weight, 0.0, 5.0)
+        else:
+            # FFR is NOT ACTIVE: minimal response to conserve BESS capacity
+            gamma = 1.0
+            k_droop_vpp_eff = np.zeros(self._n_vpps, dtype=np.float32)
+
+        # Deactivate FFR when frequency stabilized (hysteresis to prevent chattering)
+        if self.ffr_active and abs(prev_df) < self.ffr_deactivation_df:
+            self.ffr_active = False
+
+        if abs(prev_df) > 0.1:
+            delta_p_mpc_kw = mpc_correction(
+                evcs_list=self.batt_models,
+                delta_f=prev_df,
+                rocof=current_rocof,
+                H_sys=self.freq_dyn.h_sys,
+            )
+            for idx, agent_i in enumerate(self._batt_agent_indices):
+                extra_mw = delta_p_mpc_kw[idx] / 1000.0
+                delta_p_raw[agent_i] = np.clip(
+                    delta_p_raw[agent_i] + extra_mw,
+                    -self._agent_p_rated[agent_i],
+                    self._agent_p_rated[agent_i],
+                )
+                self.delta_p_set[agent_i] = delta_p_raw[agent_i]
+
+        # VPP-level droop: each VPP aggregates FFR from its member assets
+        droop_support = 0.0
+        ffr_power_mw = 0.0  # Track FFR power for energy calculation
+        for vpp_idx, vpp_id in enumerate(self._vpp_ids):
+            vpp_k_droop = float(k_droop_vpp_eff[vpp_idx])
+            for agent_idx in self._vpp_droop_agents[vpp_id]:
+                local_dispatch = float(self.delta_p_set[agent_idx]) * 0.02
+                droop_term = vpp_k_droop * max(0.0, -prev_df) * 0.02
+                droop_support += local_dispatch + droop_term
+                if self.ffr_active:
+                    ffr_power_mw += abs(droop_term) * self._agent_p_rated[agent_idx]
+
+        # Track FFR energy delivered (MW * seconds -> MWh)
+        if self.ffr_active:
+            self.ffr_energy_delivered += ffr_power_mw * self.dt_fast_s / 3600.0
+
+        event_term = float(np.clip(self.event_delta_p_pu, -0.3, 0.3))
+        bess_term = float(np.clip(droop_support, -0.25, 0.25))
+
+        # TẦNG 3: Secondary Control (AGC) - Integral action for frequency recovery
+        freq_state = self.freq_dyn.get_state()
+        f_current = freq_state.delta_f_hz + 50.0
+
+        agc_term = 0.0
+        for vpp_idx in range(self._n_vpps):
+            agc_term += self.vpp_agc[vpp_idx].step(f_current, self.dt_fast_s)
+        agc_term += self.bess_agc.step(f_current, self.dt_fast_s)
+        agc_term = float(np.clip(agc_term, -0.5, 0.5))
+
+        # Combine droop (Tầng 2) + AGC (Tầng 3) as support power
+        support_term = bess_term + agc_term
+
+        for _ in range(self.n_ode_substeps):
+            freq_state = self.freq_dyn.step(
+                dt=self.dt_ode_s,
+                delta_P_pu=event_term,
+                P_bess_pu=support_term,
+            )
+
+        for idx, agent_i in enumerate(self._batt_agent_indices):
+            p_cmd_kw = self.delta_p_set[agent_i] * self._agent_p_rated[agent_i] * 1000.0
+            _, _, soc, vbat, ib = self.batt_models[idx].step(self.dt_fast_s, p_cmd_kw)
+            self._batt_soc[idx] = soc
+            self._batt_vbat[idx] = vbat
+            self._batt_ib[idx] = ib
+
+        self.fast_step_count += 1
+        done = False
+        truncated = False
+
+        obs_fast = self._build_obs_fast()
+        df_clip = float(np.clip(np.nan_to_num(freq_state.delta_f_hz, nan=0.0, posinf=5.0, neginf=-5.0), -5.0, 5.0))
+        rocof_clip = float(np.clip(np.nan_to_num(freq_state.rocof_hz_s, nan=0.0, posinf=10.0, neginf=-10.0), -10.0, 10.0))
+        event_mag = abs(event_term)
+        if event_mag > 1e-6:
+            control_effect = float(np.clip((abs(prev_df) - abs(df_clip)) / event_mag, -2.0, 2.0))
+        else:
+            control_effect = 0.0
+        effort = float(np.clip(np.mean(np.abs(self.delta_p_set)), 0.0, 1.0))
+        if not np.isfinite(control_effect):
+            control_effect = 0.0
+        r_fast = float(-2.0 * abs(df_clip) - 0.2 * abs(rocof_clip) + 0.5 * control_effect - 0.02 * effort)
+        r_fast = float(np.clip(np.nan_to_num(r_fast, nan=-10.0, posinf=10.0, neginf=-10.0), -10.0, 10.0))
+
+        soc_violations = 0.0
+        dcob_violations = []
+        for idx, ev in enumerate(self.batt_models):
+            if ev.SoC < ev.cfg.SoC_min + 0.02:
+                soc_violations += (ev.cfg.SoC_min + 0.02 - ev.SoC)
+            agent_i = self._batt_agent_indices[idx]
+            p_cmd_kw = float(self.delta_p_set[agent_i]) * float(self._agent_p_rated[agent_i]) * 1000.0
+            p_min_soft_kw, p_max_soft_kw = ev.power_bounds()
+            excess_hi = max(0.0, p_cmd_kw - p_max_soft_kw)
+            excess_lo = max(0.0, p_min_soft_kw - p_cmd_kw)
+            excess_kw = excess_hi + excess_lo
+            dcob_violations.append(excess_kw / max(float(ev.cfg.P_rated_kw), 1e-6))
+        dcob_violation = float(np.mean(dcob_violations)) if dcob_violations else 0.0
+        dcob_violation = float(np.clip(np.nan_to_num(dcob_violation, nan=0.0, posinf=10.0, neginf=0.0), 0.0, 10.0))
+        r_fast -= self.w_soc * soc_violations
+        r_fast -= self.w_dcob * dcob_violation
+
+        # Feasibility Feedback: check constraint violations
+        self.feasibility_violations = self._check_feasibility()
+        total_violations = sum(self.feasibility_violations.values())
+        self.feasibility_ok = (total_violations == 0)
+
+        freq_flag = float(1.0 if (self.current_event is not None and self.current_event.injected) else 0.0)
+        info = {
+            "event_injected": bool(event_now),
+            "freq_event_flag": freq_flag,
+            "delta_f": float(np.nan_to_num(freq_state.delta_f_hz, nan=0.0, posinf=5.0, neginf=-5.0)),
+            "rocof": float(np.nan_to_num(freq_state.rocof_hz_s, nan=0.0, posinf=10.0, neginf=-10.0)),
+            "ffr_active": bool(self.ffr_active),
+            "ffr_activation_count": int(self.ffr_activation_count),
+            "ffr_energy_delivered_mwh": float(self.ffr_energy_delivered),
+            "vpp_soc_weights": self._vpp_soc_weight.copy(),  # Inter-VPP coordination weights
+            "feasibility_ok": bool(self.feasibility_ok),
+            "feasibility_violations": dict(self.feasibility_violations),
+            "edge_count": int(self.edge_index.shape[1] if self.edge_index.ndim == 2 else 0),
+            "edge_index": np.asarray(self.edge_index, dtype=np.int64),
+            "topology_changed": bool(self._topology_just_changed),
+            "event_type": self.current_event.type if (self.current_event is not None and self.current_event.injected) else None,
+            "k_droop_vpp_eff": k_droop_vpp_eff.astype(np.float32),  # 3 VPP-level droop coefficients
+            "evcs_soc": self._batt_soc.copy(),
+            "evcs_dcob": np.asarray([ev.dcob() for ev in self.batt_models], dtype=np.float32),
+            "step": int(self.fast_step_count),
+            "phase": "fast",
+        }
+
+        return obs_fast, r_fast, done, truncated, info
+
+    def _apply_slow_actions(self, action_slow: np.ndarray) -> None:
+        a = np.asarray(action_slow, dtype=np.float32).reshape(-1)
+        if a.shape[0] != 82:
+            raise ValueError(f"action_slow must have shape (82,), got {a.shape}")
+
+        self.p_set = a[: self.n_agents].copy()
+        self.q_set = a[self.n_agents :].copy()
+
+        for i, spec in enumerate(self._agent_specs):
+            p_rated = max(float(spec["p_rated"]), 1e-6)
+            q_max = max(float(spec["q_max"]), 1e-6)
+            p_cmd = float(self.p_set[i]) * p_rated
+            q_cmd = float(self.q_set[i]) * q_max
+
+            elm = spec["element"]
+            idx = spec["idx"]
+            if elm == "sgen":
+                self.net.sgen.at[idx, "p_mw"] = p_cmd
+                self.net.sgen.at[idx, "q_mvar"] = q_cmd
+            elif elm == "storage":
+                self.net.storage.at[idx, "p_mw"] = p_cmd
+                if "q_mvar" in self.net.storage.columns:
+                    self.net.storage.at[idx, "q_mvar"] = q_cmd
+            else:
+                self.net.load.at[idx, "p_mw"] = max(0.0, -p_cmd)
+                self.net.load.at[idx, "q_mvar"] = max(0.0, -q_cmd)
+
+        self.soc = np.clip(self.soc - 0.01 * np.abs(self.p_set), 0.05, 0.95)
+
+    def step_slow(self, action_slow: np.ndarray):
+        if self.fast_step_count < 300:
+            obs = self._build_obs_slow()
+            return obs, 0.0, False, False, {"warning": "run 300 fast steps before slow step", "phase": "slow"}
+
+        self.day_step = (int(self.day_step) + 1) % 96
+        self._apply_day_context(self.day_ctx, self.day_step)
+        self._apply_slow_actions(action_slow)
+
+        converged = True
+        try:
+            pp.runpp(self.net, numba=False, init="flat")
+        except Exception:
+            converged = False
+
+        obs_slow = self._build_obs_slow()
+        v = obs_slow[:, 0]
+        p2p = float(np.sum(np.maximum(0.0, self.p_set)))
+        vdi = float(np.mean(np.abs(v - 1.0)))
+
+        r_slow = float(-5.0 * vdi + 0.02 * p2p - 0.01 * np.mean(np.abs(self.q_set)))
+
+        self.slow_step_count += 1
+        self.episode_done = True
+
+        info = {
+            "phase": "slow",
+            "converged": bool(converged),
+            "VDI": float(vdi),
+            "P2P": float(p2p),
+            "P_p2p": np.maximum(0.0, self.p_set).astype(np.float32),
+            "v_min": float(np.min(v)),
+            "v_max": float(np.max(v)),
+            "v_violations": int(np.sum((v < 0.95) | (v > 1.05))),
+            "step": int(self.slow_step_count),
+        }
+
+        done = True
+        truncated = False
+        return obs_slow, r_slow, done, truncated, info
