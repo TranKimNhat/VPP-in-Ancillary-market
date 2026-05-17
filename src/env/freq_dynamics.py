@@ -23,11 +23,12 @@ class FrequencyDynamics:
         R: float = 0.05,
         Tg: float = 0.2,
         f0: float = 50.0,
-        Kp: float = 0.2,
-        Ki: float = 0.1,
-        deadband: float = 0.1,
-        pref_min_pu: float = -0.05,
-        pref_max_pu: float = 0.05,
+        Kp: float = 0.12,
+        Ki: float = 0.04,
+        Kd: float = 0.02,
+        deadband: float = 0.015,
+        pref_min_pu: float = -0.15,
+        pref_max_pu: float = 0.15,
         max_abs_delta_f_hz: float = 5.0,
     ) -> None:
         self.H = float(H)
@@ -37,6 +38,7 @@ class FrequencyDynamics:
         self.f0 = float(f0)
         self.Kp = float(Kp)
         self.Ki = float(Ki)
+        self.Kd = float(Kd)
         self.deadband = float(deadband)
         self.pref_min_pu = float(pref_min_pu)
         self.pref_max_pu = float(pref_max_pu)
@@ -151,6 +153,7 @@ class FrequencyDynamics:
         self._agc_integral = 0.0
         self._rocof = 0.0
         self._f_prev = 0.0  # Track delta_f, not absolute f
+        self._delta_f_prev = 0.0  # For derivative term in PID
 
     def step(self, dt: float, delta_P_pu: float, P_bess_pu: float = 0.0) -> FrequencyState:
         dt_val = float(dt)
@@ -170,8 +173,17 @@ class FrequencyDynamics:
             delta_f_for_agc = delta_f_hz
 
         self._agc_integral += delta_f_for_agc * dt_val
-        self._p_ref += (self.Kp * delta_f_for_agc + self.Ki * self._agc_integral) * dt_val
-        self._p_ref = float(min(self.pref_max_pu, max(self.pref_min_pu, self._p_ref)))
+        # PID derivative term (filtered): d(error)/dt
+        delta_f_derivative = (delta_f_for_agc - self._delta_f_prev) / dt_val
+        self._delta_f_prev = delta_f_for_agc
+        # AGC (PID): negative delta_f (under-frequency) -> increase p_ref (more generation)
+        # Derivative term helps anticipate changes and dampen overshoot
+        p_ref_raw = self._p_ref - (self.Kp * delta_f_for_agc + self.Ki * self._agc_integral + self.Kd * delta_f_derivative) * dt_val
+        p_ref_new = float(min(self.pref_max_pu, max(self.pref_min_pu, p_ref_raw)))
+        # Back-calculation anti-windup: undo integral contribution that was clipped
+        if self.Ki > 0:
+            self._agc_integral -= (p_ref_raw - p_ref_new) / self.Ki
+        self._p_ref = p_ref_new
 
         p_gov_dot = (-self._p_gov + self._p_ref - (self._x / self.R)) / self.Tg
         self._p_gov += p_gov_dot * dt_val
