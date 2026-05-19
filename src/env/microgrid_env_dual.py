@@ -96,10 +96,11 @@ class MicrogridEnvDual(gym.Env):
         self.np_rng = np.random.default_rng(seed)
 
         # FFR control mode:
-        #   "droop": Classical per-DER droop FFR (baseline). RL action provides minor adjustment.
-        #   "mappo": RL agent directly controls per-DER FFR power (proposed, replaces droop).
-        if ffr_mode not in ("droop", "mappo"):
-            raise ValueError(f"ffr_mode must be 'droop' or 'mappo', got '{ffr_mode}'")
+        #   "droop":      Classical per-DER droop FFR (baseline). RL action provides minor adjustment.
+        #   "mappo":      RL directly commands per-DER FFR power (single-action, replaces droop).
+        #   "mappo_dual": RL outputs (P_ref, K_droop) per DER (proposed AM dual-product).
+        if ffr_mode not in ("droop", "mappo", "mappo_dual"):
+            raise ValueError(f"ffr_mode must be 'droop'|'mappo'|'mappo_dual', got '{ffr_mode}'")
         self.ffr_mode = ffr_mode
 
         placement_path = Path(placement_path)
@@ -304,6 +305,29 @@ class MicrogridEnvDual(gym.Env):
             # V2G: moderate droop gain
             p_rated = self._agent_p_rated[idx]
             self._k_droop_v2g[i] = 0.10 * p_rated  # Lower than BESS
+
+        # Per-DER K_droop bounds for "mappo_dual" mode (units: MW/Hz)
+        # Mapping per proposal §2: K_i = R_i * P_rated_i with R_i in [R_min, R_max] per type.
+        # PV (non-dispatchable) cannot provide FFR -> bounds collapse to 0.
+        self._k_droop_min_per_agent = np.zeros(self.n_agents, dtype=np.float32)
+        self._k_droop_max_per_agent = np.zeros(self.n_agents, dtype=np.float32)
+        for i, spec in enumerate(self._agent_specs):
+            atype = spec.get("type", "")
+            p_rated = float(self._agent_p_rated[i])
+            if "BESS" in atype:
+                r_min, r_max = 0.05, 0.30
+            elif "V2G" in atype:
+                r_min, r_max = 0.05, 0.20
+            elif "DPV" in atype:
+                r_min, r_max = 0.0, 0.15
+            else:  # EVCS_PV (non-dispatchable PV) — no FFR
+                r_min, r_max = 0.0, 0.0
+            self._k_droop_min_per_agent[i] = r_min * p_rated
+            self._k_droop_max_per_agent[i] = r_max * p_rated
+
+        # State buffers exposed to obs builder (set each step in mappo_dual path)
+        self._p_ref_last = np.zeros(self.n_agents, dtype=np.float32)        # a_P_i in [-1, 1]
+        self._k_droop_last = np.zeros(self.n_agents, dtype=np.float32)      # MW/Hz, post SoC mask
 
         self._sgen_agent_pos = np.zeros((0,), dtype=np.int64)
         self._storage_agent_pos = np.zeros((0,), dtype=np.int64)
@@ -837,11 +861,27 @@ class MicrogridEnvDual(gym.Env):
             return obs, 0.0, True, False, {"error": "episode done; call reset"}
 
         af = np.asarray(action_fast, dtype=np.float32).reshape(-1)
-        if af.shape[0] != 44:
-            raise ValueError(f"action_fast must have shape (44,), got {af.shape}")
+        n_ag = self.n_agents
+        n_vp = len(self._vpp_droop_agents)
+        expected_dual = 2 * n_ag + n_vp  # mappo_dual: a_P, a_K, VPP-K
+        expected_single = n_ag + n_vp    # droop / mappo: a_P, VPP-K
 
-        delta_p_raw = af[: self.n_agents].copy()
-        k_droop_vpp_raw = af[self.n_agents :].copy()  # 3 VPP-level droop coefficients
+        if self.ffr_mode == "mappo_dual":
+            if af.shape[0] != expected_dual:
+                raise ValueError(
+                    f"action_fast (mappo_dual) must have shape ({expected_dual},), got {af.shape}"
+                )
+            delta_p_raw = af[:n_ag].copy()                            # a_P_i in [-1, 1]
+            a_k_raw = af[n_ag : 2 * n_ag].copy()                      # a_K_i in [-1, 1]
+            k_droop_vpp_raw = af[2 * n_ag : 2 * n_ag + n_vp].copy()   # legacy VPP K (RL sends zeros)
+        else:
+            if af.shape[0] != expected_single:
+                raise ValueError(
+                    f"action_fast must have shape ({expected_single},), got {af.shape}"
+                )
+            delta_p_raw = af[:n_ag].copy()
+            a_k_raw = None
+            k_droop_vpp_raw = af[n_ag:].copy()
 
         for idx, agent_i in enumerate(self._batt_agent_indices):
             p_kw = delta_p_raw[agent_i] * self._agent_p_rated[agent_i] * 1000.0
@@ -972,8 +1012,37 @@ class MicrogridEnvDual(gym.Env):
                 p_der_ffr = -self._k_droop_v2g[i] * delta_f / S_BASE
                 p_der_ffr += float(self.delta_p_set[idx]) * 0.02
                 p_v2g_agg += p_der_ffr
+        elif self.ffr_mode == "mappo_dual":
+            # PROPOSED (DUAL): RL outputs (a_P_i, a_K_i) per DER.
+            # K_droop_i = K_min_i + (1+a_K_i)/2 * (K_max_i - K_min_i)   [MW/Hz]
+            # P_ffr_i   = (a_P_i * P_rated_i  -  K_droop_i * delta_f) / S_BASE
+            # SoC mask: zero K for batteries with SoC outside [0.15, 0.95].
+            a_k_clipped = np.clip(a_k_raw, -1.0, 1.0)
+            k_span = self._k_droop_max_per_agent - self._k_droop_min_per_agent
+            k_droop_per_agent = self._k_droop_min_per_agent + 0.5 * (1.0 + a_k_clipped) * k_span
+
+            # SoC-aware hard mask for battery-backed DERs (BESS + V2G).
+            for idx_b, agent_i in enumerate(self._batt_agent_indices):
+                if agent_i < self.n_agents:
+                    soc = float(self._batt_soc[idx_b])
+                    if soc < 0.15 or soc > 0.95:
+                        k_droop_per_agent[agent_i] = 0.0
+            self._k_droop_last = k_droop_per_agent.astype(np.float32)
+            self._p_ref_last = delta_p_raw.astype(np.float32).copy()
+
+            p_bess_agg = 0.0
+            for i, idx in enumerate(self._bess_indices):
+                p_ref_mw = float(self.delta_p_set[idx]) * float(self._agent_p_rated[idx])
+                p_der_ffr = (p_ref_mw - float(k_droop_per_agent[idx]) * delta_f) / S_BASE
+                p_bess_agg += p_der_ffr
+
+            p_v2g_agg = 0.0
+            for i, idx in enumerate(self._v2g_indices):
+                p_ref_mw = float(self.delta_p_set[idx]) * float(self._agent_p_rated[idx])
+                p_der_ffr = (p_ref_mw - float(k_droop_per_agent[idx]) * delta_f) / S_BASE
+                p_v2g_agg += p_der_ffr
         else:
-            # PROPOSED (MAPPO): RL agent directly controls per-DER FFR power
+            # PROPOSED (MAPPO single-action): RL agent directly controls per-DER FFR power
             # P_ffr_i = action_i * P_rated_i / S_BASE (full capacity, no droop floor)
             p_bess_agg = 0.0
             for i, idx in enumerate(self._bess_indices):

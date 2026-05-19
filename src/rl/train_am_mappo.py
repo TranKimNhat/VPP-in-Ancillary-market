@@ -190,26 +190,30 @@ class AMRewardConfig:
     - UFLS Stage 1: 49.0 Hz (Δf = -1.0 Hz)
     - Pre-UFLS warning: 49.5 Hz (Δf = -0.5 Hz)
     """
-    # Normalized reward weights sum to 1.0 for reviewer-facing interpretability.
-    w_delta_f: float = 0.30
-    w_rocof: float = 0.15
-    w_violation: float = 0.25
-    w_nadir: float = 0.15
-    w_effort: float = 0.03
-    w_tracking: float = 0.08
+    # Frequency / safety terms (re-balanced for dual-action)
+    w_delta_f: float = 0.25
+    w_rocof: float = 0.12
+    w_violation: float = 0.22
+    w_nadir: float = 0.12
+    w_effort: float = 0.05
+    w_tracking: float = 0.0   # disabled in dual mode: K_droop handles transient automatically
+    # New dual-product terms (revenue + storage health + gain stability)
+    w_soc_pen: float = 0.08
+    w_market: float = 0.10
+    w_commit: float = 0.06
 
     # Frequency references (ENTSO-E compliant)
     delta_f_target: float = 0.0
-    delta_f_deadband: float = 0.02  # ±20 mHz - ENTSO-E FCR deadband
-    delta_f_ref: float = 0.5        # Normalization reference (FCR full activation range)
+    delta_f_deadband: float = 0.02
+    delta_f_ref: float = 0.5
     rocof_target: float = 0.0
-    rocof_deadband: float = 0.1     # ±100 mHz/s - typical grid code RoCoF deadband
-    rocof_ref: float = 1.0          # Nordic FFR RoCoF trigger (1.0 Hz/s)
+    rocof_deadband: float = 0.1
+    rocof_ref: float = 1.0
 
     # Safety thresholds (ENTSO-E UFLS standards)
-    f_limit: float = 0.5            # Pre-UFLS threshold: Δf = -0.5 Hz (freq < 49.5 Hz)
-    nadir_threshold: float = 49.5   # Hz - pre-UFLS warning level
-    nadir_ref: float = 0.5          # Normalization: distance to UFLS stage 1 (49.0 Hz)
+    f_limit: float = 0.5
+    nadir_threshold: float = 49.5
+    nadir_ref: float = 0.5
 
     # Control effort and droop-like tracking references
     action_ref_scale: float = 0.75
@@ -219,6 +223,13 @@ class AMRewardConfig:
     tracking_k_delta_f: float = 0.5
     tracking_k_rocof: float = 0.25
 
+    # SoC band (per-DER comfortable operating range)
+    soc_band_lo: float = 0.20
+    soc_band_hi: float = 0.85
+    # Market signals (zone_LMP normalized by 100 $/MWh; K capacity price ratio)
+    lmp_ref: float = 100.0
+    cap_price_ratio: float = 0.5   # capacity payment ≈ 0.5 × LMP for K_droop reservation
+
 
 def compute_am_reward(
     delta_f: float,
@@ -227,6 +238,12 @@ def compute_am_reward(
     prev_action: np.ndarray | None,
     freq_hz: float,
     cfg: AMRewardConfig,
+    soc: np.ndarray | None = None,
+    zone_lmp: np.ndarray | None = None,
+    k_droop_now: np.ndarray | None = None,
+    k_droop_prev: np.ndarray | None = None,
+    p_ref_now: np.ndarray | None = None,
+    k_droop_max: np.ndarray | None = None,
 ) -> tuple[float, dict[str, float]]:
     """
     Compute AM reward with proper scaling and deadbands.
@@ -279,8 +296,50 @@ def compute_am_reward(
     e_nadir = float(np.clip((cfg.nadir_threshold - freq_hz) / cfg.nadir_ref, 0.0, 1.0))
     r_nadir = -cfg.w_nadir * e_nadir
 
+    # ── Dual-product terms (only active when corresponding inputs provided) ─────────
+    # SoC band penalty: quadratic outside [soc_band_lo, soc_band_hi].
+    if soc is not None and cfg.w_soc_pen > 0.0:
+        soc_arr = np.asarray(soc, dtype=np.float32)
+        lo = np.maximum(0.0, cfg.soc_band_lo - soc_arr)
+        hi = np.maximum(0.0, soc_arr - cfg.soc_band_hi)
+        e_soc = float(np.clip(np.mean(lo * lo + hi * hi), 0.0, 1.0))
+        r_soc_pen = -cfg.w_soc_pen * e_soc
+    else:
+        e_soc = 0.0
+        r_soc_pen = 0.0
+
+    # Market revenue: energy (LMP × P_ref) + capacity payment (cap_price × K_droop reservation).
+    # Sign: positive reward when policy provides genuine product value.
+    if (zone_lmp is not None and p_ref_now is not None and cfg.w_market > 0.0):
+        lmp = np.asarray(zone_lmp, dtype=np.float32) / max(cfg.lmp_ref, 1e-6)
+        p_ref = np.asarray(p_ref_now, dtype=np.float32)
+        energy_rev = float(np.mean(lmp * p_ref))
+        if k_droop_now is not None and k_droop_max is not None:
+            k_now = np.asarray(k_droop_now, dtype=np.float32)
+            k_max = np.maximum(np.asarray(k_droop_max, dtype=np.float32), 1e-6)
+            cap_rev = float(np.mean(lmp * cfg.cap_price_ratio * (k_now / k_max)))
+        else:
+            cap_rev = 0.0
+        r_market = cfg.w_market * float(np.clip(energy_rev + cap_rev, -1.0, 1.0))
+    else:
+        r_market = 0.0
+
+    # K commitment stability: penalize |ΔK| step-to-step (avoid gain chattering).
+    if (k_droop_now is not None and k_droop_prev is not None
+            and k_droop_max is not None and cfg.w_commit > 0.0):
+        k_now = np.asarray(k_droop_now, dtype=np.float32)
+        k_prev = np.asarray(k_droop_prev, dtype=np.float32)
+        k_max = np.maximum(np.asarray(k_droop_max, dtype=np.float32), 1e-6)
+        e_commit = float(np.clip(np.mean(np.square((k_now - k_prev) / k_max)), 0.0, 1.0))
+        r_commit = -cfg.w_commit * e_commit
+    else:
+        r_commit = 0.0
+
     # Total reward
-    reward = r_delta_f + r_rocof + r_violation + r_effort + r_tracking + r_nadir
+    reward = (
+        r_delta_f + r_rocof + r_violation + r_effort + r_tracking + r_nadir
+        + r_soc_pen + r_market + r_commit
+    )
 
     info = {
         "r_delta_f": r_delta_f,
@@ -290,6 +349,9 @@ def compute_am_reward(
         "r_tracking": r_tracking,
         "action_ref": action_ref,
         "r_nadir": r_nadir,
+        "r_soc_pen": r_soc_pen,
+        "r_market": r_market,
+        "r_commit": r_commit,
     }
 
     return float(reward), info
@@ -427,7 +489,7 @@ class GAMAPPOAgent(nn.Module):
         n_agents: int,
         n_bus: int,
         agent_bus_indices: np.ndarray,
-        action_dim_per_agent: int = 1,
+        action_dim_per_agent: int = 2,
         embed_dim: int = 64,
         hidden_dim: int = 128,
         gamma: float = 0.99,
@@ -600,6 +662,18 @@ class GAMAPPOAgent(nn.Module):
         total_entropy = 0.0
         n_updates = 0
 
+        # Per-dim accumulators (length = action_dim)
+        action_dim = int(self.action_dim)
+        total_entropy_per_dim = np.zeros(action_dim, dtype=np.float64)
+        total_action_abs_per_dim = np.zeros(action_dim, dtype=np.float64)
+        total_grad_mean_head_per_dim = np.zeros(action_dim, dtype=np.float64)
+        total_grad_log_std_per_dim = np.zeros(action_dim, dtype=np.float64)
+        total_kl_per_dim = np.zeros(action_dim, dtype=np.float64)
+        total_ratio = 0.0
+        total_clip_fraction = 0.0
+        total_approx_kl = 0.0
+        total_explained_var = 0.0
+
         for _ in range(n_epochs):
             indices = np.random.permutation(n_samples)
 
@@ -612,6 +686,13 @@ class GAMAPPOAgent(nn.Module):
                 policy_losses = []
                 value_losses = []
                 entropies = []
+                entropy_per_dim_batch = []
+                action_abs_per_dim_batch = []
+                kl_per_dim_batch = []
+                ratio_batch: list[float] = []
+                clip_batch: list[float] = []
+                approx_kl_batch: list[float] = []
+                value_var_batch: list[tuple[float, float]] = []
 
                 for i, sample_idx in enumerate(idx):
                     obs_i = obs_batch[sample_idx]
@@ -623,8 +704,10 @@ class GAMAPPOAgent(nn.Module):
 
                     embeds = self.get_agent_embeddings(obs_i, edge_i)
                     dist = self.actor.dist(embeds)
-                    new_log_prob = dist.log_prob(action_i).sum(dim=-1)  # [n_agents]
-                    entropy = dist.entropy().sum(dim=-1).mean()
+                    new_log_prob_per_dim = dist.log_prob(action_i)              # [n_agents, action_dim]
+                    new_log_prob = new_log_prob_per_dim.sum(dim=-1)             # [n_agents]
+                    entropy_per_dim_tensor = dist.entropy()                     # [n_agents, action_dim]
+                    entropy = entropy_per_dim_tensor.sum(dim=-1).mean()
                     value = self.critic(embeds).squeeze(-1)  # [n_agents]
 
                     # Per-agent PPO loss
@@ -640,6 +723,23 @@ class GAMAPPOAgent(nn.Module):
                     value_losses.append(value_loss)
                     entropies.append(entropy)
 
+                    # Per-dim diagnostics (no grad needed)
+                    with torch.no_grad():
+                        entropy_per_dim_batch.append(entropy_per_dim_tensor.mean(dim=0).cpu().numpy())
+                        action_abs_per_dim_batch.append(action_i.abs().mean(dim=0).cpu().numpy())
+                        # Per-dim approx KL: -mean(new - old) but old_log_prob is summed, so we
+                        # approximate per-dim KL by allocating proportionally to per-dim entropy ratio.
+                        # Simpler: use new_log_prob_per_dim mean minus baseline (-action_dim*old_lp/action_dim).
+                        kl_per_dim_batch.append(
+                            (-new_log_prob_per_dim.mean(dim=0) + (old_lp_i.mean() / max(action_dim, 1))).cpu().numpy()
+                        )
+                        ratio_batch.append(float(ratio.mean().item()))
+                        clip_batch.append(float(((ratio - 1.0).abs() > self.clip_ratio).float().mean().item()))
+                        approx_kl_batch.append(float((old_lp_i - new_log_prob).mean().item()))
+                        value_var_batch.append(
+                            (float(ret_i.var().item()), float((ret_i - value).var().item()))
+                        )
+
                 # Aggregate batch
                 policy_loss = torch.stack(policy_losses).mean()
                 value_loss = torch.stack(value_losses).mean()
@@ -651,6 +751,18 @@ class GAMAPPOAgent(nn.Module):
                 # Backward pass
                 self.optimizer.zero_grad()
                 loss.backward()
+                # Capture per-dim gradient norms BEFORE clipping (more interpretable)
+                with torch.no_grad():
+                    mh_grad = self.actor.mean_head.weight.grad
+                    ls_grad = self.actor.log_std.grad
+                    if mh_grad is not None:
+                        # mean_head.weight shape: [action_dim, hidden_dim]
+                        mh_norm = mh_grad.norm(dim=1).cpu().numpy()
+                        total_grad_mean_head_per_dim += mh_norm.astype(np.float64)
+                    if ls_grad is not None:
+                        # log_std shape: [action_dim]
+                        ls_norm = ls_grad.abs().cpu().numpy()
+                        total_grad_log_std_per_dim += ls_norm.astype(np.float64)
                 nn.utils.clip_grad_norm_(self.parameters(), self.max_grad_norm)
                 self.optimizer.step()
 
@@ -658,20 +770,50 @@ class GAMAPPOAgent(nn.Module):
                 total_policy_loss += policy_loss.item()
                 total_value_loss += value_loss.item()
                 total_entropy += entropy.item()
+                # Aggregate per-dim diagnostics
+                total_entropy_per_dim += np.mean(entropy_per_dim_batch, axis=0)
+                total_action_abs_per_dim += np.mean(action_abs_per_dim_batch, axis=0)
+                total_kl_per_dim += np.mean(kl_per_dim_batch, axis=0)
+                total_ratio += float(np.mean(ratio_batch))
+                total_clip_fraction += float(np.mean(clip_batch))
+                total_approx_kl += float(np.mean(approx_kl_batch))
+                ret_var = float(np.mean([v[0] for v in value_var_batch]))
+                resid_var = float(np.mean([v[1] for v in value_var_batch]))
+                total_explained_var += 1.0 - resid_var / max(ret_var, 1e-8)
                 n_updates += 1
 
         with torch.no_grad():
-            actor_log_std = self.actor.log_std.mean().item()
-            actor_std = self.actor.log_std.exp().clamp(0.05, 0.5).mean().item()
+            log_std_t = self.actor.log_std.clamp(-3.0, 1.0)
+            actor_log_std = log_std_t.mean().item()
+            actor_std = log_std_t.exp().clamp(0.05, 0.5).mean().item()
+            log_std_per_dim = log_std_t.cpu().numpy().tolist()
+            std_per_dim = log_std_t.exp().clamp(0.05, 0.5).cpu().numpy().tolist()
 
-        return {
-            "loss": total_loss / max(n_updates, 1),
-            "policy_loss": total_policy_loss / max(n_updates, 1),
-            "value_loss": total_value_loss / max(n_updates, 1),
-            "entropy": total_entropy / max(n_updates, 1),
+        nu = max(n_updates, 1)
+        per_dim_dict: dict[str, float] = {}
+        for d in range(action_dim):
+            per_dim_dict[f"entropy_dim{d}"] = float(total_entropy_per_dim[d] / nu)
+            per_dim_dict[f"action_abs_dim{d}"] = float(total_action_abs_per_dim[d] / nu)
+            per_dim_dict[f"grad_mean_head_dim{d}"] = float(total_grad_mean_head_per_dim[d] / nu)
+            per_dim_dict[f"grad_log_std_dim{d}"] = float(total_grad_log_std_per_dim[d] / nu)
+            per_dim_dict[f"approx_kl_dim{d}"] = float(total_kl_per_dim[d] / nu)
+            per_dim_dict[f"log_std_dim{d}"] = float(log_std_per_dim[d])
+            per_dim_dict[f"std_dim{d}"] = float(std_per_dim[d])
+
+        out: dict[str, float] = {
+            "loss": total_loss / nu,
+            "policy_loss": total_policy_loss / nu,
+            "value_loss": total_value_loss / nu,
+            "entropy": total_entropy / nu,
             "actor_log_std": actor_log_std,
             "actor_std": actor_std,
+            "ratio_mean": total_ratio / nu,
+            "clip_fraction": total_clip_fraction / nu,
+            "approx_kl": total_approx_kl / nu,
+            "explained_var": total_explained_var / nu,
         }
+        out.update(per_dim_dict)
+        return out
 
 
 # ============================================================================
@@ -736,52 +878,85 @@ def ensure_edge_index(edge_index: np.ndarray | torch.Tensor, n_nodes: int) -> np
     return ei
 
 
-def get_am_obs(env: MicrogridEnvDual, obs_fast: np.ndarray) -> np.ndarray:
+def get_am_obs(env: MicrogridEnvDual, obs_fast: np.ndarray, extended: bool = True) -> np.ndarray:
     """
     Extract AM-relevant observation for each agent.
 
-    Features per agent:
-    0. delta_f (Hz) - normalized
-    1. rocof (Hz/s) - normalized
-    2. p_net (MW) - normalized by p_rated
-    3. soc (if battery) - [0, 1]
-    4. zone_lmp - normalized
-    5. agent_type (one-hot: PV=0, BESS=1, V2G=2, DPV=3)
-    6. vpp_membership (one-hot: VPP1=0, VPP2=1, VPP3=2, none=3)
+    Base features (10-D):
+    0. delta_f (Hz, /0.5)
+    1. rocof (Hz/s, /1.0)
+    2. p_net (MW, /1.0)
+    3. soc / dcob in [0, 1]
+    4. zone_lmp / 100
+    5-8. agent_type one-hot (EVCS_PV, BESS, V2G, DPV)
+    9. vpp_membership (normalized index)
+
+    Extended features (+6 dims when extended=True, total 16-D):
+    10. K_droop_prev_norm   — last K_droop / K_max (dual-action memory)
+    11. P_ref_prev          — last a_P in [-1, 1]
+    12. SoC_band_lo_viol    — max(0, 0.20 - SoC)  (under-band stress)
+    13. SoC_band_hi_viol    — max(0, SoC - 0.85)  (over-band stress)
+    14. P_forecast_+1       — persistence baseline = current p_net
+    15. t_to_depart_norm    — V2G availability proxy (1.0 = abundant, 0.0 = imminent)
     """
     n_agents = env.n_agents
-    obs = np.zeros((n_agents, 10), dtype=np.float32)
+    n_feat = 16 if extended else 10
+    obs = np.zeros((n_agents, n_feat), dtype=np.float32)
 
     # Global frequency state
     freq_state = env.freq_dyn.get_state()
-    delta_f = np.clip(freq_state.delta_f_hz / 0.5, -1.0, 1.0)  # Normalize to [-1, 1]
-    rocof = np.clip(freq_state.rocof_hz_s / 1.0, -1.0, 1.0)  # Normalize to [-1, 1]
+    delta_f = np.clip(freq_state.delta_f_hz / 0.5, -1.0, 1.0)
+    rocof = np.clip(freq_state.rocof_hz_s / 1.0, -1.0, 1.0)
 
     obs[:, 0] = delta_f
     obs[:, 1] = rocof
 
     # Per-agent features from fast obs
-    obs[:, 2] = np.clip(obs_fast[:, 2] / 1.0, -1.0, 1.0)  # p_net normalized
-    obs[:, 3] = np.clip(obs_fast[:, 3], 0.0, 1.0)  # dcob/soc
-    obs[:, 4] = np.clip(obs_fast[:, 4] / 100.0, 0.0, 1.0)  # zone_lmp normalized
+    obs[:, 2] = np.clip(obs_fast[:, 2] / 1.0, -1.0, 1.0)
+    obs[:, 3] = np.clip(obs_fast[:, 3], 0.0, 1.0)
+    obs[:, 4] = np.clip(obs_fast[:, 4] / 100.0, 0.0, 1.0)
 
-    # Agent type encoding
+    # Agent type encoding (one-hot)
     for i, spec in enumerate(env._agent_specs):
         agent_type = spec.get("type", "")
         if "PV" in agent_type and "DPV" not in agent_type:
-            obs[i, 5] = 1.0  # EVCS_PV
+            obs[i, 5] = 1.0
         elif "BESS" in agent_type:
-            obs[i, 6] = 1.0  # BESS
+            obs[i, 6] = 1.0
         elif "V2G" in agent_type:
-            obs[i, 7] = 1.0  # V2G
+            obs[i, 7] = 1.0
         else:
-            obs[i, 8] = 1.0  # DPV
+            obs[i, 8] = 1.0
 
     # VPP membership
     for vpp_idx, (vpp_id, agents) in enumerate(env._vpp_droop_agents.items()):
         for ai in agents:
             if ai < n_agents:
-                obs[ai, 9] = (vpp_idx + 1) / 3.0  # Normalized VPP index
+                obs[ai, 9] = (vpp_idx + 1) / 3.0
+
+    if not extended:
+        return obs
+
+    # ── Extended features (dual-action memory + SoC band + forecast + V2G availability)
+    k_prev = getattr(env, "_k_droop_last", np.zeros(n_agents, dtype=np.float32))
+    p_ref_prev = getattr(env, "_p_ref_last", np.zeros(n_agents, dtype=np.float32))
+    k_max = getattr(env, "_k_droop_max_per_agent", np.ones(n_agents, dtype=np.float32))
+    # Normalize K_prev by its per-agent max (so type-agnostic in [0, 1])
+    k_norm_denom = np.maximum(k_max, 1e-6)
+    obs[:, 10] = np.clip(k_prev / k_norm_denom, 0.0, 1.0)
+    obs[:, 11] = np.clip(p_ref_prev, -1.0, 1.0)
+
+    soc = np.clip(obs_fast[:, 3], 0.0, 1.0)
+    obs[:, 12] = np.maximum(0.0, 0.20 - soc)
+    obs[:, 13] = np.maximum(0.0, soc - 0.85)
+
+    # Persistence forecast = current p_net (research framework hook; replace with NWP later)
+    obs[:, 14] = obs[:, 2]
+
+    # V2G departure-time proxy: 1.0 for non-V2G assets; 0.5 default for V2G
+    # (placeholder until day_context exposes departure_step per agent)
+    is_v2g = obs[:, 7] > 0.5
+    obs[:, 15] = np.where(is_v2g, 0.5, 1.0).astype(np.float32)
 
     return obs
 
@@ -904,6 +1079,16 @@ def train_am_mappo(
         "r_effort": [],
         "r_tracking": [],
         "r_nadir": [],
+        "r_soc_pen": [],
+        "r_market": [],
+        "r_commit": [],
+        # PPO diagnostics
+        "ratio_mean": [],
+        "clip_fraction": [],
+        "approx_kl": [],
+        "explained_var": [],
+        # Per-dim (populated dynamically below based on action_dim)
+        "per_dim": {},
     }
 
     for ep in range(n_episodes):
@@ -928,20 +1113,38 @@ def train_am_mappo(
         ep_r_effort = []
         ep_r_tracking = []
         ep_r_nadir = []
+        ep_r_soc_pen = []
+        ep_r_market = []
+        ep_r_commit = []
         ep_mean_abs_action = []
         ep_action_saturation = []
         prev_action = None
+        k_droop_prev = np.zeros(env.n_agents, dtype=np.float32)
 
         for _t in range(steps_per_episode):
             policy_actions, log_probs, values, _ = agent.act(obs_norm, edge_index)
-            control_actions = -policy_actions
+            # policy_actions shape: (n_agents, action_dim). For dual mode, dim 0=a_P, dim 1=a_K.
+            # Keep historical sign flip for a_P so reward's action_ref (positive when Δf<0) aligns.
+            # a_K maps to K_droop bounds [K_min, K_max] and is NOT flipped.
+            action_dim = policy_actions.shape[1] if policy_actions.ndim > 1 else 1
+            ctrl_p = -policy_actions[:, 0] if action_dim >= 1 else -policy_actions.flatten()
+            ctrl_k = policy_actions[:, 1] if action_dim >= 2 else None
 
             n_vpps = len(env._vpp_droop_agents)
-            full_action = np.zeros(env.n_agents + n_vpps, dtype=np.float32)
-            full_action[:env.n_agents] = control_actions.flatten()[:env.n_agents]
-            for vpp_idx, (_vpp_id, member_agents) in enumerate(env._vpp_droop_agents.items()):
-                vpp_action = np.mean([control_actions[ai, 0] for ai in member_agents if ai < len(control_actions)])
-                full_action[env.n_agents + vpp_idx] = vpp_action
+            if env.ffr_mode == "mappo_dual" and ctrl_k is not None:
+                full_action = np.zeros(2 * env.n_agents + n_vpps, dtype=np.float32)
+                full_action[: env.n_agents] = ctrl_p[: env.n_agents]
+                full_action[env.n_agents : 2 * env.n_agents] = ctrl_k[: env.n_agents]
+                # Legacy VPP-K slots: zeros (per-DER K replaces VPP aggregation in dual mode)
+            else:
+                full_action = np.zeros(env.n_agents + n_vpps, dtype=np.float32)
+                full_action[: env.n_agents] = ctrl_p[: env.n_agents]
+                for vpp_idx, (_vpp_id, member_agents) in enumerate(env._vpp_droop_agents.items()):
+                    vpp_action = np.mean([ctrl_p[ai] for ai in member_agents if ai < len(ctrl_p)])
+                    full_action[env.n_agents + vpp_idx] = vpp_action
+
+            # Stash post-flip control vector for reward + buffer (1-D for backward-compat reward signature)
+            control_actions = ctrl_p.reshape(-1, 1) if ctrl_k is None else np.stack([ctrl_p, ctrl_k], axis=1)
 
             next_obs_fast, _r_env, done, _trunc, info = env.step_fast(full_action)
 
@@ -950,6 +1153,16 @@ def train_am_mappo(
             post_delta_f = float(post_freq_state.delta_f_hz)
             post_rocof = float(post_freq_state.rocof_hz_s)
             post_freq_hz = 50.0 + post_delta_f
+
+            # Pull dual-product signals from env (only populated when ffr_mode == "mappo_dual")
+            soc_vec = np.asarray(next_obs_fast[:, 3], dtype=np.float32) if next_obs_fast.ndim == 2 else None
+            zone_lmp_vec = (
+                np.asarray(next_obs_fast[:, 4], dtype=np.float32) if (next_obs_fast.ndim == 2 and next_obs_fast.shape[1] > 4) else None
+            )
+            k_droop_now = getattr(env, "_k_droop_last", None)
+            k_droop_max = getattr(env, "_k_droop_max_per_agent", None)
+            p_ref_now = getattr(env, "_p_ref_last", None)
+
             reward, reward_info = compute_am_reward(
                 delta_f=post_delta_f,
                 rocof=post_rocof,
@@ -957,7 +1170,15 @@ def train_am_mappo(
                 prev_action=prev_action,
                 freq_hz=post_freq_hz,
                 cfg=reward_cfg,
+                soc=soc_vec,
+                zone_lmp=zone_lmp_vec,
+                k_droop_now=k_droop_now,
+                k_droop_prev=k_droop_prev,
+                p_ref_now=p_ref_now,
+                k_droop_max=k_droop_max,
             )
+            if k_droop_now is not None:
+                k_droop_prev = np.asarray(k_droop_now, dtype=np.float32).copy()
             n_bus = int(len(env.net.bus.index))
             edge_index = ensure_edge_index(info.get("edge_index", edge_index), n_nodes=n_bus)
 
@@ -1005,6 +1226,9 @@ def train_am_mappo(
             ep_r_effort.append(reward_info["r_effort"])
             ep_r_tracking.append(reward_info["r_tracking"])
             ep_r_nadir.append(reward_info["r_nadir"])
+            ep_r_soc_pen.append(reward_info.get("r_soc_pen", 0.0))
+            ep_r_market.append(reward_info.get("r_market", 0.0))
+            ep_r_commit.append(reward_info.get("r_commit", 0.0))
             ep_mean_abs_action.append(float(np.mean(np.abs(control_actions))))
             ep_action_saturation.append(float(np.mean(np.abs(control_actions) > 0.95)))
 
@@ -1040,6 +1264,15 @@ def train_am_mappo(
             history["entropy"].append(update_info["entropy"])
             history["actor_log_std"].append(update_info["actor_log_std"])
             history["actor_std"].append(update_info["actor_std"])
+            history["ratio_mean"].append(update_info.get("ratio_mean", 1.0))
+            history["clip_fraction"].append(update_info.get("clip_fraction", 0.0))
+            history["approx_kl"].append(update_info.get("approx_kl", 0.0))
+            history["explained_var"].append(update_info.get("explained_var", 0.0))
+
+            # Per-dim diagnostics (keys like "entropy_dim0", "grad_log_std_dim1", ...)
+            for k, v in update_info.items():
+                if "_dim" in k:
+                    history["per_dim"].setdefault(k, []).append(float(v))
 
             buffer.clear()
 
@@ -1062,6 +1295,9 @@ def train_am_mappo(
         history["r_effort"].append(np.mean(ep_r_effort) if ep_r_effort else 0.0)
         history["r_tracking"].append(np.mean(ep_r_tracking) if ep_r_tracking else 0.0)
         history["r_nadir"].append(np.mean(ep_r_nadir) if ep_r_nadir else 0.0)
+        history["r_soc_pen"].append(np.mean(ep_r_soc_pen) if ep_r_soc_pen else 0.0)
+        history["r_market"].append(np.mean(ep_r_market) if ep_r_market else 0.0)
+        history["r_commit"].append(np.mean(ep_r_commit) if ep_r_commit else 0.0)
         history["mean_abs_action"].append(np.mean(ep_mean_abs_action) if ep_mean_abs_action else 0.0)
         history["action_saturation_fraction"].append(np.mean(ep_action_saturation) if ep_action_saturation else 0.0)
 
@@ -1076,12 +1312,33 @@ def train_am_mappo(
             recent_actor_std = np.mean(history["actor_std"][-log_interval:]) if history["actor_std"] else 0.0
             recent_abs_action = np.mean(history["mean_abs_action"][-log_interval:]) if history["mean_abs_action"] else 0.0
             recent_sat = np.mean(history["action_saturation_fraction"][-log_interval:]) if history["action_saturation_fraction"] else 0.0
+            recent_kl = np.mean(history["approx_kl"][-log_interval:]) if history["approx_kl"] else 0.0
+            recent_clip = np.mean(history["clip_fraction"][-log_interval:]) if history["clip_fraction"] else 0.0
+            recent_ev = np.mean(history["explained_var"][-log_interval:]) if history["explained_var"] else 0.0
 
             print(
                 f"Ep {ep+1:4d} | R={recent_reward:7.2f} | dF={recent_delta_f:.4f} | "
                 f"RoCoF={recent_rocof:.4f} | Vio={recent_vio:.3f} | VioPost={recent_vio_post:.3f} | Nadir={recent_nadir:.3f} | "
-                f"H={recent_entropy:.4f} | std={recent_actor_std:.4f} | |a|={recent_abs_action:.3f} | sat={recent_sat:.3f}"
+                f"H={recent_entropy:.4f} | std={recent_actor_std:.4f} | |a|={recent_abs_action:.3f} | sat={recent_sat:.3f} | "
+                f"KL={recent_kl:+.4f} | clip={recent_clip:.3f} | EV={recent_ev:+.3f}"
             )
+
+            # Per-dim diagnostic line (only when action_dim >= 2)
+            pd = history.get("per_dim", {})
+            if pd and "entropy_dim1" in pd:
+                def _recent(key: str) -> float:
+                    vals = pd.get(key, [])
+                    return float(np.mean(vals[-log_interval:])) if vals else 0.0
+                parts = []
+                for d in range(2):
+                    parts.append(
+                        f"dim{d}[std={_recent(f'std_dim{d}'):.3f} "
+                        f"H={_recent(f'entropy_dim{d}'):.3f} "
+                        f"|a|={_recent(f'action_abs_dim{d}'):.3f} "
+                        f"g_mh={_recent(f'grad_mean_head_dim{d}'):.2e} "
+                        f"g_ls={_recent(f'grad_log_std_dim{d}'):.2e}]"
+                    )
+                print("        " + " | ".join(parts))
 
         # Checkpoint
         if checkpoint_dir and (ep + 1) % 100 == 0:
@@ -1120,9 +1377,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ffr-mode",
         type=str,
-        default="mappo",
-        choices=["droop", "mappo"],
-        help="FFR control mode: 'mappo' (RL replaces droop, proposed) or 'droop' (classical baseline)",
+        default="mappo_dual",
+        choices=["droop", "mappo", "mappo_dual"],
+        help=(
+            "FFR control mode: "
+            "'mappo_dual' (RL outputs P_ref+K_droop per DER, proposed AM dual-product, default), "
+            "'mappo' (RL single-action P, replaces droop), "
+            "'droop' (classical baseline)"
+        ),
     )
     return parser.parse_args()
 
@@ -1153,13 +1415,13 @@ def main() -> None:
     agent_bus_indices = np.asarray(getattr(env, "_agent_bus_pp", np.arange(env.n_agents)), dtype=np.int64)
     agent_bus_indices = np.clip(agent_bus_indices, 0, max(n_bus - 1, 0))
 
-    # Initialize agent
+    # Initialize agent: 2-D action per DER = (a_P, a_K) for dual-product AM
     agent = GAMAPPOAgent(
         obs_feat=obs_feat,
         n_agents=env.n_agents,
         n_bus=n_bus,
         agent_bus_indices=agent_bus_indices,
-        action_dim_per_agent=1,
+        action_dim_per_agent=2,
         embed_dim=args.embed_dim,
         hidden_dim=args.hidden_dim,
         lr=args.lr,
