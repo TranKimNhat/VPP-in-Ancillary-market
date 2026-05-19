@@ -20,6 +20,11 @@ from src.env.IEEE123bus import convert_near_zero_branches_to_switches
 from src.env.microgrid_env import _read_matpower_bus_numbers, _fix_mpc_file, _from_mpc_compat
 from src.opt.tie_switch_reconfig import TieSwitchReconfiguration
 
+# Tier 3 (secondary AGC) is owned by FrequencyDynamics. The distributed
+# VPP/BESS AGC is preserved as code but disabled by default to enforce
+# single-integrator semantics (see agc.md for rationale).
+USE_DISTRIBUTED_AGC = False
+
 
 class VPPSecondaryControl:
     """AGC (secondary control) for each VPP using integral action."""
@@ -84,10 +89,18 @@ class MicrogridEnvDual(gym.Env):
         topology_cache: list[tuple[Any, np.ndarray, set[int]]] | None = None,
         topology_cache_path: str | Path | None = None,
         precomputed_dir: str | Path = "data/precomputed_365d_97to67",
+        ffr_mode: str = "droop",
     ) -> None:
         super().__init__()
         self.rng = random.Random(seed)
         self.np_rng = np.random.default_rng(seed)
+
+        # FFR control mode:
+        #   "droop": Classical per-DER droop FFR (baseline). RL action provides minor adjustment.
+        #   "mappo": RL agent directly controls per-DER FFR power (proposed, replaces droop).
+        if ffr_mode not in ("droop", "mappo"):
+            raise ValueError(f"ffr_mode must be 'droop' or 'mappo', got '{ffr_mode}'")
+        self.ffr_mode = ffr_mode
 
         placement_path = Path(placement_path)
         mpc_path = Path(mpc_path)
@@ -264,6 +277,33 @@ class MicrogridEnvDual(gym.Env):
         self._mask_sgen_agents = self._agent_elements == "sgen"
         self._mask_storage_agents = self._agent_elements == "storage"
         self._mask_load_agents = self._agent_elements == "load"
+
+        # Multi-DER type indices for FFR aggregation
+        self._bess_indices: list[int] = []
+        self._v2g_indices: list[int] = []
+        self._pv_indices: list[int] = []
+        for i, spec in enumerate(self._agent_specs):
+            agent_type = spec.get("type", "")
+            if "BESS" in agent_type:
+                self._bess_indices.append(i)
+            elif "V2G" in agent_type:
+                self._v2g_indices.append(i)
+            elif "PV" in agent_type or "DPV" in agent_type:
+                self._pv_indices.append(i)
+
+        # Per-DER droop coefficients for FFR
+        # k_droop_i: droop gain for DER i (pu power per Hz deviation)
+        # P_ffr_i = -k_droop_i * delta_f * P_rated_i / S_BASE
+        self._k_droop_bess = np.zeros(len(self._bess_indices), dtype=np.float32)
+        self._k_droop_v2g = np.zeros(len(self._v2g_indices), dtype=np.float32)
+        for i, idx in enumerate(self._bess_indices):
+            # BESS: higher droop gain (faster response)
+            p_rated = self._agent_p_rated[idx]
+            self._k_droop_bess[i] = 0.15 * p_rated  # Base droop scaled by capacity
+        for i, idx in enumerate(self._v2g_indices):
+            # V2G: moderate droop gain
+            p_rated = self._agent_p_rated[idx]
+            self._k_droop_v2g[i] = 0.10 * p_rated  # Lower than BESS
 
         self._sgen_agent_pos = np.zeros((0,), dtype=np.int64)
         self._storage_agent_pos = np.zeros((0,), dtype=np.int64)
@@ -897,23 +937,71 @@ class MicrogridEnvDual(gym.Env):
         bess_term = float(np.clip(droop_support, -0.25, 0.25))
 
         # TẦNG 3: Secondary Control (AGC) - Integral action for frequency recovery
+        # Distributed VPP/BESS AGC is disabled by default; AGC is handled
+        # internally by FrequencyDynamics to enforce single-integrator semantics.
         freq_state = self.freq_dyn.get_state()
         f_current = freq_state.delta_f_hz + 50.0
 
-        agc_term = 0.0
-        for vpp_idx in range(self._n_vpps):
-            agc_term += self.vpp_agc[vpp_idx].step(f_current, self.dt_fast_s)
-        agc_term += self.bess_agc.step(f_current, self.dt_fast_s)
-        agc_term = float(np.clip(agc_term, -0.5, 0.5))
+        if USE_DISTRIBUTED_AGC:
+            agc_term = 0.0
+            for vpp_idx in range(self._n_vpps):
+                agc_term += self.vpp_agc[vpp_idx].step(f_current, self.dt_fast_s)
+            agc_term += self.bess_agc.step(f_current, self.dt_fast_s)
+            agc_term = float(np.clip(agc_term, -0.05, 0.05))  # match pref_max_pu
+        else:
+            agc_term = 0.0
 
         # Combine droop (Tầng 2) + AGC (Tầng 3) as support power
         support_term = bess_term + agc_term
+
+        # Per-DER FFR control (mode-dependent)
+        delta_f = prev_df  # Use previous delta_f for droop calculation
+        S_BASE = 15.7  # System base MVA
+
+        if self.ffr_mode == "droop":
+            # BASELINE: Classical per-DER droop FFR
+            # P_ffr_i = -k_droop_i * delta_f + small RL adjustment
+            p_bess_agg = 0.0
+            for i, idx in enumerate(self._bess_indices):
+                p_der_ffr = -self._k_droop_bess[i] * delta_f / S_BASE
+                p_der_ffr += float(self.delta_p_set[idx]) * 0.02
+                p_bess_agg += p_der_ffr
+
+            p_v2g_agg = 0.0
+            for i, idx in enumerate(self._v2g_indices):
+                p_der_ffr = -self._k_droop_v2g[i] * delta_f / S_BASE
+                p_der_ffr += float(self.delta_p_set[idx]) * 0.02
+                p_v2g_agg += p_der_ffr
+        else:
+            # PROPOSED (MAPPO): RL agent directly controls per-DER FFR power
+            # P_ffr_i = action_i * P_rated_i / S_BASE (full capacity, no droop floor)
+            p_bess_agg = 0.0
+            for i, idx in enumerate(self._bess_indices):
+                p_der_ffr = float(self.delta_p_set[idx]) * float(self._agent_p_rated[idx]) / S_BASE
+                p_bess_agg += p_der_ffr
+
+            p_v2g_agg = 0.0
+            for i, idx in enumerate(self._v2g_indices):
+                p_der_ffr = float(self.delta_p_set[idx]) * float(self._agent_p_rated[idx]) / S_BASE
+                p_v2g_agg += p_der_ffr
+
+        # PV: no FFR (curtailment only, controlled by RL)
+        p_pv_agg = 0.0
+        for idx in self._pv_indices:
+            p_pv_agg += float(self.delta_p_set[idx]) * 0.02
+
+        # Add support term and clamp
+        p_bess_agg = float(np.clip(p_bess_agg + support_term * 0.5, -0.20, 0.20))
+        p_v2g_agg = float(np.clip(p_v2g_agg + support_term * 0.3, -0.15, 0.15))
+        p_pv_agg = float(np.clip(p_pv_agg + support_term * 0.2, -0.10, 0.10))
 
         for _ in range(self.n_ode_substeps):
             freq_state = self.freq_dyn.step(
                 dt=self.dt_ode_s,
                 delta_P_pu=event_term,
-                P_bess_pu=support_term,
+                P_bess_pu=p_bess_agg,
+                P_v2g_pu=p_v2g_agg,
+                P_pv_pu=p_pv_agg,
             )
 
         for idx, agent_i in enumerate(self._batt_agent_indices):

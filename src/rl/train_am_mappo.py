@@ -1,11 +1,14 @@
 """
-Graph-Attention MAPPO for Ancillary Market (AM) in Islanded Microgrid.
+GraphSAGE-MAPPO for Ancillary Market (AM) in Islanded Microgrid.
 
 Key features:
 - DER-level agents (41) with parameter sharing
-- Graph attention for inter-agent communication
+- GraphSAGE feeder-level encoder for inter-agent communication
 - Agent-centered critic for credit assignment
-- Focus on fast-loop frequency control (FFR, droop)
+- MAPPO **replaces classical droop** for FFR control (proposed contribution).
+  Each BESS/V2G unit is directly commanded by the RL policy (full P_rated capacity)
+  instead of receiving the fixed droop response P_ffr = -k_droop * delta_f.
+  See src/baselines/droop.py for the classical droop baseline kept for comparison.
 - Proper reward design and normalization for AM metrics
 """
 from __future__ import annotations
@@ -52,7 +55,7 @@ from src.layer2_control.graph_sage_encoder import GraphSAGEEncoder
 #   2. STAGE 2 (C-D): Introduce event variety and topology changes
 #   3. STAGE 3 (E-F): Full severity with LR annealing for fine-tuning
 #
-# Total: 5400 episodes (matching train_dual.py)
+# Total: 6000 episodes
 # S_BASE = 15.7 MW -> contingencies: 10-40% of system
 
 AM_PHASES: dict[str, dict[str, Any]] = {
@@ -105,7 +108,7 @@ AM_PHASES: dict[str, dict[str, Any]] = {
         "description": "N-1 ready: full event mix, significant LR decay",
     },
     "F": {
-        "n_episodes": 1000,
+        "n_episodes": 1600,
         "event_prob": 0.9,
         "max_delta_p_mw": 6.3,      # ~40% of S_BASE - extreme stress test
         "event_probs": {"load_step": 0.3, "gen_trip": 0.3, "line_trip": 0.2, "high_ren": 0.2},
@@ -215,9 +218,6 @@ class AMRewardConfig:
     tracking_rocof_ref: float = 0.2
     tracking_k_delta_f: float = 0.5
     tracking_k_rocof: float = 0.25
-
-    # Coordination bonus (reward for VPP-level cooperation)
-    w_coordination: float = 0.1
 
 
 def compute_am_reward(
@@ -516,20 +516,48 @@ class GAMAPPOAgent(nn.Module):
         rewards: np.ndarray,
         values: np.ndarray,
         dones: np.ndarray,
-        next_value: float = 0.0,
+        next_value: np.ndarray | float = 0.0,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Compute GAE advantages and returns."""
+        """Compute GAE advantages and returns with per-agent credit assignment.
+
+        Args:
+            rewards: [n_steps] shared reward
+            values: [n_steps, n_agents] per-agent values
+            dones: [n_steps] episode done flags
+            next_value: [n_agents] or scalar for bootstrap
+        """
         n_steps = len(rewards)
-        advantages = np.zeros(n_steps, dtype=np.float32)
-        gae = 0.0
+
+        # Handle both scalar (legacy) and per-agent values
+        if values.ndim == 1:
+            # Legacy scalar path
+            advantages = np.zeros(n_steps, dtype=np.float32)
+            gae = 0.0
+            nv = float(next_value) if np.isscalar(next_value) else float(np.mean(next_value))
+            for t in reversed(range(n_steps)):
+                next_val = nv if t == n_steps - 1 else values[t + 1]
+                mask = 1.0 - dones[t]
+                delta = rewards[t] + self.gamma * next_val * mask - values[t]
+                gae = delta + self.gamma * self.gae_lambda * mask * gae
+                advantages[t] = gae
+            returns = advantages + values
+            return advantages, returns
+
+        # Per-agent path: values is [n_steps, n_agents]
+        n_agents = values.shape[1]
+        advantages = np.zeros((n_steps, n_agents), dtype=np.float32)
+        gae = np.zeros(n_agents, dtype=np.float32)
+
+        # Ensure next_value is [n_agents]
+        if np.isscalar(next_value):
+            next_value = np.full(n_agents, float(next_value), dtype=np.float32)
+        else:
+            next_value = np.asarray(next_value, dtype=np.float32)
 
         for t in reversed(range(n_steps)):
-            if t == n_steps - 1:
-                next_val = next_value
-            else:
-                next_val = values[t + 1]
-
+            next_val = next_value if t == n_steps - 1 else values[t + 1]
             mask = 1.0 - dones[t]
+            # Broadcast shared reward to all agents
             delta = rewards[t] + self.gamma * next_val * mask - values[t]
             gae = delta + self.gamma * self.gae_lambda * mask * gae
             advantages[t] = gae
@@ -548,10 +576,22 @@ class GAMAPPOAgent(nn.Module):
         n_epochs: int = 4,
         mini_batch_size: int = 64,
     ) -> dict[str, float]:
-        """PPO update with mini-batches."""
+        """PPO update with mini-batches and per-agent credit assignment.
+
+        Args:
+            old_log_probs: [n_samples, n_agents] per-agent log probs
+            returns: [n_samples, n_agents] per-agent returns
+            advantages: [n_samples, n_agents] per-agent advantages
+        """
         n_samples = obs_batch.shape[0]
 
-        # Normalize advantages
+        # Handle both legacy scalar and per-agent advantages
+        if advantages.ndim == 1:
+            advantages = advantages.unsqueeze(-1).expand(-1, self.n_agents)
+            returns = returns.unsqueeze(-1).expand(-1, self.n_agents)
+            old_log_probs = old_log_probs.unsqueeze(-1).expand(-1, self.n_agents)
+
+        # Normalize advantages per-agent
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         total_loss = 0.0
@@ -566,54 +606,44 @@ class GAMAPPOAgent(nn.Module):
             for start in range(0, n_samples, mini_batch_size):
                 end = min(start + mini_batch_size, n_samples)
                 idx = indices[start:end]
+                batch_size = len(idx)
 
-                # Get batch data
-                obs_mb = obs_batch[idx]
-                actions_mb = actions_batch[idx]
-                old_lp_mb = old_log_probs[idx]
-                returns_mb = returns[idx]
-                adv_mb = advantages[idx]
-
-                # Forward pass (for simplicity, use first edge_index - assumes same topology)
-                edge_idx = edge_batch[0] if len(edge_batch) > 0 else edge_batch[idx[0]]
-
-                # Process each sample
-                policy_loss_acc = 0.0
-                value_loss_acc = 0.0
-                entropy_acc = 0.0
+                # Accumulate gradients over mini-batch
+                policy_losses = []
+                value_losses = []
+                entropies = []
 
                 for i, sample_idx in enumerate(idx):
-                    obs_i = obs_mb[i]
-                    action_i = actions_mb[i]
-                    old_lp_i = old_lp_mb[i]
-                    ret_i = returns_mb[i]
-                    adv_i = adv_mb[i]
-                    edge_i = edge_batch[sample_idx] if sample_idx < len(edge_batch) else edge_idx
+                    obs_i = obs_batch[sample_idx]
+                    action_i = actions_batch[sample_idx]
+                    old_lp_i = old_log_probs[sample_idx]  # [n_agents]
+                    ret_i = returns[sample_idx]  # [n_agents]
+                    adv_i = advantages[sample_idx]  # [n_agents]
+                    edge_i = edge_batch[sample_idx] if sample_idx < len(edge_batch) else edge_batch[0]
 
                     embeds = self.get_agent_embeddings(obs_i, edge_i)
                     dist = self.actor.dist(embeds)
-                    new_log_prob = dist.log_prob(action_i).sum(dim=-1).mean()
-                    entropy = dist.entropy().mean()
-                    value = self.critic(embeds).mean()
+                    new_log_prob = dist.log_prob(action_i).sum(dim=-1)  # [n_agents]
+                    entropy = dist.entropy().sum(dim=-1).mean()
+                    value = self.critic(embeds).squeeze(-1)  # [n_agents]
 
-                    # PPO clipped objective
-                    ratio = torch.exp(new_log_prob - old_lp_i)
+                    # Per-agent PPO loss
+                    ratio = torch.exp(new_log_prob - old_lp_i)  # [n_agents]
                     surr1 = ratio * adv_i
                     surr2 = torch.clamp(ratio, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio) * adv_i
-                    policy_loss = -torch.min(surr1, surr2)
+                    policy_loss = -torch.min(surr1, surr2).mean()  # Mean over agents
 
-                    # Value loss
+                    # Per-agent value loss
                     value_loss = F.mse_loss(value, ret_i)
 
-                    policy_loss_acc += policy_loss
-                    value_loss_acc += value_loss
-                    entropy_acc += entropy
+                    policy_losses.append(policy_loss)
+                    value_losses.append(value_loss)
+                    entropies.append(entropy)
 
-                # Average over batch
-                batch_size = len(idx)
-                policy_loss = policy_loss_acc / batch_size
-                value_loss = value_loss_acc / batch_size
-                entropy = entropy_acc / batch_size
+                # Aggregate batch
+                policy_loss = torch.stack(policy_losses).mean()
+                value_loss = torch.stack(value_losses).mean()
+                entropy = torch.stack(entropies).mean()
 
                 # Total loss
                 loss = policy_loss + self.value_coef * value_loss - self.entropy_coef * entropy
@@ -827,7 +857,6 @@ def train_am_mappo(
     agent: GAMAPPOAgent,
     n_episodes: int = 1000,
     steps_per_episode: int = 300,
-    update_freq: int = 10,
     update_epochs: int = 4,
     mini_batch_size: int = 64,
     log_interval: int = 10,
@@ -860,6 +889,9 @@ def train_am_mappo(
         "max_abs_delta_f": [],
         "freq_nadir": [],
         "violation_fraction": [],
+        "violation_under_fraction": [],
+        "violation_over_fraction": [],
+        "violation_post_inject_fraction": [],
         "loss": [],
         "entropy": [],
         "actor_log_std": [],
@@ -887,6 +919,9 @@ def train_am_mappo(
         ep_rocof = []
         ep_freq_hz = []
         ep_violation = []
+        ep_violation_under = []
+        ep_violation_over = []
+        ep_violation_post_inject = []
         ep_r_delta_f = []
         ep_r_rocof = []
         ep_r_violation = []
@@ -901,26 +936,28 @@ def train_am_mappo(
             policy_actions, log_probs, values, _ = agent.act(obs_norm, edge_index)
             control_actions = -policy_actions
 
-            full_action = np.zeros(44, dtype=np.float32)
-            full_action[:41] = control_actions.flatten()[:41]
+            n_vpps = len(env._vpp_droop_agents)
+            full_action = np.zeros(env.n_agents + n_vpps, dtype=np.float32)
+            full_action[:env.n_agents] = control_actions.flatten()[:env.n_agents]
             for vpp_idx, (_vpp_id, member_agents) in enumerate(env._vpp_droop_agents.items()):
                 vpp_action = np.mean([control_actions[ai, 0] for ai in member_agents if ai < len(control_actions)])
-                full_action[41 + vpp_idx] = vpp_action
-
-            pre_freq_state = env.freq_dyn.get_state()
-            pre_delta_f = float(pre_freq_state.delta_f_hz)
-            pre_rocof = float(pre_freq_state.rocof_hz_s)
-            pre_freq_hz = 50.0 + pre_delta_f
-            reward, reward_info = compute_am_reward(
-                delta_f=pre_delta_f,
-                rocof=pre_rocof,
-                action=control_actions.flatten(),
-                prev_action=prev_action,
-                freq_hz=pre_freq_hz,
-                cfg=reward_cfg,
-            )
+                full_action[env.n_agents + vpp_idx] = vpp_action
 
             next_obs_fast, _r_env, done, _trunc, info = env.step_fast(full_action)
+
+            # Compute reward AFTER step to give correct RL signal
+            post_freq_state = env.freq_dyn.get_state()
+            post_delta_f = float(post_freq_state.delta_f_hz)
+            post_rocof = float(post_freq_state.rocof_hz_s)
+            post_freq_hz = 50.0 + post_delta_f
+            reward, reward_info = compute_am_reward(
+                delta_f=post_delta_f,
+                rocof=post_rocof,
+                action=control_actions.flatten(),
+                prev_action=prev_action,
+                freq_hz=post_freq_hz,
+                cfg=reward_cfg,
+            )
             n_bus = int(len(env.net.bus.index))
             edge_index = ensure_edge_index(info.get("edge_index", edge_index), n_nodes=n_bus)
 
@@ -933,8 +970,8 @@ def train_am_mappo(
                 obs=obs_norm.copy(),
                 edge_index=edge_index.copy(),
                 action=policy_actions.copy(),
-                log_prob=float(log_probs.mean()),
-                value=float(values.mean()),
+                log_prob=log_probs.copy(),  # Keep per-agent [n_agents]
+                value=values.copy(),         # Keep per-agent [n_agents]
                 reward=reward_norm,
                 done=done,
             )
@@ -948,7 +985,20 @@ def train_am_mappo(
             ep_delta_f.append(abs(freq_state.delta_f_hz))
             ep_rocof.append(abs(freq_state.rocof_hz_s))
             ep_freq_hz.append(freq_hz)
-            ep_violation.append(1.0 if freq_state.delta_f_hz < -reward_cfg.f_limit else 0.0)
+
+            is_under = float(freq_state.delta_f_hz < -reward_cfg.f_limit)
+            is_over = float(freq_state.delta_f_hz > reward_cfg.f_limit)
+            is_any = float((freq_state.delta_f_hz < -reward_cfg.f_limit) or (freq_state.delta_f_hz > reward_cfg.f_limit))
+            ep_violation_under.append(is_under)
+            ep_violation_over.append(is_over)
+            ep_violation.append(is_any)
+
+            # Post-injection window metric to avoid dilution by pre-event steps
+            inject_step = int(getattr(env.current_event, "t_inject", 30.0)) if env.current_event is not None else 30
+            in_post_window = (_t >= inject_step) and (_t < inject_step + 50)
+            if in_post_window:
+                ep_violation_post_inject.append(is_any)
+
             ep_r_delta_f.append(reward_info["r_delta_f"])
             ep_r_rocof.append(reward_info["r_rocof"])
             ep_r_violation.append(reward_info["r_violation"])
@@ -958,21 +1008,21 @@ def train_am_mappo(
             ep_mean_abs_action.append(float(np.mean(np.abs(control_actions))))
             ep_action_saturation.append(float(np.mean(np.abs(control_actions) > 0.95)))
 
-        # Update policy
-        if len(buffer) >= update_freq:
-            # Compute advantages
-            rewards = np.array(buffer.rewards, dtype=np.float32)
-            values = np.array(buffer.values, dtype=np.float32)
-            dones = np.array(buffer.dones, dtype=np.float32)
+        # Update policy after each episode
+        if len(buffer) > 0:
+            # Compute advantages with per-agent values
+            rewards = np.array(buffer.rewards, dtype=np.float32)  # [n_steps]
+            values = np.stack(buffer.values, axis=0)  # [n_steps, n_agents]
+            dones = np.array(buffer.dones, dtype=np.float32)  # [n_steps]
             advantages, returns = agent.compute_gae(rewards, values, dones)
 
-            # Prepare batch
+            # Prepare batch - per-agent data
             obs_batch = torch.tensor(np.stack(buffer.obs), dtype=torch.float32)
             edge_batch = [torch.tensor(e, dtype=torch.long) for e in buffer.edge_index]
             actions_batch = torch.tensor(np.stack(buffer.actions), dtype=torch.float32)
-            old_log_probs = torch.tensor(np.array(buffer.log_probs), dtype=torch.float32)
-            returns_t = torch.tensor(returns, dtype=torch.float32)
-            advantages_t = torch.tensor(advantages, dtype=torch.float32)
+            old_log_probs = torch.tensor(np.stack(buffer.log_probs, axis=0), dtype=torch.float32)  # [n_steps, n_agents]
+            returns_t = torch.tensor(returns, dtype=torch.float32)  # [n_steps, n_agents]
+            advantages_t = torch.tensor(advantages, dtype=torch.float32)  # [n_steps, n_agents]
 
             # Update
             update_info = agent.update(
@@ -1001,6 +1051,11 @@ def train_am_mappo(
         history["max_abs_delta_f"].append(np.max(ep_delta_f) if ep_delta_f else 0.0)
         history["freq_nadir"].append(np.min(ep_freq_hz) if ep_freq_hz else 50.0)
         history["violation_fraction"].append(np.mean(ep_violation) if ep_violation else 0.0)
+        history["violation_under_fraction"].append(np.mean(ep_violation_under) if ep_violation_under else 0.0)
+        history["violation_over_fraction"].append(np.mean(ep_violation_over) if ep_violation_over else 0.0)
+        history["violation_post_inject_fraction"].append(
+            np.mean(ep_violation_post_inject) if ep_violation_post_inject else 0.0
+        )
         history["r_delta_f"].append(np.mean(ep_r_delta_f) if ep_r_delta_f else 0.0)
         history["r_rocof"].append(np.mean(ep_r_rocof) if ep_r_rocof else 0.0)
         history["r_violation"].append(np.mean(ep_r_violation) if ep_r_violation else 0.0)
@@ -1015,6 +1070,7 @@ def train_am_mappo(
             recent_delta_f = np.mean(history["delta_f_mean"][-log_interval:])
             recent_rocof = np.mean(history["rocof_mean"][-log_interval:])
             recent_vio = np.mean(history["violation_fraction"][-log_interval:])
+            recent_vio_post = np.mean(history["violation_post_inject_fraction"][-log_interval:])
             recent_nadir = np.mean(history["freq_nadir"][-log_interval:])
             recent_entropy = np.mean(history["entropy"][-log_interval:]) if history["entropy"] else 0.0
             recent_actor_std = np.mean(history["actor_std"][-log_interval:]) if history["actor_std"] else 0.0
@@ -1023,7 +1079,7 @@ def train_am_mappo(
 
             print(
                 f"Ep {ep+1:4d} | R={recent_reward:7.2f} | dF={recent_delta_f:.4f} | "
-                f"RoCoF={recent_rocof:.4f} | Violation={recent_vio:.3f} | Nadir={recent_nadir:.3f} | "
+                f"RoCoF={recent_rocof:.4f} | Vio={recent_vio:.3f} | VioPost={recent_vio_post:.3f} | Nadir={recent_nadir:.3f} | "
                 f"H={recent_entropy:.4f} | std={recent_actor_std:.4f} | |a|={recent_abs_action:.3f} | sat={recent_sat:.3f}"
             )
 
@@ -1059,8 +1115,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint-dir", type=str, default="artifacts/checkpoints_am_mappo")
     parser.add_argument("--log-interval", type=int, default=10)
     parser.add_argument("--result-json", type=str, default=None)
-    parser.add_argument("--curriculum", action="store_true", help="Enable curriculum learning (5400 episodes)")
+    parser.add_argument("--curriculum", action="store_true", help="Enable curriculum learning (6000 episodes)")
     parser.add_argument("--phase-episodes", type=int, default=0, help="Override episodes per phase (0=use defaults)")
+    parser.add_argument(
+        "--ffr-mode",
+        type=str,
+        default="mappo",
+        choices=["droop", "mappo"],
+        help="FFR control mode: 'mappo' (RL replaces droop, proposed) or 'droop' (classical baseline)",
+    )
     return parser.parse_args()
 
 
@@ -1078,9 +1141,10 @@ def main() -> None:
         placement_path=args.placement,
         mpc_path=args.mpc_path,
         seed=args.seed,
+        ffr_mode=args.ffr_mode,
     )
 
-    print(f"Environment: {env.n_agents} agents, 3 VPPs")
+    print(f"Environment: {env.n_agents} agents, 3 VPPs, ffr_mode='{env.ffr_mode}'")
 
     sample_obs_fast, _, _ = env.reset()
     sample_obs_full = build_am_full_feeder_obs(env, sample_obs_fast)
@@ -1107,7 +1171,7 @@ def main() -> None:
     # Setup curriculum or single-phase training
     if args.curriculum:
         phase_items = list(AM_PHASES.items())
-        print("\n=== Curriculum Training (5400 episodes total) ===")
+        print("\n=== Curriculum Training (6000 episodes total) ===")
     else:
         phase_items = [
             ("FULL", {
@@ -1136,8 +1200,13 @@ def main() -> None:
         for pg in agent.optimizer.param_groups:
             pg["lr"] = phase_lr
 
+        # Update entropy coefficient for curriculum
+        phase_entropy = cfg.get("entropy_bonus", 0.01)
+        agent.entropy_coef = phase_entropy
+
         # Configure event injector for this phase
         env.event_injector.set_probs(cfg["event_probs"])
+        env.event_injector.set_max_delta_p_mw(cfg.get("max_delta_p_mw", 6.3))
 
         print(f"\n=== Phase {phase_name}: {cfg.get('description', '')} ({n_phase_eps} ep, LR={phase_lr:.6f}) ===")
 
