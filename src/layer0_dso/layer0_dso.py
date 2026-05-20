@@ -27,7 +27,7 @@ from src.layer0_dso.reconfiguration import (
     switch_edge_map,
 )
 from src.layer0_dso.socp_validator import validate_socp_against_ac
-from src.layer0_dso.zonal_pricing import PRICING_METHODS, generate_market_signals
+from src.layer0_dso.zonal_pricing import DLMPComponents, PRICING_METHODS, compute_dlmp, generate_market_signals
 
 
 PROFILES_PER_DAY = 96
@@ -420,6 +420,7 @@ class Layer0Result:
     soc_slack_sum: float
     voltage_drop_slack_max: float
     voltage_drop_slack_sum: float
+    dlmp_components: dict[int, DLMPComponents] | None = None
 
 
 @dataclass(frozen=True)
@@ -441,6 +442,7 @@ class Layer0HourlyResult:
     soc_slack_sum: float
     voltage_drop_slack_max: float
     voltage_drop_slack_sum: float
+    dlmp_components: dict[int, DLMPComponents] | None = None
 
 
 @dataclass(frozen=True)
@@ -530,6 +532,7 @@ def run_layer0_dso(
         zone_map=zone_map,
         pricing_method=pricing_method,
     )
+    dlmp_components = compute_dlmp(net, result.lambda_dlmp)
 
     return Layer0Result(
         lambda_dlmp=result.lambda_dlmp,
@@ -547,6 +550,7 @@ def run_layer0_dso(
         soc_slack_sum=result.soc_slack_sum,
         voltage_drop_slack_max=result.voltage_drop_slack_max,
         voltage_drop_slack_sum=result.voltage_drop_slack_sum,
+        dlmp_components=dlmp_components,
     )
 
 
@@ -964,6 +968,7 @@ def run_layer0_dso_hourly(
             zone_map=zone_map,
             pricing_method=pricing_method,
         )
+        dlmp_components = compute_dlmp(hour_net, reconfig_result.lambda_dlmp)
         results.append(
             Layer0HourlyResult(
                 day_label=day_label,
@@ -983,6 +988,7 @@ def run_layer0_dso_hourly(
                 soc_slack_sum=reconfig_result.soc_slack_sum,
                 voltage_drop_slack_max=reconfig_result.voltage_drop_slack_max,
                 voltage_drop_slack_sum=reconfig_result.voltage_drop_slack_sum,
+                dlmp_components=dlmp_components,
             )
         )
     return results
@@ -1127,6 +1133,7 @@ def export_layer0_csvs(
     zone_rows: list[dict[str, object]] = []
     alpha_rows: list[dict[str, object]] = []
     switch_rows: list[dict[str, object]] = []
+    dlmp_rows: list[dict[str, object]] = []
     switch_map = switch_edge_map(
         build_ieee123_net(
             mode=grid_mode,
@@ -1158,6 +1165,33 @@ def export_layer0_csvs(
                 voltage_drop_slack_sum=result.voltage_drop_slack_sum,
             )
         )
+        dlmp_components = result.dlmp_components or {}
+        if not dlmp_components:
+            dlmp_components = compute_dlmp(
+                build_ieee123_net(
+                    mode=grid_mode,
+                    balanced=True,
+                    convert_switches=True,
+                    slack_zones={1},
+                    source_mode=source_mode,
+                    islanded_override_slack_to_g1=islanded_override_slack_to_g1,
+                    g1_bus_name=g1_bus_name,
+                ),
+                result.lambda_dlmp,
+            )
+        for bus_id, comp in dlmp_components.items():
+            dlmp_rows.append(
+                {
+                    "day": result.day_label,
+                    "hour": result.hour,
+                    "bus_id": int(bus_id),
+                    "lambda_p_total": float(comp.lambda_p_total),
+                    "lambda_p_energy": float(comp.lambda_p_energy),
+                    "lambda_p_loss": float(comp.lambda_p_loss),
+                    "lambda_p_congestion": float(comp.lambda_p_congestion),
+                    "lambda_p_voltage": float(comp.lambda_p_voltage),
+                }
+            )
         alpha_records = _alpha_records(result.day_label, result.hour, result.alpha_star)
         alpha_rows.extend(alpha_records)
         for record in alpha_records:
@@ -1176,6 +1210,7 @@ def export_layer0_csvs(
     zone_path = output_dir / "layer0_zone_prices.csv"
     alpha_path = output_dir / "layer0_alpha.csv"
     switch_path = output_dir / "layer0_switches.csv"
+    dlmp_path = output_dir / "layer0_dlmp_per_bus.csv"
 
     diagnostics_rows = []
     for result in hourly_results:
@@ -1232,6 +1267,24 @@ def export_layer0_csvs(
         )
 
     pd.DataFrame(diagnostics_rows, columns=diagnostics_columns).to_csv(diagnostics_csv, index=False)
+
+    dlmp_df = (
+        pd.DataFrame(dlmp_rows)
+        if dlmp_rows
+        else pd.DataFrame(
+            columns=[
+                "day",
+                "hour",
+                "bus_id",
+                "lambda_p_total",
+                "lambda_p_energy",
+                "lambda_p_loss",
+                "lambda_p_congestion",
+                "lambda_p_voltage",
+            ]
+        )
+    )
+    dlmp_df.to_csv(dlmp_path, index=False)
 
     if valid_for_layer1:
         pd.DataFrame(zone_rows).to_csv(zone_path, index=False)

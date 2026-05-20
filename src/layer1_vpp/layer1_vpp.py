@@ -5,6 +5,7 @@ from pathlib import Path
 import argparse
 import sys
 
+import numpy as np
 import pandas as pd
 
 if __package__ in {None, ""}:
@@ -119,6 +120,18 @@ def _read_bus_vpp_counts(path: Path) -> dict[str, int]:
 
 
 
+def _allocation_weights_for_vpps(vpp_ids: list[str], bus_count_by_vpp: dict[str, int]) -> dict[str, float]:
+    if not vpp_ids:
+        return {}
+    raw = [max(int(bus_count_by_vpp.get(vpp_id, 0)), 0) for vpp_id in vpp_ids]
+    total = int(sum(raw))
+    if total <= 0:
+        uniform = 1.0 / float(len(vpp_ids))
+        return {vpp_id: uniform for vpp_id in vpp_ids}
+    return {vpp_id: float(count) / float(total) for vpp_id, count in zip(vpp_ids, raw)}
+
+
+
 def _solve_schedule_for_prices(
     prices_agg: pd.DataFrame,
     config: Layer1Config,
@@ -137,7 +150,7 @@ def _solve_schedule_for_prices(
     p_ref_signed = dro_result.schedule.p_ref * sign_value
     reserve_limit = reserve_limit_from_state(p_ref_signed, dro_result.schedule.soc, battery_cfg)
     r_commit = pd.Series(dro_result.schedule.r_commit).clip(lower=0.0)
-    r_commit = r_commit.combine(pd.Series(reserve_limit), min).to_numpy(dtype=float)
+    r_commit = np.minimum(r_commit.to_numpy(dtype=float), np.asarray(reserve_limit, dtype=float))
 
     curtail_ratio, reopt_flag = _feedback_flags(config.curtailment_ratio, config.feedback_threshold)
 
@@ -186,59 +199,53 @@ def run_layer1(config: Layer1Config) -> Path:
     long_rows: list[pd.DataFrame] = []
     legacy_parts: list[pd.DataFrame] = []
 
-    for row in vpp_zone_df.itertuples(index=False):
-        zone_id = str(row.zone_id)
-        vpp_id = str(row.vpp_id)
-        zone_slice = zone_prices[zone_prices["zone_id"] == zone_id]
+    zone_ids = sorted(vpp_zone_df["zone_id"].astype(str).unique().tolist())
+    output_cols = [
+        "day",
+        "hour",
+        "zone_id",
+        "vpp_id",
+        "vpp_bus_count",
+        "P_ref",
+        "R_commit",
+        "price_energy_expected",
+        "price_reserve_expected",
+        "price_energy_robust",
+        "price_reserve_robust",
+        "zone_energy_price_mean",
+        "zone_reserve_price_mean",
+        "SoC",
+        "solver_status",
+        "curtailment_ratio",
+        "reoptimize_next_cycle",
+    ]
+
+    for zone_id in zone_ids:
+        zone_slice = zone_prices.loc[zone_prices["zone_id"].astype(str) == zone_id, ["day", "hour", "energy_price", "reserve_price"]].copy()
         if zone_slice.empty:
             continue
 
-        prices_agg = zone_slice[["day", "hour", "energy_price", "reserve_price"]].copy()
-        solved, _ = _solve_schedule_for_prices(prices_agg, config)
-        solved["zone_id"] = zone_id
-        solved["vpp_id"] = vpp_id
-        solved["vpp_bus_count"] = int(bus_count_by_vpp.get(vpp_id, 0))
+        solved_zone, _ = _solve_schedule_for_prices(zone_slice, config)
+        zone_members = vpp_zone_df.loc[vpp_zone_df["zone_id"].astype(str) == zone_id, "vpp_id"]
+        vpp_ids = [str(v) for v in zone_members.tolist()]
+        weights = _allocation_weights_for_vpps(vpp_ids, bus_count_by_vpp)
 
-        scenario_energy = (
-            prices_agg.groupby("hour", as_index=False)["energy_price"]
-            .mean()
-            .sort_values("hour")
-            .rename(columns={"energy_price": "zone_energy_price_mean"})
-        )
-        scenario_reserve = (
-            prices_agg.groupby("hour", as_index=False)["reserve_price"]
-            .mean()
-            .sort_values("hour")
-            .rename(columns={"reserve_price": "zone_reserve_price_mean"})
-        )
-        solved = solved.merge(scenario_energy, on="hour", how="left").merge(scenario_reserve, on="hour", how="left")
-        solved["day"] = "expected"
+        scenario_energy = zone_slice.groupby("hour", as_index=False)["energy_price"].mean().rename(columns={"energy_price": "zone_energy_price_mean"})
+        scenario_reserve = zone_slice.groupby("hour", as_index=False)["reserve_price"].mean().rename(columns={"reserve_price": "zone_reserve_price_mean"})
 
-        long_rows.append(
-            solved[
-                [
-                    "day",
-                    "hour",
-                    "zone_id",
-                    "vpp_id",
-                    "vpp_bus_count",
-                    "P_ref",
-                    "R_commit",
-                    "price_energy_expected",
-                    "price_reserve_expected",
-                    "price_energy_robust",
-                    "price_reserve_robust",
-                    "zone_energy_price_mean",
-                    "zone_reserve_price_mean",
-                    "SoC",
-                    "solver_status",
-                    "curtailment_ratio",
-                    "reoptimize_next_cycle",
-                ]
-            ]
-        )
+        for vpp_id in vpp_ids:
+            vpp_weight = float(weights.get(vpp_id, 0.0))
+            solved = solved_zone.copy()
+            solved["P_ref"] = solved["P_ref"].to_numpy(dtype=float) * vpp_weight
+            solved["R_commit"] = solved["R_commit"].to_numpy(dtype=float) * vpp_weight
+            solved["zone_id"] = zone_id
+            solved["vpp_id"] = vpp_id
+            solved["vpp_bus_count"] = int(bus_count_by_vpp.get(vpp_id, 0))
+            solved = solved.merge(scenario_energy, on="hour", how="left").merge(scenario_reserve, on="hour", how="left")
+            solved["day"] = "expected"
 
-        legacy_parts.append(solved[["hour", "P_ref", "R_commit"]].copy())
+            long_rows.append(solved.loc[:, output_cols].copy())
+            legacy_parts.append(solved.loc[:, ["hour", "P_ref", "R_commit"]].copy())
 
     if not long_rows:
         raise ValueError("No per-VPP schedules were produced. Check vpp_to_zone mapping and Layer0 zones.")
@@ -294,6 +301,35 @@ def _parse_args() -> Layer1Config:
         type=float,
         default=0.05,
         help="Trigger re-optimization when curtailment ratio exceeds this threshold.",
+    )
+    parser.add_argument(
+        "--q-opf-enabled",
+        action="store_true",
+        help="Enable per-hour Q-OPF after DRO P schedule.",
+    )
+    parser.add_argument(
+        "--q-opf-mode",
+        choices=["aggregate", "ext_grid"],
+        default="aggregate",
+        help="Q aggregation mode from OPF result.",
+    )
+    parser.add_argument(
+        "--q-opf-grid-mode",
+        choices=["matpower", "feeder123"],
+        default="matpower",
+        help="IEEE123 source used to build OPF net.",
+    )
+    parser.add_argument(
+        "--q-opf-source-mode",
+        choices=["publish", "research"],
+        default="publish",
+        help="Source mode used to build OPF net.",
+    )
+    parser.add_argument(
+        "--q-opf-sample-hours",
+        type=int,
+        default=None,
+        help="Optional number of sampled hours for Q-OPF (fills remaining with sample mean).",
     )
     args = parser.parse_args()
 

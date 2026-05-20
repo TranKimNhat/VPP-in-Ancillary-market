@@ -22,11 +22,13 @@ from src.opt.l1_dispatch import L1Dispatcher
 SEASONS = ["summer", "winter", "spring", "fall"]
 DAY_TYPES = ["weekday", "weekend"]
 
+# Peak base loads per zone (MW) — calibrated from IEEE 123-bus zone_totals
+# (sum of nodal Pd at baseMVA=1): z1=3.40, z2=9.48, z3=3.57, z4=13.22 MW
 BASE_LOADS = {
-    "z1": 0.9307,
-    "z2": 1.0470,
-    "z3": 0.8143,
-    "z4": 0.6980,
+    "z1": 3.40,
+    "z2": 9.4775,
+    "z3": 3.57,
+    "z4": 13.2175,
 }
 
 PEAK_HOUR_BY_SEASON = {
@@ -173,13 +175,19 @@ def _build_vpp_caps(placement_totals: Dict[str, Dict[str, float]]):
     return caps
 
 
+def _build_l0_status(result: L0Result) -> str:
+    if result.status not in {"optimal", "optimal_inaccurate"}:
+        return "infeasible"
+    return "feasible_elastic" if result.elastic_used else "feasible_strict"
+
+
 def _generate_day(
     day_idx: int,
     placement_totals: Dict[str, Dict[str, float]],
     seed: int,
     l0_optimizer: L0Optimizer | None = None,
     l1_dispatcher: L1Dispatcher | None = None,
-) -> tuple[pd.DataFrame, str]:
+) -> tuple[pd.DataFrame, str, Dict[str, int]]:
     rng = np.random.default_rng(seed + day_idx)
     steps = 96
     hours = np.arange(steps) * 0.25
@@ -217,7 +225,6 @@ def _generate_day(
     lambda_as_ffr = rng.uniform(8.0, 20.0, size=steps)
     lambda_as_pfr = rng.uniform(5.0, 15.0, size=steps)
     lambda_as_sfr = rng.uniform(3.0, 10.0, size=steps)
-    lambda_q = rng.uniform(0.5, 5.0, size=steps)
 
     lambda_p2p_z1 = lambda_p2p.copy()
     lambda_p2p_z2 = lambda_p2p.copy()
@@ -243,9 +250,10 @@ def _generate_day(
 
     l0_result = None
     l0_status = "skipped"
+    l0_stats = {"strict_success": 0, "elastic_success": 0, "infeasible": 0}
+    l0_results: dict[int, L0Result] = {}
     if l0_optimizer is not None:
         vpp_caps = _build_vpp_caps(placement_totals)
-        l0_results: dict[int, L0Result] = {}
         l0_block = 4
         for step in range(steps):
             if step % l0_block == 0:
@@ -263,21 +271,28 @@ def _generate_day(
                     placement=placement_totals.get("__placement__"),
                 )
                 l0_results[step] = l0_result
+                status = _build_l0_status(l0_result)
+                if status == "feasible_strict":
+                    l0_stats["strict_success"] += 1
+                elif status == "feasible_elastic":
+                    l0_stats["elastic_success"] += 1
+                else:
+                    l0_stats["infeasible"] += 1
             if l0_result is None:
                 continue
-            l0_status = "feasible" if l0_result.status in {"optimal", "optimal_inaccurate"} else "infeasible"
+            l0_status = _build_l0_status(l0_result)
             lambda_p2p[step] = float(l0_result.lambda_p2p)
-            lambda_as_ffr[step] = float(l0_result.lambda_as.get("ffr", lambda_as_ffr[step]))
-            lambda_as_pfr[step] = float(l0_result.lambda_as.get("pfr", lambda_as_pfr[step]))
-            lambda_as_sfr[step] = float(l0_result.lambda_as.get("sfr", lambda_as_sfr[step]))
-            lambda_q[step] = float(l0_result.lambda_q)
+            l0_lambda_as = l0_result.lambda_as
+            lambda_as_ffr[step] = float(l0_lambda_as["ffr"])
+            lambda_as_pfr[step] = float(l0_lambda_as["pfr"])
+            lambda_as_sfr[step] = float(l0_lambda_as["sfr"])
 
-            lambda_p2p_z1[step] = float(getattr(l0_result, "lambda_p2p_z1", lambda_p2p[step]))
-            lambda_p2p_z2[step] = float(getattr(l0_result, "lambda_p2p_z2", lambda_p2p[step]))
-            lambda_p2p_z4[step] = float(getattr(l0_result, "lambda_p2p_z4", lambda_p2p[step]))
-            lambda_as_z1[step] = float(getattr(l0_result, "lambda_as_z1", lambda_as_ffr[step]))
-            lambda_as_z2[step] = float(getattr(l0_result, "lambda_as_z2", lambda_as_ffr[step]))
-            lambda_as_z4[step] = float(getattr(l0_result, "lambda_as_z4", lambda_as_ffr[step]))
+            lambda_p2p_z1[step] = float(l0_result.lambda_p2p_z1)
+            lambda_p2p_z2[step] = float(l0_result.lambda_p2p_z2)
+            lambda_p2p_z4[step] = float(l0_result.lambda_p2p_z4)
+            lambda_as_z1[step] = float(l0_result.lambda_as_z1)
+            lambda_as_z2[step] = float(l0_result.lambda_as_z2)
+            lambda_as_z4[step] = float(l0_result.lambda_as_z4)
 
     for vpp_name in ["VPP_1", "VPP_2", "VPP_3"]:
         totals = placement_totals.get(vpp_name, {})
@@ -294,12 +309,10 @@ def _generate_day(
 
         dispatchable = evcs_bess_mw + evcs_v2g_mw + dpv_mw
         r_as_base = max(0.15 * dispatchable, 0.1)
-        q_commit = 0.1 * inverter_mva
 
         idx = int(vpp_name.split("_")[1]) - 1
         p_ref_vpp[idx] = p_ref
         r_as_vpp[idx] = np.full(steps, r_as_base, dtype=float)
-        q_commit_vpp[idx] = np.full(steps, q_commit, dtype=float)
 
     if l1_dispatcher is not None:
         for step in range(steps):
@@ -321,9 +334,17 @@ def _generate_day(
                         vpp_caps,
                         placement=placement_totals.get("__placement__"),
                     )
+                    l0_results[step] = l0_input
+                    status = _build_l0_status(l0_input)
+                    if status == "feasible_strict":
+                        l0_stats["strict_success"] += 1
+                    elif status == "feasible_elastic":
+                        l0_stats["elastic_success"] += 1
+                    else:
+                        l0_stats["infeasible"] += 1
             if l0_input is None:
                 continue
-            l0_status = "feasible" if l0_input.status in {"optimal", "optimal_inaccurate"} else "infeasible"
+            l0_status = _build_l0_status(l0_input)
             l1_result = l1_dispatcher.solve_step(
                 step,
                 {"pv_pu": float(pv_pu[step])},
@@ -334,9 +355,10 @@ def _generate_day(
             if l1_result.status not in {"optimal", "optimal_inaccurate"}:
                 continue
             for vpp_id in [1, 2, 3]:
-                p_ref_vpp[vpp_id - 1][step] = float(l1_result.p_ref.get(vpp_id, p_ref_vpp[vpp_id - 1][step]))
-                r_as_vpp[vpp_id - 1][step] = float(l1_result.r_as.get(vpp_id, r_as_vpp[vpp_id - 1][step]))
-                q_commit_vpp[vpp_id - 1][step] = float(l1_result.q_commit.get(vpp_id, q_commit_vpp[vpp_id - 1][step]))
+                if vpp_id in l1_result.p_ref:
+                    p_ref_vpp[vpp_id - 1][step] = float(l1_result.p_ref[vpp_id])
+                if vpp_id in l1_result.r_as:
+                    r_as_vpp[vpp_id - 1][step] = float(l1_result.r_as[vpp_id])
             lambda_p2p[step] = float(l1_result.lambda_p2p)
 
     freq_event_flag = (rng.random(steps) < 0.10).astype(int)
@@ -345,9 +367,10 @@ def _generate_day(
     delta_p_cont = delta_p_cont * freq_event_flag
     f_nadir = np.full(steps, 50.0, dtype=np.float32)
     rocof = np.zeros(steps, dtype=np.float32)
+    _s_base = sum(BASE_LOADS.values())  # actual system load base (MW)
     for step in range(steps):
         if freq_event_flag[step]:
-            freq = compute_nadir(float(delta_p_cont[step]))
+            freq = compute_nadir(float(delta_p_cont[step]), S_base=_s_base)
             f_nadir[step] = float(freq["f_nadir"])
             rocof[step] = float(freq["rocof"])
 
@@ -380,16 +403,12 @@ def _generate_day(
             "lambda_as_z1": lambda_as_z1,
             "lambda_as_z2": lambda_as_z2,
             "lambda_as_z4": lambda_as_z4,
-            "lambda_q": lambda_q,
             "p_ref_vpp1": p_ref_vpp[0],
             "p_ref_vpp2": p_ref_vpp[1],
             "p_ref_vpp3": p_ref_vpp[2],
             "r_as_vpp1": r_as_vpp[0],
             "r_as_vpp2": r_as_vpp[1],
             "r_as_vpp3": r_as_vpp[2],
-            "q_commit_vpp1": q_commit_vpp[0],
-            "q_commit_vpp2": q_commit_vpp[1],
-            "q_commit_vpp3": q_commit_vpp[2],
             "freq_event_flag": freq_event_flag,
             "delta_p_cont": delta_p_cont,
             "f_nadir": f_nadir,
@@ -399,7 +418,7 @@ def _generate_day(
         }
     )
 
-    return df, l0_status
+    return df, l0_status, l0_stats
 
 
 def generate_all_days(
@@ -408,6 +427,7 @@ def generate_all_days(
     seed: int = 42,
     use_optimizers: bool = False,
     placement_path: str | Path = "artifacts/placement/official_placement_v3.json",
+    mpc_path: str | Path = "data/grid_IEEE123_complete.m",
 ) -> None:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -420,15 +440,19 @@ def generate_all_days(
     l0_optimizer = None
     l1_dispatcher = None
     if use_optimizers:
-        l0_optimizer = L0Optimizer(build_net_data_from_pandapower(MicrogridEnv(placement_path, "data/grid_IEEE123_complete.m").base_net))
+        l0_optimizer = L0Optimizer(build_net_data_from_pandapower(MicrogridEnv(placement_path, str(mpc_path)).base_net))
         l1_dispatcher = L1Dispatcher()
 
     last_df: pd.DataFrame | None = None
+    aggregate_solver_stats = {"strict_success": 0, "elastic_success": 0, "infeasible": 0}
     for day_idx in range(n_days):
-        df, l0_status = _generate_day(day_idx, placement_totals, seed, l0_optimizer, l1_dispatcher)
+        df, l0_status, day_solver_stats = _generate_day(day_idx, placement_totals, seed, l0_optimizer, l1_dispatcher)
         df.to_parquet(output_path / f"day_{day_idx:03d}.parquet", index=False)
         last_df = df
         if use_optimizers:
+            aggregate_solver_stats["strict_success"] += int(day_solver_stats["strict_success"])
+            aggregate_solver_stats["elastic_success"] += int(day_solver_stats["elastic_success"])
+            aggregate_solver_stats["infeasible"] += int(day_solver_stats["infeasible"])
             print(f"Generated {day_idx + 1}/{n_days} days | L0={l0_status}")
         else:
             print(f"Generated {day_idx + 1}/{n_days} days")
@@ -444,6 +468,18 @@ def generate_all_days(
         for col, dtype in zip(last_df.columns, last_df.dtypes, strict=False)
     ]
 
+    strict_success = int(aggregate_solver_stats["strict_success"])
+    elastic_success = int(aggregate_solver_stats["elastic_success"])
+    infeasible = int(aggregate_solver_stats["infeasible"])
+    total_calls = strict_success + elastic_success + infeasible
+    elastic_used_ratio = float(elastic_success / max(strict_success + elastic_success, 1))
+    if elastic_used_ratio > 0.10:
+        health = "fail"
+    elif elastic_used_ratio > 0.05:
+        health = "warn"
+    else:
+        health = "healthy"
+
     metadata = {
         "seed": seed,
         "n_days": n_days,
@@ -453,7 +489,15 @@ def generate_all_days(
             "loads": "Seasonal sinusoid with lognormal noise, clamped to [0.4, 1.0] * base",
             "pv": "Clear-sky sinusoid with Beta cloud factor and random cloud drops",
             "wind": "AR(1) Weibull wind speed with cubic power curve",
-            "frequency": "Bernoulli(0.83) events with TruncNormal(2,3) contingency",
+            "frequency": "Bernoulli(0.10) per step events with discrete delta_P choices [-1.5,-1.0,-0.5,-0.3,0.3,0.5] MW",
+        },
+        "solver_stats": {
+            "elastic_used_ratio": elastic_used_ratio,
+            "strict_success": strict_success,
+            "elastic_success": elastic_success,
+            "infeasible": infeasible,
+            "total_calls": total_calls,
+            "health": health,
         },
     }
     (output_path / "metadata.json").write_text(json.dumps(metadata, indent=2))
@@ -470,6 +514,11 @@ if __name__ == "__main__":
         default="artifacts/placement/official_placement_v3.json",
         help="Path to placement JSON",
     )
+    parser.add_argument(
+        "--mpc-path",
+        default="data/grid_IEEE123_complete.m",
+        help="Path to MATPOWER .m file",
+    )
     args = parser.parse_args()
 
     generate_all_days(
@@ -478,4 +527,5 @@ if __name__ == "__main__":
         args.seed,
         use_optimizers=args.use_optimizers,
         placement_path=args.placement,
+        mpc_path=args.mpc_path,
     )

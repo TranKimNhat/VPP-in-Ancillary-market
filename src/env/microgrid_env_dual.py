@@ -89,6 +89,7 @@ class MicrogridEnvDual(gym.Env):
         topology_cache: list[tuple[Any, np.ndarray, set[int]]] | None = None,
         topology_cache_path: str | Path | None = None,
         precomputed_dir: str | Path = "data/precomputed_365d_97to67",
+        day_split: str = "train",
         ffr_mode: str = "droop",
     ) -> None:
         super().__init__()
@@ -179,7 +180,9 @@ class MicrogridEnvDual(gym.Env):
         self.event_injector = EventInjector(seed=seed)
         self.freq_dyn = FrequencyDynamics()
         self.reconfig = TieSwitchReconfiguration(self.base_net, seed=seed)
-        self.context_loader = DayContextLoader(precomputed_dir=precomputed_dir, seed=seed)
+        self.context_loader = DayContextLoader(
+            precomputed_dir=precomputed_dir, seed=seed, split=day_split
+        )
         self.day_ctx = None
         self.day_step = 0
         self._last_topology_fallback_reason: str | None = None
@@ -269,6 +272,13 @@ class MicrogridEnvDual(gym.Env):
 
         self.zone_lmp = {1: 45.0, 2: 50.0, 3: 55.0, 4: 60.0}
         self._slow_baseline = np.zeros((82,), dtype=np.float32)
+        # AM-side prices and L1 commitments (populated by _apply_day_context)
+        self.lambda_as_ffr: float = 10.0
+        self.lambda_as_pfr: float = 5.0
+        self.lambda_as_sfr: float = 3.0
+        self.zone_lambda_as: dict[int, float] = {1: 10.0, 2: 10.0, 3: 10.0, 4: 10.0}
+        self.r_as_target_vpp = np.zeros(3, dtype=np.float32)
+        self.p_ref_target_vpp = np.zeros(3, dtype=np.float32)
 
         self._agent_elements = np.asarray([str(spec["element"]) for spec in self._agent_specs], dtype=object)
         self._agent_idx_labels = np.asarray([int(spec["idx"]) for spec in self._agent_specs], dtype=np.int64)
@@ -283,14 +293,22 @@ class MicrogridEnvDual(gym.Env):
         self._bess_indices: list[int] = []
         self._v2g_indices: list[int] = []
         self._pv_indices: list[int] = []
+        # Mask: agent is a PV/wind injection (sgen-side, generation-only).
+        # PV/Wind can only DOWN-regulate (curtail tạm thời) — their delta_p must
+        # be non-positive, since they already run at MPPT under baseline dispatch.
+        _is_pv = np.zeros(self.n_agents, dtype=bool)
         for i, spec in enumerate(self._agent_specs):
             agent_type = spec.get("type", "")
             if "BESS" in agent_type:
                 self._bess_indices.append(i)
             elif "V2G" in agent_type:
                 self._v2g_indices.append(i)
-            elif "PV" in agent_type or "DPV" in agent_type:
+            elif "PV" in agent_type or "DPV" in agent_type or "Wind" in agent_type or "wind" in agent_type:
                 self._pv_indices.append(i)
+                _is_pv[i] = True
+        self._mask_pv_agents = _is_pv
+        # Subset of sgen positions that are PV/wind (for non-positive delta clipping).
+        self._mask_pv_among_sgen = _is_pv[self._mask_sgen_agents]
 
         # Per-DER droop coefficients for FFR
         # k_droop_i: droop gain for DER i (pu power per Hz deviation)
@@ -604,6 +622,33 @@ class MicrogridEnvDual(gym.Env):
             dtype=np.float32,
         )
 
+        # AM-side prices and L1 commitments (used by reward / eval economics)
+        self.lambda_as_ffr = float(row.get("lambda_as_ffr", 10.0))
+        self.lambda_as_pfr = float(row.get("lambda_as_pfr", 5.0))
+        self.lambda_as_sfr = float(row.get("lambda_as_sfr", 3.0))
+        self.zone_lambda_as = {
+            1: float(row.get("lambda_as_z1", self.lambda_as_ffr)),
+            2: float(row.get("lambda_as_z2", self.lambda_as_ffr)),
+            3: float(row.get("lambda_as_z2", self.lambda_as_ffr)),
+            4: float(row.get("lambda_as_z4", self.lambda_as_ffr)),
+        }
+        self.r_as_target_vpp = np.asarray(
+            [
+                float(row.get("r_as_vpp1", 0.0)),
+                float(row.get("r_as_vpp2", 0.0)),
+                float(row.get("r_as_vpp3", 0.0)),
+            ],
+            dtype=np.float32,
+        )
+        self.p_ref_target_vpp = np.asarray(
+            [
+                float(row.get("p_ref_vpp1", 0.0)),
+                float(row.get("p_ref_vpp2", 0.0)),
+                float(row.get("p_ref_vpp3", 0.0)),
+            ],
+            dtype=np.float32,
+        )
+
     def _build_obs_slow(self) -> np.ndarray:
         v_bus = np.nan_to_num(self._agent_v_bus(), nan=1.0, posinf=1.1, neginf=0.9)
         p_net = np.nan_to_num(self._agent_p_net(), nan=0.0, posinf=1e3, neginf=-1e3)
@@ -760,9 +805,18 @@ class MicrogridEnvDual(gym.Env):
 
         delta_mw = (self.delta_p_set * 0.1 * self._agent_p_rated).astype(np.float32)
 
+        # ----- sgen (PV/Wind injections) -----
+        # Semantic convention (Section 6 design):
+        #   delta_p > 0 = UP-reg intent  (cannot apply to PV/Wind — already at MPPT)
+        #   delta_p < 0 = DOWN-reg / curtailment  (allowed)
+        # → For PV/Wind sgen agents we force delta_mw <= 0 before applying.
         if self._sgen_agent_pos.size > 0:
             sgen_p = self.net.sgen["p_mw"].to_numpy(dtype=np.float32, copy=False)
-            sgen_delta = delta_mw[self._mask_sgen_agents]
+            sgen_delta = delta_mw[self._mask_sgen_agents].copy()
+            if self._mask_pv_among_sgen.any():
+                sgen_delta[self._mask_pv_among_sgen] = np.minimum(
+                    sgen_delta[self._mask_pv_among_sgen], 0.0
+                )
             sgen_rated = self._agent_p_rated[self._mask_sgen_agents]
             sgen_p[self._sgen_agent_pos] = np.clip(
                 sgen_p[self._sgen_agent_pos] + sgen_delta,
@@ -770,6 +824,8 @@ class MicrogridEnvDual(gym.Env):
                 2.0 * sgen_rated,
             )
 
+        # ----- storage (BESS) -----
+        # Bidirectional: delta_p > 0 = discharge UP-reg, delta_p < 0 = charge DOWN-reg.
         if self._storage_agent_pos.size > 0:
             storage_p = self.net.storage["p_mw"].to_numpy(dtype=np.float32, copy=False)
             storage_delta = delta_mw[self._mask_storage_agents]
@@ -780,6 +836,13 @@ class MicrogridEnvDual(gym.Env):
                 2.0 * storage_rated,
             )
 
+        # ----- load (EVCS demand response, V2G discharge into grid as negative load) -----
+        # Semantic convention: delta_p > 0 = reduce charging or discharge (UP-reg DR/V2G),
+        # delta_p < 0 = increase charging (DOWN-reg). EVCS load is NEVER turned off
+        # entirely (lower bound 0 keeps booking demand visible to power flow), but the
+        # RL policy can ramp it down or to V2G discharge equivalent during a frequency
+        # event. The "-load_delta" sign flip below converts UP-reg intent into load
+        # decrease at the bus.
         if self._load_agent_pos.size > 0:
             load_p = self.net.load["p_mw"].to_numpy(dtype=np.float32, copy=False)
             load_delta = delta_mw[self._mask_load_agents]
@@ -1146,31 +1209,30 @@ class MicrogridEnvDual(gym.Env):
         return obs_fast, r_fast, done, truncated, info
 
     def _apply_slow_actions(self, action_slow: np.ndarray) -> None:
+        """Slow (EM) action: per-agent P dispatch only (Q dropped — AM-only build)."""
         a = np.asarray(action_slow, dtype=np.float32).reshape(-1)
-        if a.shape[0] != 82:
-            raise ValueError(f"action_slow must have shape (82,), got {a.shape}")
+        if a.shape[0] != self.n_agents:
+            raise ValueError(f"action_slow must have shape ({self.n_agents},), got {a.shape}")
 
         self.p_set = a[: self.n_agents].copy()
-        self.q_set = a[self.n_agents :].copy()
+        self.q_set.fill(0.0)  # Q product dropped in AM-only architecture
 
         for i, spec in enumerate(self._agent_specs):
             p_rated = max(float(spec["p_rated"]), 1e-6)
-            q_max = max(float(spec["q_max"]), 1e-6)
             p_cmd = float(self.p_set[i]) * p_rated
-            q_cmd = float(self.q_set[i]) * q_max
 
             elm = spec["element"]
             idx = spec["idx"]
             if elm == "sgen":
                 self.net.sgen.at[idx, "p_mw"] = p_cmd
-                self.net.sgen.at[idx, "q_mvar"] = q_cmd
+                self.net.sgen.at[idx, "q_mvar"] = 0.0
             elif elm == "storage":
                 self.net.storage.at[idx, "p_mw"] = p_cmd
                 if "q_mvar" in self.net.storage.columns:
-                    self.net.storage.at[idx, "q_mvar"] = q_cmd
+                    self.net.storage.at[idx, "q_mvar"] = 0.0
             else:
                 self.net.load.at[idx, "p_mw"] = max(0.0, -p_cmd)
-                self.net.load.at[idx, "q_mvar"] = max(0.0, -q_cmd)
+                self.net.load.at[idx, "q_mvar"] = 0.0
 
         self.soc = np.clip(self.soc - 0.01 * np.abs(self.p_set), 0.05, 0.95)
 
@@ -1194,7 +1256,9 @@ class MicrogridEnvDual(gym.Env):
         p2p = float(np.sum(np.maximum(0.0, self.p_set)))
         vdi = float(np.mean(np.abs(v - 1.0)))
 
-        r_slow = float(-5.0 * vdi + 0.02 * p2p - 0.01 * np.mean(np.abs(self.q_set)))
+        # AM-only build: Q product removed; slow reward depends only on voltage
+        # discipline (VDI), P2P market participation, and P dispatch.
+        r_slow = float(-5.0 * vdi + 0.02 * p2p)
 
         self.slow_step_count += 1
         self.episode_done = True

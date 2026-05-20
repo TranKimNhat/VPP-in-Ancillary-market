@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-
 from src.layer1_vpp.scenario_generator import PriceScenarioSet
 from src.layer1_vpp.virtual_battery import VirtualBatteryConfig, VirtualBatterySchedule, simulate_soc
 

@@ -63,7 +63,7 @@ AM_PHASES: dict[str, dict[str, Any]] = {
     "A": {
         "n_episodes": 400,
         "event_prob": 0.5,          # 50% chance - sparse events for stable learning
-        "max_delta_p_mw": 2.0,      # ~13% of S_BASE - mild
+        "max_delta_p_mw": 2.5,      # ~16% of S_BASE - covers S1 (load_step 2.5 MW)
         "event_probs": {"load_step": 1.0, "gen_trip": 0.0, "line_trip": 0.0, "high_ren": 0.0},
         "lr_factor": 1.0,
         "entropy_bonus": 0.02,      # Extra exploration in early phase
@@ -91,7 +91,7 @@ AM_PHASES: dict[str, dict[str, Any]] = {
     "D": {
         "n_episodes": 1000,
         "event_prob": 0.85,
-        "max_delta_p_mw": 5.0,      # ~32% of S_BASE - near N-1
+        "max_delta_p_mw": 5.5,      # ~35% of S_BASE - covers S4 (gen_trip −5.5 MW)
         "event_probs": {"load_step": 0.3, "gen_trip": 0.3, "line_trip": 0.15, "high_ren": 0.25},
         "lr_factor": 0.8,           # Start LR decay
         "entropy_bonus": 0.003,
@@ -380,7 +380,12 @@ class FeederGraphSAGEAgentEncoder(nn.Module):
 # ============================================================================
 
 class SharedGaussianActor(nn.Module):
-    """Shared actor network for all agents."""
+    """Shared actor network for all agents.
+
+    Std parametrization (replacing former hard clamp [0.05, 0.5] which produced
+    zero gradient at the boundary): std = softplus(log_std) + min_std. Gradient
+    is always non-zero ⇒ std can shrink/grow throughout training.
+    """
 
     def __init__(
         self,
@@ -389,9 +394,11 @@ class SharedGaussianActor(nn.Module):
         hidden_dim: int = 128,
         action_scale: float = 0.75,
         log_std_init: float = -1.0,
+        min_std: float = 0.05,
     ):
         super().__init__()
         self.action_scale = float(action_scale)
+        self.min_std = float(min_std)
         self.net = nn.Sequential(
             nn.Linear(embed_dim, hidden_dim),
             nn.ReLU(),
@@ -401,7 +408,13 @@ class SharedGaussianActor(nn.Module):
         self.mean_head = nn.Linear(hidden_dim, action_dim)
         nn.init.zeros_(self.mean_head.weight)
         nn.init.zeros_(self.mean_head.bias)
+        # log_std is now a free pre-activation (softplus applied in forward).
+        # Initial std = softplus(log_std_init) + min_std. For log_std_init=-1.0
+        # this gives std ≈ 0.31 + 0.05 = 0.36 — matches previous behavior.
         self.log_std = nn.Parameter(torch.full((action_dim,), float(log_std_init)))
+
+    def _std(self) -> torch.Tensor:
+        return F.softplus(self.log_std) + self.min_std
 
     def forward(self, embed: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -414,7 +427,7 @@ class SharedGaussianActor(nn.Module):
         """
         h = self.net(embed)
         mean = self.action_scale * torch.tanh(self.mean_head(h))
-        std = torch.clamp(self.log_std.exp(), 0.05, 0.5)
+        std = self._std()
         return mean, std.expand_as(mean)
 
     def dist(self, embed: torch.Tensor) -> torch.distributions.Normal:
@@ -499,6 +512,8 @@ class GAMAPPOAgent(nn.Module):
         entropy_coef: float = 0.01,
         lr: float = 3e-4,
         max_grad_norm: float = 0.5,
+        log_std_init: float = -1.0,
+        min_std: float = 0.05,
     ):
         super().__init__()
         self.n_agents = n_agents
@@ -518,7 +533,10 @@ class GAMAPPOAgent(nn.Module):
 
         # Networks
         self.encoder = FeederGraphSAGEAgentEncoder(obs_feat, hidden_dim, embed_dim)
-        self.actor = SharedGaussianActor(embed_dim, action_dim_per_agent, hidden_dim)
+        self.actor = SharedGaussianActor(
+            embed_dim, action_dim_per_agent, hidden_dim,
+            log_std_init=log_std_init, min_std=min_std,
+        )
         self.critic = AgentCenteredCritic(embed_dim, hidden_dim)
 
         # Optimizer
@@ -783,11 +801,13 @@ class GAMAPPOAgent(nn.Module):
                 n_updates += 1
 
         with torch.no_grad():
-            log_std_t = self.actor.log_std.clamp(-3.0, 1.0)
+            # log_std is the raw pre-softplus param; real std uses softplus+min_std (no clamp).
+            log_std_t = self.actor.log_std
+            std_t = self.actor._std()
             actor_log_std = log_std_t.mean().item()
-            actor_std = log_std_t.exp().clamp(0.05, 0.5).mean().item()
+            actor_std = std_t.mean().item()
             log_std_per_dim = log_std_t.cpu().numpy().tolist()
-            std_per_dim = log_std_t.exp().clamp(0.05, 0.5).cpu().numpy().tolist()
+            std_per_dim = std_t.cpu().numpy().tolist()
 
         nu = max(n_updates, 1)
         per_dim_dict: dict[str, float] = {}
@@ -1366,12 +1386,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hidden-dim", type=int, default=128)
     parser.add_argument("--update-epochs", type=int, default=4)
     parser.add_argument("--mini-batch-size", type=int, default=16)
+    parser.add_argument(
+        "--log-std-init",
+        type=float,
+        default=-1.0,
+        help="Initial pre-softplus log_std. Effective initial std = softplus(x) + 0.05.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--placement", type=str, default="artifacts/placement/official_placement_v3.json")
     parser.add_argument("--mpc-path", type=str, default="data/grid_IEEE123_complete.m")
+    parser.add_argument(
+        "--precomputed-dir",
+        type=str,
+        default="data/precomputed_365d_97to67",
+        help="Directory containing day_*.parquet + eval_days.txt",
+    )
+    parser.add_argument(
+        "--day-split",
+        type=str,
+        default="train",
+        choices=["train", "eval", "all"],
+        help="Which day partition to draw episodes from",
+    )
     parser.add_argument("--checkpoint-dir", type=str, default="artifacts/checkpoints_am_mappo")
     parser.add_argument("--log-interval", type=int, default=10)
     parser.add_argument("--result-json", type=str, default=None)
+    parser.add_argument(
+        "--resume-from",
+        type=str,
+        default=None,
+        help="Path to a checkpoint (.pt with 'agent_state_dict'); load before training. Used by ASHA promotion.",
+    )
     parser.add_argument("--curriculum", action="store_true", help="Enable curriculum learning (6000 episodes)")
     parser.add_argument("--phase-episodes", type=int, default=0, help="Override episodes per phase (0=use defaults)")
     parser.add_argument(
@@ -1403,6 +1448,8 @@ def main() -> None:
         placement_path=args.placement,
         mpc_path=args.mpc_path,
         seed=args.seed,
+        precomputed_dir=args.precomputed_dir,
+        day_split=args.day_split,
         ffr_mode=args.ffr_mode,
     )
 
@@ -1426,9 +1473,18 @@ def main() -> None:
         hidden_dim=args.hidden_dim,
         lr=args.lr,
         entropy_coef=args.entropy_coef,
+        log_std_init=args.log_std_init,
     )
 
     print(f"Agent parameters: {sum(p.numel() for p in agent.parameters()):,}")
+
+    if args.resume_from:
+        resume_path = Path(args.resume_from)
+        if not resume_path.is_file():
+            raise FileNotFoundError(f"--resume-from checkpoint not found: {resume_path}")
+        ckpt = torch.load(resume_path, map_location="cpu", weights_only=False)
+        agent.load_state_dict(ckpt["agent_state_dict"])
+        print(f"Resumed agent weights from {resume_path}")
 
     # Setup curriculum or single-phase training
     if args.curriculum:

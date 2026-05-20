@@ -246,18 +246,18 @@ def compute_ffr_metrics(
 
 class NoFFRPolicy:
     """Baseline: No frequency response."""
-    def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any) -> np.ndarray:
+    def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
         n_agents = env.n_agents
         n_vpps = len(env._vpp_droop_agents)
         return np.zeros(n_agents + n_vpps, dtype=np.float32)
 
 
 class FixedDroopPolicy:
-    """Baseline: Fixed droop control (linear proportional)."""
-    def __init__(self, k_droop: float = 0.5):
+    """Baseline: Fixed droop control (linear proportional, 5% droop per IEEE/ENTSO-E)."""
+    def __init__(self, k_droop: float = 0.05):
         self.k_droop = k_droop
 
-    def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any) -> np.ndarray:
+    def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
         freq_state = env.freq_dyn.get_state()
         delta_f = freq_state.delta_f_hz
         control = -self.k_droop * np.clip(delta_f / 0.5, -1.0, 1.0)
@@ -314,7 +314,7 @@ class GraphSAGEMAPPOPolicy:
             self.obs_normalizer.var = norm_data["var"]
             self.obs_normalizer.count = norm_data["count"]
 
-    def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any) -> np.ndarray:
+    def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
         obs_norm = self.obs_normalizer.normalize(obs)
         action = self.agent.act_deterministic(obs_norm, edge_index)
 
@@ -333,6 +333,106 @@ class GraphSAGEMAPPOPolicy:
         return np.clip(full_action, -1.0, 1.0)
 
 
+class GCNNPPOPolicy:
+    """Baseline: GCNN-PPO (Guo et al. 2024).
+
+    Spectral GCN + single centralized PPO. Uses legacy 5-column obs_fast.
+    """
+    def __init__(self, checkpoint_path: Path, env: MicrogridEnvDual):
+        from src.baselines.gcnn_ppo import GCNNPPOAgent
+        self._agent = GCNNPPOAgent.load(checkpoint_path)
+        self._env = env
+
+    @staticmethod
+    def _to_legacy_obs5(obs_fast: np.ndarray) -> np.ndarray:
+        arr = np.asarray(obs_fast, dtype=np.float32)
+        if arr.ndim != 2 or arr.shape[1] < 5:
+            raise ValueError(f"Expected obs_fast (N,>=5), got {arr.shape}")
+        return arr[:, :5]
+
+    def _map_to_env_action(self, raw: np.ndarray, env: Any) -> np.ndarray:
+        raw = np.asarray(raw, dtype=np.float32).reshape(-1)
+        n_agents = env.n_agents
+        p_all = raw[:n_agents]
+        droop_all = raw[n_agents:2 * n_agents] if raw.size >= 2 * n_agents else np.zeros(n_agents, dtype=np.float32)
+        n_vpps = len(env._vpp_droop_agents)
+        vpp_droop = np.zeros(n_vpps, dtype=np.float32)
+        for vpp_idx, (_, members) in enumerate(env._vpp_droop_agents.items()):
+            members = [m for m in members if m < n_agents]
+            vpp_droop[vpp_idx] = float(np.mean(droop_all[members])) if members else 0.0
+        return np.clip(np.concatenate([p_all, vpp_droop]).astype(np.float32), -1.0, 1.0)
+
+    def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
+        from src.baselines.gcnn_ppo import GCNNPPOAgent
+        if obs_fast is None:
+            raise ValueError("GCNNPPOPolicy requires obs_fast")
+        legacy = self._to_legacy_obs5(obs_fast)
+        slow_zero = np.zeros_like(legacy)
+        combined = GCNNPPOAgent._combine_obs(legacy, slow_zero)
+        global_obs = combined.reshape(-1)
+        raw, _lp, _v = self._agent.act(combined, edge_index, global_obs)
+        return self._map_to_env_action(raw, env)
+
+
+class MATD3Policy:
+    """Baseline: MATD3 (Li & Zhou 2025, base algorithm without EIE enhancements).
+
+    CTDE multi-agent TD3 with MLP encoder. Builds per-agent obs from env state.
+    """
+    def __init__(self, checkpoint_path: Path, env: MicrogridEnvDual):
+        from src.baselines.matd3 import MATD3Agent, MATD3Config
+        config = MATD3Config(obs_dim=24, action_dim=2, n_agents=env.n_agents)
+        self._agent = MATD3Agent(config, device="cpu")
+        self._agent.load(checkpoint_path)
+        self._agent.eval()
+        self._env = env
+
+    def _build_obs(self, obs_fast: np.ndarray, env: Any) -> np.ndarray:
+        n_agents = env.n_agents
+        obs = np.zeros((n_agents, 24), dtype=np.float32)
+        freq_state = env.freq_dyn.get_state()
+        for i in range(n_agents):
+            obs[i, 0] = freq_state.delta_f_hz
+            obs[i, 1] = freq_state.rocof_hz_s
+            if i < len(obs_fast):
+                tail = obs_fast[i][:22]
+                obs[i, 2:2 + len(tail)] = tail
+        return obs
+
+    def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
+        if obs_fast is None:
+            raise ValueError("MATD3Policy requires obs_fast")
+        per_agent_obs = self._build_obs(obs_fast, env)
+        actions = self._agent.act_deterministic(per_agent_obs)
+        p_actions = actions[:, 0]
+        n_vpps = len(env._vpp_droop_agents)
+        vpp_droop = np.zeros(n_vpps, dtype=np.float32)
+        for vpp_idx, (_, members) in enumerate(env._vpp_droop_agents.items()):
+            valid = [m for m in members if m < len(actions)]
+            if valid:
+                vpp_droop[vpp_idx] = float(np.mean([actions[a, 1] for a in valid]))
+        return np.clip(np.concatenate([p_actions, vpp_droop]).astype(np.float32), -1.0, 1.0)
+
+
+class MLPMAPPOPolicy:
+    """Ablation: MAPPO with MLP encoder (no graph message passing).
+
+    Same RL stack as the proposed GraphSAGE-MAPPO but with an MLP encoder so the
+    only differing variable is the graph encoder. Loaded via DeterministicDualPolicy
+    when the checkpoint was trained with encoder_type='mlp'.
+    """
+    def __init__(self, checkpoint_path: Path, env: MicrogridEnvDual):
+        from src.eval.evaluate_dual import DeterministicDualPolicy
+        self._policy = DeterministicDualPolicy(checkpoint_path)
+        self._env = env
+
+    def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
+        if obs_fast is None:
+            raise ValueError("MLPMAPPOPolicy requires obs_fast")
+        raw = self._policy.act_fast(obs_fast, edge_index)
+        return np.asarray(raw, dtype=np.float32)
+
+
 # =============================================================================
 # Evaluation Runner
 # =============================================================================
@@ -345,32 +445,44 @@ class FFRTopologyEvaluator:
         env_config: dict[str, Any],
         checkpoint_path: Path | None = None,
         output_dir: Path = Path("results/ffr_topology"),
+        gcnn_checkpoint: Path | None = None,
+        matd3_checkpoint: Path | None = None,
+        mlp_mappo_checkpoint: Path | None = None,
     ):
         self.env = MicrogridEnvDual(**env_config)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build policies
-        self.policies = {
+        # Build policies (ladder per Baseline Comparison.md §1)
+        self.policies: dict[str, Any] = {
             "No FFR": NoFFRPolicy(),
-            "Fixed Droop": FixedDroopPolicy(k_droop=0.5),
+            "Fixed Droop": FixedDroopPolicy(k_droop=0.05),
         }
 
-        if checkpoint_path and checkpoint_path.exists():
+        def _try_load(name: str, ctor) -> None:
             try:
-                self.policies["GraphSAGE-MAPPO"] = GraphSAGEMAPPOPolicy(checkpoint_path, self.env)
-                print(f"Loaded GraphSAGE-MAPPO from {checkpoint_path}")
-            except Exception as e:
-                print(f"Failed to load checkpoint: {e}")
+                self.policies[name] = ctor()
+                print(f"Loaded {name}")
+            except Exception as exc:
+                print(f"[warn] Failed to load {name}: {exc}")
+
+        if matd3_checkpoint and matd3_checkpoint.exists():
+            _try_load("MATD3", lambda: MATD3Policy(matd3_checkpoint, self.env))
+        if gcnn_checkpoint and gcnn_checkpoint.exists():
+            _try_load("GCNN-PPO", lambda: GCNNPPOPolicy(gcnn_checkpoint, self.env))
+        if mlp_mappo_checkpoint and mlp_mappo_checkpoint.exists():
+            _try_load("MLP-MAPPO", lambda: MLPMAPPOPolicy(mlp_mappo_checkpoint, self.env))
+        if checkpoint_path and checkpoint_path.exists():
+            _try_load("GraphSAGE-MAPPO", lambda: GraphSAGEMAPPOPolicy(checkpoint_path, self.env))
 
         # Contingency scenarios (Section VI - 4 scenarios aligned with IEEE 1547)
         # S_BASE = 15.705 MW, H_SYS = 1.18s
         # Generator locations: bus 67 (3MW), 105 (3MW), 101 (3MW), 98 (3MW), 60 (2MW)
         self.scenarios = {
-            "S1_load_step": EventConfig(type="load_step", delta_P_mw=2.5, location=45, t_inject=30.0),   # 16% S_BASE, RoCoF=-3.36
-            "S2_gen_trip": EventConfig(type="gen_trip", delta_P_mw=-3.0, location=67, t_inject=30.0),    # Trip 3MW wind at bus 67
-            "S3_line_trip": EventConfig(type="line_trip", delta_P_mw=-2.4, location=67068, t_inject=30.0),  # Line 67-68, topology change
-            "S4_gen_trip_severe": EventConfig(type="gen_trip", delta_P_mw=-5.0, location=105, t_inject=30.0),  # Trip 3MW at 105 + cascade
+            "S1_load_step": EventConfig(type="load_step", delta_P_mw=2.5, location=45, t_inject=30.0),
+            "S2_gen_trip": EventConfig(type="gen_trip", delta_P_mw=-3.9, location=67, t_inject=30.0),
+            "S3_line_trip": EventConfig(type="line_trip", delta_P_mw=-2.4, location=67068, t_inject=30.0),
+            "S4_gen_trip_severe": EventConfig(type="gen_trip", delta_P_mw=-5.5, location=105, t_inject=30.0),
         }
 
         # Topology splits using farthest-point selection
@@ -416,7 +528,7 @@ class FFRTopologyEvaluator:
         rocof_trace = []
 
         for _ in range(n_steps):
-            action = policy.act(obs_full, edge_index, self.env)
+            action = policy.act(obs_full, edge_index, self.env, obs_fast=obs_fast)
             obs_fast, _, done, _, info = self.env.step_fast(action)
 
             # Update graph if topology changed
@@ -556,8 +668,27 @@ class FFRTopologyEvaluator:
         df.to_csv(self.output_dir / "table3_severity_scaling.csv", index=False)
         return df
 
+    # ------------------------------------------------------------------ styling
+    _METHOD_PALETTE = {
+        "GraphSAGE-MAPPO": ("#1f3a93", 2.6, "-"),     # Proposed: thick, bold blue
+        "MLP-MAPPO":       ("#e94e77", 1.6, "--"),
+        "GCNN-PPO":        ("#f5a623", 1.6, "--"),
+        "MATD3":           ("#6a737d", 1.6, "--"),
+        "Fixed Droop":     ("#56c596", 1.4, ":"),
+        "No FFR":          ("#a04668", 1.4, ":"),
+    }
+
+    def _style_for(self, name: str) -> tuple[str, float, str]:
+        return self._METHOD_PALETTE.get(name, ("#444444", 1.4, "-"))
+
+    def _annotate_trace(self, ax, f_trace: np.ndarray, dt: float, event_step: int, color: str) -> None:
+        """Mark nadir + approximate settling on a freq trace."""
+        nadir_idx = int(np.argmin(f_trace))
+        ax.scatter([nadir_idx * dt], [f_trace[nadir_idx]], s=22, color=color, zorder=5,
+                   edgecolor="black", linewidth=0.6)
+
     def plot_frequency_traces(self, scenario_name: str = "S2_gen_trip") -> None:
-        """Plot frequency traces comparing methods."""
+        """Plot frequency traces comparing methods (single scenario)."""
         event = self.scenarios.get(scenario_name)
         if event is None:
             return
@@ -645,27 +776,234 @@ class FFRTopologyEvaluator:
         plt.close(fig)
         print("Saved topology generalization plot")
 
+    def plot_frequency_grid_all_scenarios(
+        self,
+        n_runs: int = 3,
+        topology_idx: int | None = 0,
+        dt: float = 1.0,
+        ufls_hz: float = 49.5,
+        settle_band: float = 0.1,
+    ) -> None:
+        """2×2 grid: S1-S4 freq response, 6 methods overlaid with mean ± std band.
+
+        Per-subplot annotations:
+          - Mean trace per method, ±1σ shaded band over ``n_runs`` runs.
+          - Proposed (GraphSAGE-MAPPO) drawn thicker on top so it pops.
+          - Vertical line at event injection.
+          - Horizontal lines at f_0 (50 Hz) and UFLS threshold (49.5 Hz).
+          - Settling band ``50 ± settle_band`` shaded.
+          - Nadir marker per method.
+        """
+        if not self.scenarios:
+            return
+        scenario_names = list(self.scenarios.keys())[:4]
+        n = len(scenario_names)
+        if n == 0:
+            return
+
+        # Layout: 2x2 if 4 scenarios, else 1xN
+        if n == 4:
+            fig, axes = plt.subplots(2, 2, figsize=(13, 8.5), sharex=True, sharey=True)
+            axes_flat = axes.flatten()
+        else:
+            fig, axes = plt.subplots(1, n, figsize=(5.5 * n, 4.5), sharex=True, sharey=True)
+            axes_flat = np.atleast_1d(axes).flatten()
+
+        method_order = sorted(
+            self.policies.keys(),
+            key=lambda k: (k != "GraphSAGE-MAPPO", k),  # Proposed last (drawn on top)
+        )
+
+        for ax, sc_name in zip(axes_flat, scenario_names):
+            event = self.scenarios[sc_name]
+            event_t = float(event.t_inject)
+
+            # Settling and UFLS shading
+            ax.axhspan(50.0 - settle_band, 50.0 + settle_band, color="green", alpha=0.07,
+                       label=f"Settling ±{settle_band:g} Hz")
+            ax.axhline(50.0, ls=":", color="gray", alpha=0.6, linewidth=0.8)
+            ax.axhline(ufls_hz, ls="--", color="red", alpha=0.65, linewidth=1.0,
+                       label=f"UFLS {ufls_hz} Hz")
+            ax.axvline(event_t, ls="--", color="orange", alpha=0.7, linewidth=1.0,
+                       label=f"Event @ {event_t:g}s")
+
+            for method_name in method_order:
+                policy = self.policies[method_name]
+                runs: list[np.ndarray] = []
+                for _ in range(n_runs):
+                    m = self.run_episode(policy, event=event, topology_idx=topology_idx)
+                    runs.append(np.asarray(m.f_trace, dtype=float))
+                if not runs:
+                    continue
+                # Align lengths
+                L = min(len(r) for r in runs)
+                mat = np.stack([r[:L] for r in runs], axis=0)
+                t = np.arange(L) * dt
+                mean = mat.mean(axis=0)
+                std = mat.std(axis=0)
+
+                color, lw, ls = self._style_for(method_name)
+                zorder = 5 if method_name == "GraphSAGE-MAPPO" else 3
+                ax.plot(t, mean, label=method_name, color=color, linewidth=lw, linestyle=ls, zorder=zorder)
+                if n_runs > 1:
+                    ax.fill_between(t, mean - std, mean + std, color=color, alpha=0.12, zorder=zorder - 1)
+                self._annotate_trace(ax, mean, dt, int(round(event_t / dt)), color)
+
+            ax.set_title(f"{sc_name}  (ΔP = {event.delta_P_mw:+.2f} MW)", fontsize=11)
+            ax.set_ylabel("Frequency (Hz)")
+            ax.set_xlabel("Time (s)")
+            ax.grid(alpha=0.3)
+            ax.set_ylim(48.7, 51.2)
+
+        # Single legend at figure level
+        handles, labels = axes_flat[0].get_legend_handles_labels()
+        # De-dup keeping order
+        seen = set()
+        uniq: list = []
+        for h, l in zip(handles, labels):
+            if l not in seen:
+                uniq.append((h, l))
+                seen.add(l)
+        fig.legend([h for h, _ in uniq], [l for _, l in uniq],
+                   loc="lower center", ncol=min(len(uniq), 6), fontsize=9,
+                   bbox_to_anchor=(0.5, -0.02), frameon=True)
+        fig.suptitle("Frequency response across contingency scenarios — Proposed vs baselines",
+                     fontsize=13, y=1.0)
+        plt.tight_layout(rect=[0, 0.04, 1, 0.98])
+        fig.savefig(self.output_dir / "fig_freq_grid_S1_S4.pdf", dpi=300, bbox_inches="tight")
+        fig.savefig(self.output_dir / "fig_freq_grid_S1_S4.png", dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print("Saved Fig: frequency response grid S1-S4 (with Proposed vs baselines overlay)")
+
+    def plot_iae_degradation_vs_distance(self, n_runs: int = 5) -> pd.DataFrame:
+        """Fig. 6 ★ KEY — IAE degradation vs Jaccard edge distance.
+
+        For each method × each test topology, compute:
+          x = d_E(test_topo, nearest train_topo)
+          y = (IAE_test - IAE_train_mean) / IAE_train_mean × 100  (degradation %)
+        and overlay a linear regression line per method.
+
+        Expected per Baseline Comparison.md §6.3:
+          - GraphSAGE-MAPPO: flat line (inductive generalisation)
+          - MLP-MAPPO / MATD3: steep slope (no topology awareness)
+          - GCNN-PPO: moderate slope (spectral filters topology-specific)
+        """
+        if not self.train_topologies or not self.test_topologies:
+            print("Need both train and test topologies for Fig.6 — skipping")
+            return pd.DataFrame()
+
+        # Use S2 (the AM stress scenario) as the canonical event
+        event = self.scenarios.get("S2_gen_trip")
+        if event is None:
+            return pd.DataFrame()
+
+        topo_cache = getattr(self.env.reconfig, "_cache", [])
+        topo_edges: list[np.ndarray] = []
+        for topo in topo_cache:
+            ei = topo.get("edge_index", np.array([[], []])) if isinstance(topo, dict) else np.array([[], []])
+            topo_edges.append(np.asarray(ei))
+
+        # Distance from each test topo to its nearest train topo
+        d_min_per_test: dict[int, float] = {}
+        for t_idx in self.test_topologies:
+            d_min = min(
+                compute_jaccard_edge_distance(topo_edges[t_idx], topo_edges[tr_idx])
+                for tr_idx in self.train_topologies
+            )
+            d_min_per_test[t_idx] = float(d_min)
+
+        rows: list[dict[str, Any]] = []
+        for policy_name, policy in self.policies.items():
+            # Train baseline
+            train_iaes = []
+            for tr_idx in self.train_topologies:
+                for _ in range(n_runs):
+                    m = self.run_episode(policy, event=event, topology_idx=tr_idx)
+                    train_iaes.append(m.iae_post)
+            iae_train_mean = float(np.mean(train_iaes)) if train_iaes else 0.0
+
+            # Per test topology
+            for t_idx in self.test_topologies:
+                iaes = []
+                for _ in range(n_runs):
+                    m = self.run_episode(policy, event=event, topology_idx=t_idx)
+                    iaes.append(m.iae_post)
+                iae_test = float(np.mean(iaes))
+                deg_pct = ((iae_test - iae_train_mean) / max(iae_train_mean, 1e-6)) * 100.0
+                rows.append({
+                    "method": policy_name,
+                    "test_topology_id": int(t_idx),
+                    "d_E": d_min_per_test[t_idx],
+                    "iae_train_mean": iae_train_mean,
+                    "iae_test": iae_test,
+                    "iae_degradation_pct": deg_pct,
+                })
+
+        df = pd.DataFrame(rows)
+        df.to_csv(self.output_dir / "fig6_iae_vs_distance.csv", index=False)
+
+        fig, ax = plt.subplots(figsize=(9, 5.5))
+        palette = {
+            "GraphSAGE-MAPPO": "#3a7bd5",
+            "MLP-MAPPO": "#e94e77",
+            "GCNN-PPO": "#f5a623",
+            "MATD3": "#7a7a7a",
+            "Fixed Droop": "#56c596",
+            "No FFR": "#a04668",
+        }
+        for method in sorted(df["method"].unique()):
+            sub = df[df["method"] == method]
+            if sub.empty:
+                continue
+            color = palette.get(method, None)
+            ax.scatter(sub["d_E"], sub["iae_degradation_pct"], s=55, label=method,
+                       color=color, edgecolor="black", linewidth=0.5, alpha=0.85)
+            if len(sub) >= 2:
+                slope, intercept = np.polyfit(sub["d_E"].to_numpy(dtype=float),
+                                              sub["iae_degradation_pct"].to_numpy(dtype=float), 1)
+                x_line = np.linspace(sub["d_E"].min(), sub["d_E"].max(), 50)
+                ax.plot(x_line, slope * x_line + intercept, "--", color=color, alpha=0.7, linewidth=1.5)
+
+        ax.axhline(0, color="black", linewidth=0.6)
+        ax.set_xlabel("Jaccard edge distance $d_E$ (test → nearest train)")
+        ax.set_ylabel("IAE degradation (%)")
+        ax.set_title("Topology generalisation: IAE degradation vs edge distance")
+        ax.legend(loc="upper left", fontsize=9)
+        ax.grid(alpha=0.3)
+        plt.tight_layout()
+        fig.savefig(self.output_dir / "fig6_iae_vs_distance.pdf", dpi=300)
+        fig.savefig(self.output_dir / "fig6_iae_vs_distance.png", dpi=150)
+        plt.close(fig)
+        print("Saved Fig.6: IAE degradation vs d_E")
+        return df
+
     def run_all(self, n_runs: int = 20) -> dict[str, pd.DataFrame]:
         """Run all evaluations."""
         print("\n" + "="*60)
         print("FFR + TOPOLOGY ADAPTATION EVALUATION")
         print("="*60)
 
-        print("\n[1/5] Building Table 1: FFR Performance Comparison...")
+        print("\n[1/6] Building Table 1: FFR Performance Comparison...")
         table1 = self.build_table1_ffr_comparison(n_runs=n_runs)
 
-        print("\n[2/5] Building Table 2: Topology Adaptation...")
+        print("\n[2/6] Building Table 2: Topology Adaptation...")
         table2 = self.build_table2_topology_adaptation(n_runs=max(n_runs // 2, 5))
 
-        print("\n[3/5] Building Table 3: Severity Scaling...")
+        print("\n[3/6] Building Table 3: Severity Scaling...")
         table3 = self.build_table3_severity_scaling(n_runs=max(n_runs // 2, 5))
 
-        print("\n[4/5] Plotting frequency traces...")
-        self.plot_frequency_traces("S2_gen_trip")
-        self.plot_frequency_traces("S1_load_step")
+        print("\n[4/7] Plotting per-scenario frequency traces (S1-S4)...")
+        for sc_name in self.scenarios.keys():
+            self.plot_frequency_traces(sc_name)
 
-        print("\n[5/5] Plotting topology comparison...")
+        print("\n[5/7] Plotting multi-scenario freq grid (Proposed vs baselines, mean±std)...")
+        self.plot_frequency_grid_all_scenarios(n_runs=max(n_runs // 5, 3))
+
+        print("\n[6/7] Plotting topology comparison...")
         self.plot_topology_comparison()
+
+        print("\n[7/7] Plotting Fig.6 (IAE degradation vs d_E)...")
+        self.plot_iae_degradation_vs_distance(n_runs=max(n_runs // 4, 3))
 
         # Summary
         print("\n" + "="*60)
@@ -696,7 +1034,14 @@ class FFRTopologyEvaluator:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="FFR + Topology Adaptation Evaluation")
-    parser.add_argument("--checkpoint", type=Path, default=Path("artifacts/checkpoints_am_mappo/am_mappo_final.pt"))
+    parser.add_argument("--checkpoint", type=Path, default=Path("artifacts/checkpoints_am_mappo/am_mappo_final.pt"),
+                        help="GraphSAGE-MAPPO (Proposed) checkpoint")
+    parser.add_argument("--gcnn-checkpoint", type=Path, default=None,
+                        help="GCNN-PPO baseline checkpoint (Guo et al. 2024)")
+    parser.add_argument("--matd3-checkpoint", type=Path, default=None,
+                        help="MATD3 baseline checkpoint (Li & Zhou 2025)")
+    parser.add_argument("--mlp-mappo-checkpoint", type=Path, default=None,
+                        help="MLP-MAPPO ablation checkpoint")
     parser.add_argument("--placement", type=Path, default=Path("artifacts/placement/official_placement_v3.json"))
     parser.add_argument("--mpc-path", type=Path, default=Path("data/grid_IEEE123_complete.m"))
     parser.add_argument("--output-dir", type=Path, default=Path("results/ffr_topology"))
@@ -721,6 +1066,9 @@ def main() -> None:
         env_config=env_config,
         checkpoint_path=args.checkpoint,
         output_dir=args.output_dir,
+        gcnn_checkpoint=args.gcnn_checkpoint,
+        matd3_checkpoint=args.matd3_checkpoint,
+        mlp_mappo_checkpoint=args.mlp_mappo_checkpoint,
     )
 
     evaluator.run_all(n_runs=args.n_runs)
