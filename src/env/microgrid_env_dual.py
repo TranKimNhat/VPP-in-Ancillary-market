@@ -1134,6 +1134,7 @@ class MicrogridEnvDual(gym.Env):
                 P_bess_pu=p_bess_agg,
                 P_v2g_pu=p_v2g_agg,
                 P_pv_pu=p_pv_agg,
+                ffr_active=self.ffr_active,
             )
 
         for idx, agent_i in enumerate(self._batt_agent_indices):

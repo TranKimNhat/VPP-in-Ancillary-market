@@ -226,9 +226,14 @@ class AMRewardConfig:
     # SoC band (per-DER comfortable operating range)
     soc_band_lo: float = 0.20
     soc_band_hi: float = 0.85
-    # Market signals (zone_LMP normalized by 100 $/MWh; K capacity price ratio)
+    # Market signals
+    # - lmp_ref: zone_LMP normalisation (€/MWh) for energy revenue
+    # - as_ffr_ref: FFR capacity price normalisation (€/MW/h) for capacity revenue.
+    #   Replaces the legacy "cap_price_ratio × LMP" proxy; the env now exposes
+    #   the real per-step lambda_as_ffr from the precompute.
     lmp_ref: float = 100.0
-    cap_price_ratio: float = 0.5   # capacity payment ≈ 0.5 × LMP for K_droop reservation
+    as_ffr_ref: float = 20.0
+    cap_price_ratio: float = 0.5   # fallback weight when lambda_as_ffr is unavailable
 
 
 def compute_am_reward(
@@ -244,6 +249,7 @@ def compute_am_reward(
     k_droop_prev: np.ndarray | None = None,
     p_ref_now: np.ndarray | None = None,
     k_droop_max: np.ndarray | None = None,
+    lambda_as_ffr: float | None = None,
 ) -> tuple[float, dict[str, float]]:
     """
     Compute AM reward with proper scaling and deadbands.
@@ -308,7 +314,11 @@ def compute_am_reward(
         e_soc = 0.0
         r_soc_pen = 0.0
 
-    # Market revenue: energy (LMP × P_ref) + capacity payment (cap_price × K_droop reservation).
+    # Market revenue: energy (LMP × P_ref) + FFR capacity payment.
+    # Energy uses normalised zone_LMP as before.
+    # Capacity uses env-exposed per-step lambda_as_ffr when available (from
+    # precompute via env._apply_day_context); falls back to the LMP × cap_price_ratio
+    # proxy when not provided (e.g. evaluation harness without market data).
     # Sign: positive reward when policy provides genuine product value.
     if (zone_lmp is not None and p_ref_now is not None and cfg.w_market > 0.0):
         lmp = np.asarray(zone_lmp, dtype=np.float32) / max(cfg.lmp_ref, 1e-6)
@@ -317,7 +327,12 @@ def compute_am_reward(
         if k_droop_now is not None and k_droop_max is not None:
             k_now = np.asarray(k_droop_now, dtype=np.float32)
             k_max = np.maximum(np.asarray(k_droop_max, dtype=np.float32), 1e-6)
-            cap_rev = float(np.mean(lmp * cfg.cap_price_ratio * (k_now / k_max)))
+            k_util = k_now / k_max                               # in [0, 1]
+            if lambda_as_ffr is not None:
+                ffr_norm = float(lambda_as_ffr) / max(cfg.as_ffr_ref, 1e-6)
+                cap_rev = float(np.mean(ffr_norm * k_util))
+            else:
+                cap_rev = float(np.mean(lmp * cfg.cap_price_ratio * k_util))
         else:
             cap_rev = 0.0
         r_market = cfg.w_market * float(np.clip(energy_rev + cap_rev, -1.0, 1.0))
@@ -1196,6 +1211,7 @@ def train_am_mappo(
                 k_droop_prev=k_droop_prev,
                 p_ref_now=p_ref_now,
                 k_droop_max=k_droop_max,
+                lambda_as_ffr=getattr(env, "lambda_as_ffr", None),
             )
             if k_droop_now is not None:
                 k_droop_prev = np.asarray(k_droop_now, dtype=np.float32).copy()
