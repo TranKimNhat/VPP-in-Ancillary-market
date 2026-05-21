@@ -198,6 +198,38 @@ proposed method lies on the Pareto frontier for every scenario (lowest IAE
 \label{fig:iae_bars}
 \end{figure}
 
+\subsubsection{Cooperative Primary--Secondary--FFR Dispatch}
+\label{ssec:cooperative_dispatch}
+
+Fig.~\ref{fig:cooperative_dispatch} decomposes the total power
+injection during each scenario into its three sources for the proposed
+controller: VPP-dispatched FFR ($p_{\text{FFR},\text{total}}$, the
+filtered output of T$_{\text{BESS}}$=100~ms, T$_{\text{V2G}}$=300~ms,
+T$_{\text{PV-curtail}}$=1~s), GFM primary droop ($p_{\text{gov}}$, with
+$T_g$=1~s and $1/R_{\text{SYS}}\approx21$~pu), and the GFM secondary
+AGC ($p_{\text{ref},\text{AGC}}$, armed after a 10~s delay).
+The three traces visually confirm the cooperative dispatch design
+introduced in Subsection~\ref{ssec:multitimescale_flow}: FFR peaks
+within 0--2~s after the event, GFM primary droop fills in the 1--10~s
+window as the FFR filter response saturates, and the AGC takes over
+after $\sim$10~s to drive $\Delta f$ back to nominal. The integral
+freeze imposed during $\mathbf{1}_{\text{FFR active}}=1$
+(cf.~\cite{subotic2023dualportgfm}) prevents the AGC overshoot that
+would otherwise occur when FFR fades because of SoC limits, and the
+priority ordering matches the Nordic FCR$_{\text{I}}$ recommendation
+that converter-interfaced storage discharge precede slower
+turbogenerator-equivalent reserves~\cite{mota2024fcri,papakonstantinou2021bessagc}.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.98\columnwidth]{figures/fig_cooperative_dispatch.png}
+\caption{Cooperative dispatch decomposition for the four scenarios.
+$p_{\text{FFR},\text{total}}$ (blue): VPP fast frequency reserve;
+$p_{\text{gov}}$ (orange): GFM primary droop, $T_g$=1~s;
+$p_{\text{ref},\text{AGC}}$ (green): secondary AGC, $10$~s delay.}
+\label{fig:cooperative_dispatch}
+\end{figure}
+
 % =====================================================================
 \subsection{Topology Adaptation}
 \label{ssec:topo}

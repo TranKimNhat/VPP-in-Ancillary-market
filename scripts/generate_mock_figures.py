@@ -411,6 +411,113 @@ def make_fig13_pareto() -> None:
 
 
 # ================================================================ entrypoint
+# ====================================================== Fig: cooperative dispatch
+def _synth_cooperative_traces(
+    delta_p_mw: float,
+    t_event: float = 5.0,
+    duration: float = 30.0,
+    dt: float = 0.05,
+    s_base: float = 15.705,
+    T_ffr: float = 0.5,           # combined FFR filter ~ T_bess+T_v2g
+    Tg: float = 1.0,               # GFM governor time constant
+    R_sys: float = 0.048,          # aggregated droop
+    agc_delay: float = 10.0,       # secondary delay
+    Ki_agc: float = 0.04,
+    seed: int = 0,
+):
+    """Synthesise (p_ffr, p_gov, p_agc, delta_f) traces under cooperative dispatch."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(0.0, duration, dt)
+    dp_pu = delta_p_mw / s_base
+
+    p_ffr = np.zeros_like(t)
+    p_gov = np.zeros_like(t)
+    p_agc = np.zeros_like(t)
+    delta_f = np.zeros_like(t)
+    x = 0.0
+    H_sys = 1.18
+    D_sys = 0.73
+    agc_int = 0.0
+    armed_time = None
+
+    sign = np.sign(dp_pu) if dp_pu != 0 else 1.0
+    ffr_peak = 0.85 * abs(dp_pu) * sign            # FFR carries ~85% of imbalance initially
+    gov_peak = 1.10 * abs(dp_pu) * sign            # primary takes over
+
+    for i, ti in enumerate(t):
+        # Event step
+        d_now = dp_pu if ti >= t_event else 0.0
+
+        # FFR: fast rise (T_ffr), then decay as SoC depletes
+        if ti < t_event:
+            p_ffr[i] = 0.0
+        else:
+            dtau = ti - t_event
+            rise = 1.0 - np.exp(-dtau / T_ffr)
+            decay = np.exp(-dtau / 6.0)             # SoC-limited fade
+            p_ffr[i] = ffr_peak * rise * decay
+
+        # GFM primary: first-order ramp toward gov_peak via Tg, biased by droop -x/R
+        if ti < t_event:
+            p_gov[i] = 0.0
+        else:
+            target = gov_peak * (1.0 - np.exp(-(ti - t_event) / (Tg + 0.5)))
+            p_gov[i] = target
+
+        # AGC armed after delay; then PI-like ramp
+        if armed_time is None and abs(x * 50.0) > 0.05 and ti > t_event:
+            armed_time = ti + agc_delay
+        if armed_time is not None and ti >= armed_time:
+            agc_int += x * dt
+            p_agc[i] = -Ki_agc * agc_int * 30.0    # scale to readable pu
+            p_agc[i] = float(np.clip(p_agc[i], -0.20, 0.20))
+
+        # Swing-eq update for plotting delta_f
+        x_dot = (p_gov[i] - d_now + p_ffr[i] + p_agc[i] - D_sys * x) / (2.0 * H_sys)
+        x += x_dot * dt
+        delta_f[i] = x * 50.0 + rng.normal(0.0, 0.005)
+
+    return t, p_ffr, p_gov, p_agc, delta_f
+
+
+def make_fig_cooperative_dispatch() -> None:
+    scenarios = [
+        ("S1 load_step +2.5 MW", 2.5),
+        ("S2 gen_trip −3.9 MW", -3.9),
+        ("S3 line_trip −2.4 MW", -2.4),
+        ("S4 gen_trip −5.5 MW", -5.5),
+    ]
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7.5), sharex=True)
+    axes_flat = axes.flatten()
+
+    for ax, (title, dp) in zip(axes_flat, scenarios):
+        t, p_ffr, p_gov, p_agc, df = _synth_cooperative_traces(dp, seed=hash(title) % 2**31)
+
+        ax.plot(t, p_ffr, color="#3a7bd5", lw=2.0, label=r"$p_{\mathrm{FFR},total}$ (VPP)")
+        ax.plot(t, p_gov, color="#f5a623", lw=1.8, ls="--", label=r"$p_{\mathrm{gov}}$ (GFM primary, $T_g$=1s)")
+        ax.plot(t, p_agc, color="#56c596", lw=1.6, ls=":", label=r"$p_{\mathrm{ref},AGC}$ (secondary, $\Delta t$=10s)")
+        ax.axvline(5.0, ls="--", color="orange", alpha=0.6, lw=0.9, label="Event")
+        ax.axvspan(5.0, 7.0, color="#3a7bd5", alpha=0.06)   # FFR window
+        ax.axvspan(7.0, 15.0, color="#f5a623", alpha=0.06)  # Primary window
+        ax.axvspan(15.0, 30.0, color="#56c596", alpha=0.06)  # AGC window
+
+        ax.axhline(0, color="black", lw=0.6)
+        ax.set_title(title, fontsize=11)
+        ax.set_ylabel("Power injection (pu)")
+        ax.set_xlabel("Time (s)")
+        ax.grid(alpha=0.3)
+
+    handles, labels = axes_flat[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=4, fontsize=9, bbox_to_anchor=(0.5, -0.02))
+    fig.suptitle("Cooperative dispatch: FFR (0--2s) → Primary droop (2--10s) → AGC ($\\geq$10s)",
+                 fontsize=12.5, y=0.995)
+    plt.tight_layout(rect=[0, 0.05, 1, 0.97])
+    out = FIG_DIR / "fig_cooperative_dispatch.png"
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"wrote {out.name}")
+
+
 if __name__ == "__main__":
     make_fig_freq_grid()
     make_fig_iae_bars()
@@ -418,4 +525,5 @@ if __name__ == "__main__":
     make_fig_severity()
     make_fig12_revenue_decomposition()
     make_fig13_pareto()
+    make_fig_cooperative_dispatch()
     print(f"\nAll mock figures written to: {FIG_DIR}")
