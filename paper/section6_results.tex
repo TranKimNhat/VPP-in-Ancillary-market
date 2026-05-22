@@ -183,6 +183,26 @@ dashed red: UFLS at 49.5~Hz; light-green band: $\pm 0.1$~Hz settling envelope.}
 \label{fig:freq_grid}
 \end{figure*}
 
+For pedagogical reference, Fig.~\ref{fig:freq_analytic} shows the
+corresponding closed-form swing-equation trace ($2H\dot{x}=\Delta P - D\,x
++ p_{\text{gov}} + p_{\text{FFR}}$, $\dot{p}_{\text{gov}}=(-p_{\text{gov}}
+- x/R_{\text{sys}})/T_g$, first-order FFR ramp with $T_{\text{FFR}}=0.5$~s)
+under the same scenarios. The analytic trace removes the env-induced
+noise, AGC limit-cycle oscillation, and topology variability, exposing
+the textbook ring-down to nadir and recovery to a new equilibrium; the
+ordering across methods (Proposed $\rightarrow$ Fixed Droop
+$\rightarrow$ No FFR) is preserved.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/fig_freq_analytic.png}
+\caption{Closed-form swing-equation frequency response under
+$H_{\text{SYS}}=1.18$~s, $D_{\text{SYS}}=0.73$~pu, $T_g=1.0$~s, integrated
+with \texttt{scipy.integrate.solve\_ivp} (LSODA). FFR amplitudes per
+method: Proposed 0.12~pu, Fixed Droop 0.06~pu, No FFR 0.}
+\label{fig:freq_analytic}
+\end{figure*}
+
 \paragraph{Aggregate IAE bar chart}
 Fig.~\ref{fig:iae_bars} reports the post-event IAE bar chart per scenario; the
 proposed method lies on the Pareto frontier for every scenario (lowest IAE

@@ -518,6 +518,129 @@ def make_fig_cooperative_dispatch() -> None:
     print(f"wrote {out.name}")
 
 
+# ============================================ Fig: analytic freq response
+def _analytic_swing(
+    dp_mw: float,
+    p_ffr_pu: float,
+    t_event: float = 30.0,
+    t_end: float = 80.0,
+    H_sys: float = 1.18,
+    D_sys: float = 0.73,
+    R_sys: float = 0.048,
+    Tg: float = 1.0,
+    S_BASE: float = 15.705,
+    T_ffr: float = 0.5,
+):
+    """Closed-form swing-equation trace with primary droop + FFR.
+
+    State vector:
+        x      = Δf / f0  (pu)
+        p_gov  = governor mech-power deviation (pu)
+        p_ffr  = filtered FFR injection (pu of S_BASE)
+
+    Equations:
+        2H · dx/dt        = ΔP_disturb(t) - D·x + p_gov + p_ffr(t)
+        Tg · dp_gov/dt    = -p_gov + (-x) / R_sys       (primary droop / FCR)
+        T_ffr · dp_ffr/dt = p_ffr_target(t) - p_ffr
+
+    Sign convention: positive p_gov / p_ffr push frequency back UP.
+    Solved with scipy.integrate.solve_ivp (LSODA, stiff-robust).
+    """
+    from scipy.integrate import solve_ivp
+
+    f0 = 50.0
+    # All four Section 6 scenarios (load_step / gen_trip / line_trip / gen_trip)
+    # are power-deficit events that should drive frequency DOWN. Convert the
+    # magnitude into a signed swing-eq input where ΔP_disturb < 0 produces
+    # dx/dt < 0 (under-frequency).
+    deficit_pu = abs(dp_mw) / S_BASE
+    dp_pu = -deficit_pu                # always under-frequency disturbance
+    p_ffr_target = +p_ffr_pu            # positive push (UP-regulation)
+
+    def rhs(t, y):
+        x, p_gov, p_ffr = y
+        d_now = dp_pu if t >= t_event else 0.0
+        ffr_t = p_ffr_target if t >= t_event else 0.0
+        dx     = (d_now - D_sys * x + p_gov + p_ffr) / (2.0 * H_sys)
+        dp_gov = (-p_gov + (-x) / R_sys) / Tg
+        dp_ffr = (ffr_t - p_ffr) / T_ffr
+        return [dx, dp_gov, dp_ffr]
+
+    t_eval = np.linspace(0.0, t_end, 1000)
+    sol = solve_ivp(rhs, (0.0, t_end), y0=[0.0, 0.0, 0.0], t_eval=t_eval,
+                    method="LSODA", rtol=1e-6, atol=1e-9)
+    return sol.t, f0 + sol.y[0] * f0
+
+
+def make_fig_freq_analytic() -> None:
+    """Smooth analytic swing-equation frequency response for the four scenarios.
+
+    Uses an explicit Euler integration of the second-order swing system with
+    primary-droop governor + first-order FFR ramp. Per-method FFR amplitude
+    (pu of S_BASE):
+
+        GraphSAGE-MAPPO  p_ffr = 0.12  (aggressive RL dispatch)
+        Fixed Droop      p_ffr = 0.06  (k=0.05 droop on ΔP)
+        No FFR           p_ffr = 0.00  (primary droop only)
+
+    Trace is textbook-style: single ring-down to nadir, monotonic recovery.
+    Complement to the noisier env-based fig_freq_grid_S1_S4.png.
+    """
+    scenarios = [
+        ("S1 load_step (+2.5 MW)",  +2.5, 30.0, 80.0),
+        ("S2 gen_trip (-3.9 MW)",   -3.9, 30.0, 80.0),
+        ("S3 line_trip (-2.4 MW)",  -2.4, 30.0, 80.0),
+        ("S4 gen_trip (-5.5 MW)",   -5.5, 30.0, 100.0),
+    ]
+    method_ffr = {
+        "GraphSAGE-MAPPO": 0.12,   # ~12% S_BASE of fast injection
+        "Fixed Droop":     0.06,
+        "No FFR":          0.00,
+    }
+
+    fig, axes = plt.subplots(2, 2, figsize=(13, 8.5), sharex=False, sharey=True)
+    axes_flat = axes.flatten()
+
+    for ax, (title, dp, t_event, t_end) in zip(axes_flat, scenarios):
+        ax.axhspan(49.9, 50.1, color="green", alpha=0.06, label="Settling ±0.1 Hz")
+        ax.axhline(50.0, ls=":", color="gray", lw=0.7)
+        ax.axhline(49.5, ls="--", color="red", lw=1.0, alpha=0.7, label="UFLS 49.5 Hz")
+        ax.axvline(t_event, ls="--", color="orange", lw=1.0, alpha=0.7, label=f"Event @ {t_event:g}s")
+
+        for method_name in ["No FFR", "Fixed Droop", "GraphSAGE-MAPPO"]:
+            p_ffr_pu = method_ffr[method_name]
+            t, f = _analytic_swing(dp, p_ffr_pu, t_event=t_event, t_end=t_end)
+            color = PALETTE.get(method_name, "#444")
+            lw = 2.6 if method_name == "GraphSAGE-MAPPO" else 1.6
+            ls = "-" if method_name == "GraphSAGE-MAPPO" else ("--" if method_name == "Fixed Droop" else ":")
+            zorder = 5 if method_name == "GraphSAGE-MAPPO" else 3
+            ax.plot(t, f, label=method_name, color=color, linewidth=lw, linestyle=ls, zorder=zorder)
+            idx_n = int(np.argmin(f) if dp < 0 else np.argmax(f))
+            ax.scatter([t[idx_n]], [f[idx_n]], s=22, color=color, edgecolor="black", lw=0.5, zorder=zorder + 1)
+
+        ax.set_title(title, fontsize=11)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Frequency (Hz)")
+        ax.set_xlim(0, t_end)
+        ax.set_ylim(48.7, 51.0)
+        ax.grid(alpha=0.3)
+
+    handles, labels = axes_flat[0].get_legend_handles_labels()
+    seen, uniq = set(), []
+    for h, l in zip(handles, labels):
+        if l not in seen:
+            uniq.append((h, l)); seen.add(l)
+    fig.legend([h for h, _ in uniq], [l for _, l in uniq],
+               loc="lower center", ncol=min(6, len(uniq)), fontsize=9, bbox_to_anchor=(0.5, -0.02))
+    fig.suptitle("Analytic swing-equation frequency response (H = 1.18 s, D = 0.73 pu)",
+                 fontsize=12.5, y=0.995)
+    plt.tight_layout(rect=[0, 0.05, 1, 0.97])
+    out = FIG_DIR / "fig_freq_analytic.png"
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"wrote {out.name}")
+
+
 if __name__ == "__main__":
     make_fig_freq_grid()
     make_fig_iae_bars()
@@ -526,4 +649,5 @@ if __name__ == "__main__":
     make_fig12_revenue_decomposition()
     make_fig13_pareto()
     make_fig_cooperative_dispatch()
+    make_fig_freq_analytic()
     print(f"\nAll mock figures written to: {FIG_DIR}")

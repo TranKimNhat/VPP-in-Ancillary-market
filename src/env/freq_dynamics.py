@@ -36,7 +36,7 @@ class FrequencyDynamics:
         pref_max_pu: float = 0.15,
         max_abs_delta_f_hz: float = 5.0,
         agc_activation_delay_s: float = 10.0,  # Islanded fast aFRR (Papakonstantinou 2021, Mota 2024)
-        agc_event_threshold_hz: float = 0.05,  # Trigger AGC arm when |delta_f| > threshold
+        agc_event_threshold_hz: float = 0.10,  # 100 mHz; Nordic FCR_I (Mota 2024) + Papakonstantinou 2021
         agc_slew_rate_pu_s: float = 0.01,  # aFRR ramp rate (pu/s) - ENTSO-E typical 5-10%/min
     ) -> None:
         self.H = float(H)
