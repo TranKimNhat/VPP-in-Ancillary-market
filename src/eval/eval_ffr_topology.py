@@ -57,6 +57,8 @@ class FFRMetrics:
     time_in_violation_s: float = 0.0
     ffr_success: bool = True
     f_trace: np.ndarray = field(default_factory=lambda: np.array([]))
+    f_trace_hires: np.ndarray = field(default_factory=lambda: np.array([]))
+    dt_hires: float = 0.1
 
     def to_dict(self) -> dict[str, float]:
         return {
@@ -526,6 +528,10 @@ class FFRTopologyEvaluator:
 
         f_trace = []
         rocof_trace = []
+        # Hi-resolution trace (one sample per ODE sub-step, dt ~= 0.1 s)
+        f_hires: list[float] = []
+        # Clear the env's hi-res buffer if present; it accumulates over the episode
+        self.env._hires_df = []
 
         for _ in range(n_steps):
             action = policy.act(obs_full, edge_index, self.env, obs_fast=obs_fast)
@@ -540,12 +546,19 @@ class FFRTopologyEvaluator:
             f_trace.append(50.0 + freq_state.delta_f_hz)
             rocof_trace.append(freq_state.rocof_hz_s)
 
+        # Snapshot hi-res trace (50.0 + delta_f) — env appended one entry per sub-step
+        f_hires = [50.0 + df for df in self.env._hires_df]
+
         event_step = int(event.t_inject) if event else 30
-        return compute_ffr_metrics(
+        metrics = compute_ffr_metrics(
             np.array(f_trace),
             np.array(rocof_trace),
             event_step=event_step,
         )
+        # Attach hi-res trace for plotting helpers
+        metrics.f_trace_hires = np.asarray(f_hires, dtype=np.float32)
+        metrics.dt_hires = float(getattr(self.env, "dt_ode_s", 0.1))
+        return metrics
 
     def build_table1_ffr_comparison(self, n_runs: int = 20) -> pd.DataFrame:
         """Table 1: FFR performance comparison across methods and scenarios."""
@@ -844,15 +857,22 @@ class FFRTopologyEvaluator:
             for method_name in method_order:
                 policy = self.policies[method_name]
                 runs: list[np.ndarray] = []
+                hires_dt = None
                 for _ in range(n_runs):
                     m = self.run_episode(policy, event=event, topology_idx=topology_idx)
-                    runs.append(np.asarray(m.f_trace, dtype=float))
+                    # Prefer hi-res sub-step trace (dt ≈ 0.1 s) over fast-step trace (1 s)
+                    if m.f_trace_hires.size > 0:
+                        runs.append(np.asarray(m.f_trace_hires, dtype=float))
+                        hires_dt = float(m.dt_hires)
+                    else:
+                        runs.append(np.asarray(m.f_trace, dtype=float))
                 if not runs:
                     continue
                 # Align lengths
                 L = min(len(r) for r in runs)
                 mat = np.stack([r[:L] for r in runs], axis=0)
-                t = np.arange(L) * dt
+                dt_local = hires_dt if hires_dt is not None else dt
+                t = np.arange(L) * dt_local
                 mean = mat.mean(axis=0)
                 std = mat.std(axis=0)
 

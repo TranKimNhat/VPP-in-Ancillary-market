@@ -272,6 +272,8 @@ class MicrogridEnvDual(gym.Env):
 
         self.zone_lmp = {1: 45.0, 2: 50.0, 3: 55.0, 4: 60.0}
         self._slow_baseline = np.zeros((82,), dtype=np.float32)
+        # Hi-resolution swing-eq trace (one sample per ODE sub-step)
+        self._hires_df: list[float] = []
         # AM-side prices and L1 commitments (populated by _apply_day_context)
         self.lambda_as_ffr: float = 10.0
         self.lambda_as_pfr: float = 5.0
@@ -684,6 +686,7 @@ class MicrogridEnvDual(gym.Env):
         self.slow_step_count = 0
         self.episode_done = False
         self.event_delta_p_pu = 0.0
+        self._hires_df = []
 
         self.soc.fill(0.5)
         self.p_set.fill(0.0)
@@ -1127,6 +1130,10 @@ class MicrogridEnvDual(gym.Env):
         p_v2g_agg = float(np.clip(p_v2g_agg + support_term * 0.3, -0.15, 0.15))
         p_pv_agg = float(np.clip(p_pv_agg + support_term * 0.2, -0.10, 0.10))
 
+        # Hi-resolution swing-eq trace: record delta_f after each ODE sub-step.
+        # Sample period = self.dt_ode_s (0.1 s with default 10 sub-steps per 1 s
+        # fast step) which is fine enough to capture the true nadir of the
+        # underdamped low-inertia response (occurs ~0.3-0.5 s after event).
         for _ in range(self.n_ode_substeps):
             freq_state = self.freq_dyn.step(
                 dt=self.dt_ode_s,
@@ -1136,6 +1143,8 @@ class MicrogridEnvDual(gym.Env):
                 P_pv_pu=p_pv_agg,
                 ffr_active=self.ffr_active,
             )
+            if hasattr(self, "_hires_df"):
+                self._hires_df.append(float(freq_state.delta_f_hz))
 
         for idx, agent_i in enumerate(self._batt_agent_indices):
             p_cmd_kw = self.delta_p_set[agent_i] * self._agent_p_rated[agent_i] * 1000.0
