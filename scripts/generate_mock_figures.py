@@ -607,6 +607,11 @@ def make_fig_freq_analytic() -> None:
         ax.axhline(49.5, ls="--", color="red", lw=1.0, alpha=0.7, label="UFLS 49.5 Hz")
         ax.axvline(t_event, ls="--", color="orange", lw=1.0, alpha=0.7, label=f"Event @ {t_event:g}s")
 
+        # Cooperative-dispatch shaded windows
+        ax.axvspan(t_event,       t_event + 2.0,  color="#3a7bd5", alpha=0.07, label="FFR 0-2s")
+        ax.axvspan(t_event + 2.0, t_event + 10.0, color="#f5a623", alpha=0.07, label="Primary 2-10s")
+        ax.axvspan(t_event + 10.0, t_end,         color="#56c596", alpha=0.07, label="AGC ≥10s")
+
         for method_name in ["No FFR", "Fixed Droop", "GraphSAGE-MAPPO"]:
             p_ffr_pu = method_ffr[method_name]
             t, f = _analytic_swing(dp, p_ffr_pu, t_event=t_event, t_end=t_end)
@@ -641,6 +646,79 @@ def make_fig_freq_analytic() -> None:
     print(f"wrote {out.name}")
 
 
+def make_fig_freq_analytic_zoom() -> None:
+    """Zoomed transient view (event → +15 s) of the analytic swing-eq response.
+
+    Same physics as ``make_fig_freq_analytic`` but plotted from event time
+    onward with a tight 15 s window, so the FFR (0-2 s) and primary-droop
+    (2-10 s) dynamics are clearly resolved. Settling toward the new steady
+    state is reached by ≈10-12 s for most scenarios.
+    """
+    scenarios = [
+        ("S1 load_step (+2.5 MW)",  +2.5, 30.0),
+        ("S2 gen_trip (-3.9 MW)",   -3.9, 30.0),
+        ("S3 line_trip (-2.4 MW)",  -2.4, 30.0),
+        ("S4 gen_trip (-5.5 MW)",   -5.5, 30.0),
+    ]
+    method_ffr = {
+        "GraphSAGE-MAPPO": 0.12,
+        "Fixed Droop":     0.06,
+        "No FFR":          0.00,
+    }
+    zoom_window = 15.0    # seconds of post-event view
+
+    fig, axes = plt.subplots(2, 2, figsize=(13, 8.5), sharex=True, sharey=True)
+    axes_flat = axes.flatten()
+
+    for ax, (title, dp, t_event) in zip(axes_flat, scenarios):
+        t_end = t_event + zoom_window + 2.0   # a touch of post-window margin
+        # Cooperative-dispatch windows in event-relative time (x-axis is t - t_event)
+        ax.axvspan(0.0,  2.0,  color="#3a7bd5", alpha=0.08, label="FFR 0-2s")
+        ax.axvspan(2.0, 10.0,  color="#f5a623", alpha=0.08, label="Primary 2-10s")
+        ax.axvspan(10.0, zoom_window, color="#56c596", alpha=0.08, label="AGC ≥10s")
+        ax.axhspan(49.9, 50.1, color="green", alpha=0.05, label="Settling ±0.1 Hz")
+        ax.axhline(50.0, ls=":", color="gray", lw=0.7)
+        ax.axhline(49.5, ls="--", color="red", lw=1.0, alpha=0.7, label="UFLS 49.5 Hz")
+        ax.axvline(0.0, ls="--", color="orange", lw=1.0, alpha=0.7, label="Event @ t=0")
+
+        for method_name in ["No FFR", "Fixed Droop", "GraphSAGE-MAPPO"]:
+            p_ffr_pu = method_ffr[method_name]
+            t, f = _analytic_swing(dp, p_ffr_pu, t_event=t_event, t_end=t_end)
+            # Shift x-axis so event = 0
+            t_rel = t - t_event
+            mask = t_rel >= -1.0
+            color = PALETTE.get(method_name, "#444")
+            lw = 2.6 if method_name == "GraphSAGE-MAPPO" else 1.6
+            ls = "-" if method_name == "GraphSAGE-MAPPO" else ("--" if method_name == "Fixed Droop" else ":")
+            zorder = 5 if method_name == "GraphSAGE-MAPPO" else 3
+            ax.plot(t_rel[mask], f[mask], label=method_name, color=color, linewidth=lw, linestyle=ls, zorder=zorder)
+            idx_n = int(np.argmin(f[mask]) if dp < 0 else np.argmax(f[mask]))
+            ax.scatter([t_rel[mask][idx_n]], [f[mask][idx_n]], s=24, color=color,
+                       edgecolor="black", lw=0.5, zorder=zorder + 1)
+
+        ax.set_title(title, fontsize=11)
+        ax.set_xlabel("Time after event (s)")
+        ax.set_ylabel("Frequency (Hz)")
+        ax.set_xlim(-1.0, zoom_window)
+        ax.set_ylim(48.7, 51.0)
+        ax.grid(alpha=0.3)
+
+    handles, labels = axes_flat[0].get_legend_handles_labels()
+    seen, uniq = set(), []
+    for h, l in zip(handles, labels):
+        if l not in seen:
+            uniq.append((h, l)); seen.add(l)
+    fig.legend([h for h, _ in uniq], [l for _, l in uniq],
+               loc="lower center", ncol=4, fontsize=9, bbox_to_anchor=(0.5, -0.02))
+    fig.suptitle("Zoomed transient: FFR 0-2s, Primary droop 2-10s, AGC ≥10s",
+                 fontsize=12.5, y=0.995)
+    plt.tight_layout(rect=[0, 0.07, 1, 0.97])
+    out = FIG_DIR / "fig_freq_analytic_zoom.png"
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"wrote {out.name}")
+
+
 if __name__ == "__main__":
     make_fig_freq_grid()
     make_fig_iae_bars()
@@ -650,4 +728,5 @@ if __name__ == "__main__":
     make_fig13_pareto()
     make_fig_cooperative_dispatch()
     make_fig_freq_analytic()
+    make_fig_freq_analytic_zoom()
     print(f"\nAll mock figures written to: {FIG_DIR}")

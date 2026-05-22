@@ -199,8 +199,30 @@ $\rightarrow$ No FFR) is preserved.
 \caption{Closed-form swing-equation frequency response under
 $H_{\text{SYS}}=1.18$~s, $D_{\text{SYS}}=0.73$~pu, $T_g=1.0$~s, integrated
 with \texttt{scipy.integrate.solve\_ivp} (LSODA). FFR amplitudes per
-method: Proposed 0.12~pu, Fixed Droop 0.06~pu, No FFR 0.}
+method: Proposed 0.12~pu, Fixed Droop 0.06~pu, No FFR 0. Shaded vertical
+bands mark the three cooperative-control windows: FFR (0--2~s after
+event, blue), GFM primary droop (2--10~s, orange), and secondary AGC
+($\geq 10$~s, green).}
 \label{fig:freq_analytic}
+\end{figure*}
+
+To make the cooperative-dispatch structure visible during the transient
+itself, Fig.~\ref{fig:freq_analytic_zoom} re-plots the same scenarios on
+an event-relative axis ($t-t_{\text{event}}$) over a 15~s window. The FFR
+window (0--2~s) covers the post-event nadir and the start of the
+rebound; the primary-droop window (2--10~s) shows the GFM units arresting
+the swing and pulling the frequency back toward the no-FFR equilibrium;
+the AGC window ($\geq 10$~s) restores the steady-state error toward the
+nominal 50~Hz band.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/fig_freq_analytic_zoom.png}
+\caption{Zoomed transient (event $\rightarrow$ +15~s). Same model and
+parameters as Fig.~\ref{fig:freq_analytic}, time axis re-zeroed at the
+event to make the FFR / Primary / AGC operating windows directly
+readable.}
+\label{fig:freq_analytic_zoom}
 \end{figure*}
 
 \paragraph{Aggregate IAE bar chart}
