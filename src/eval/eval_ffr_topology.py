@@ -787,6 +787,8 @@ class FFRTopologyEvaluator:
         dt: float = 1.0,
         ufls_hz: float = 49.5,
         settle_band: float = 0.1,
+        zoom_post_event_s: float | None = 20.0,
+        save_suffix: str = "",
     ) -> None:
         """2×2 grid: S1-S4 freq response, 6 methods overlaid with mean ± std band.
 
@@ -826,6 +828,10 @@ class FFRTopologyEvaluator:
             event = self.scenarios[sc_name]
             event_t = float(event.t_inject)
 
+            # Cooperative-dispatch control windows (FFR / Primary droop / AGC)
+            ax.axvspan(event_t,        event_t + 2.0,  color="#3a7bd5", alpha=0.07, label="FFR 0-2s")
+            ax.axvspan(event_t + 2.0,  event_t + 10.0, color="#f5a623", alpha=0.07, label="Primary 2-10s")
+            # AGC window extends to end of plot; computed after we know xlim below.
             # Settling and UFLS shading
             ax.axhspan(50.0 - settle_band, 50.0 + settle_band, color="green", alpha=0.07,
                        label=f"Settling ±{settle_band:g} Hz")
@@ -862,6 +868,14 @@ class FFRTopologyEvaluator:
             ax.set_xlabel("Time (s)")
             ax.grid(alpha=0.3)
             ax.set_ylim(48.7, 51.2)
+            # Tight x-axis window centred on the transient
+            if zoom_post_event_s is not None:
+                ax.set_xlim(max(0.0, event_t - 5.0), event_t + float(zoom_post_event_s))
+                ax.axvspan(event_t + 10.0, event_t + float(zoom_post_event_s),
+                           color="#56c596", alpha=0.07, label="AGC ≥10s")
+            else:
+                ax.axvspan(event_t + 10.0, ax.get_xlim()[1],
+                           color="#56c596", alpha=0.07, label="AGC ≥10s")
 
         # Single legend at figure level
         handles, labels = axes_flat[0].get_legend_handles_labels()
@@ -878,10 +892,11 @@ class FFRTopologyEvaluator:
         fig.suptitle("Frequency response across contingency scenarios — Proposed vs baselines",
                      fontsize=13, y=1.0)
         plt.tight_layout(rect=[0, 0.04, 1, 0.98])
-        fig.savefig(self.output_dir / "fig_freq_grid_S1_S4.pdf", dpi=300, bbox_inches="tight")
-        fig.savefig(self.output_dir / "fig_freq_grid_S1_S4.png", dpi=150, bbox_inches="tight")
+        out_name = f"fig_freq_grid_S1_S4{save_suffix}"
+        fig.savefig(self.output_dir / f"{out_name}.pdf", dpi=300, bbox_inches="tight")
+        fig.savefig(self.output_dir / f"{out_name}.png", dpi=150, bbox_inches="tight")
         plt.close(fig)
-        print("Saved Fig: frequency response grid S1-S4 (with Proposed vs baselines overlay)")
+        print(f"Saved Fig: {out_name} (zoom={zoom_post_event_s}s)")
 
     def plot_iae_degradation_vs_distance(self, n_runs: int = 5) -> pd.DataFrame:
         """Fig. 6 ★ KEY — IAE degradation vs Jaccard edge distance.
@@ -1011,7 +1026,17 @@ class FFRTopologyEvaluator:
             self.plot_frequency_traces(sc_name)
 
         print("\n[5/7] Plotting multi-scenario freq grid (Proposed vs baselines, mean±std)...")
-        self.plot_frequency_grid_all_scenarios(n_runs=max(n_runs // 5, 3))
+        # Default zoom: 20s post-event window with control-zone shading
+        self.plot_frequency_grid_all_scenarios(
+            n_runs=max(n_runs // 5, 3),
+            zoom_post_event_s=20.0,
+        )
+        # Full-window variant for context (no zoom)
+        self.plot_frequency_grid_all_scenarios(
+            n_runs=max(n_runs // 5, 3),
+            zoom_post_event_s=None,
+            save_suffix="_full",
+        )
 
         print("\n[6/7] Plotting topology comparison...")
         self.plot_topology_comparison()
