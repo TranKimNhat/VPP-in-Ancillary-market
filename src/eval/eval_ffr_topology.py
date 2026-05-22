@@ -967,10 +967,16 @@ class FFRTopologyEvaluator:
             ax.scatter(sub["d_E"], sub["iae_degradation_pct"], s=55, label=method,
                        color=color, edgecolor="black", linewidth=0.5, alpha=0.85)
             if len(sub) >= 2:
-                slope, intercept = np.polyfit(sub["d_E"].to_numpy(dtype=float),
-                                              sub["iae_degradation_pct"].to_numpy(dtype=float), 1)
-                x_line = np.linspace(sub["d_E"].min(), sub["d_E"].max(), 50)
-                ax.plot(x_line, slope * x_line + intercept, "--", color=color, alpha=0.7, linewidth=1.5)
+                x = sub["d_E"].to_numpy(dtype=float)
+                y = sub["iae_degradation_pct"].to_numpy(dtype=float)
+                # Skip regression if x has no spread or y has non-finite values
+                if np.ptp(x) > 1e-12 and np.all(np.isfinite(y)):
+                    try:
+                        slope, intercept = np.polyfit(x, y, 1)
+                        x_line = np.linspace(x.min(), x.max(), 50)
+                        ax.plot(x_line, slope * x_line + intercept, "--", color=color, alpha=0.7, linewidth=1.5)
+                    except np.linalg.LinAlgError:
+                        pass
 
         ax.axhline(0, color="black", linewidth=0.6)
         ax.set_xlabel("Jaccard edge distance $d_E$ (test → nearest train)")

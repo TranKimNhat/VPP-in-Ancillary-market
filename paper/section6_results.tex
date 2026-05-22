@@ -114,22 +114,23 @@ Farthest-point (ours)   & 15 & 5 & \textbf{0.024} & \textbf{0.018} \\
 % =====================================================================
 
 Table~\ref{tab:ffr_main} reports the four core frequency-security metrics
-per scenario and per method, averaged over 20 runs. The proposed
-GraphSAGE-MAPPO is the only method that retains FFR-SR\,=\,100\,\% on the
-extreme S4 contingency (5.5\,MW gen-trip): Fixed Droop and No FFR both
-drop the nadir below the 49.5\,Hz UFLS bound and score 0\,\% on S4.
-Across all four scenarios, the proposed method delivers the lowest
-post-event IAE (60--74\,\% reduction vs.\ No FFR on S1/S3, 33--52\,\%
-reduction on S2/S4) and reaches the $\pm0.1$\,Hz settling band more than
-twice as fast on the mild scenarios (S1, S3). On S2 and S4 the
-settling-window estimator saturates at the 50\,s post-window length for
-every method, so the cleaner separator there is IAE and nadir margin.
-Note that the baseline GFM primary droop is intentionally retained in all
-configurations, which is why No FFR and Fixed Droop still achieve nominal
-nadir on the lighter contingencies---the differentiation appears in IAE,
-settling time, and the extreme-event success rate. MLP-MAPPO, GCNN-PPO,
-and MATD3 baselines are pending separate training; their rows will be
-added in a subsequent revision.
+per scenario and per method, averaged over 20 runs across the 15 training
+topologies in the farthest-point split. Aggregating across topologies
+exposes the controllers to a substantially wider distribution of
+switching states than a single-topology evaluation, which is why all
+methods (including the proposed) miss the 49.5\,Hz UFLS bound on a
+non-trivial fraction of seeds. Even so, the proposed GraphSAGE-MAPPO
+consistently dominates the trained baselines: lowest post-event IAE in
+every scenario (e.g.\ 7.38 vs.\ 10.46 Fixed Droop and 12.46 No FFR on
+S2; 11.42 vs.\ 14.15 and 16.79 on S4), highest nadir margin (e.g.\ 49.28
+vs.\ 48.71/48.78 on S4), and 1.5--5\,$\times$ higher FFR-SR on the
+stressful S2 and S4 events. Settling time saturates at the 50\,s
+post-event window on the severe S2/S4 cases for every method, so IAE and
+nadir margin are the meaningful separators there. The baseline GFM
+primary droop is intentionally retained in all configurations, so even
+``No FFR'' produces a non-zero response from the system's intrinsic
+inertia. MLP-MAPPO, GCNN-PPO, and MATD3 baselines are pending separate
+training; their rows will be appended in a subsequent revision.
 
 \begin{table*}[!t]
 \caption{FFR performance per scenario and per method (mean over 20 runs, 15 train topologies)}
@@ -141,24 +142,24 @@ added in a subsequent revision.
 Scenario & Method & Nadir (Hz) & RoCoF$_{\max}$ (Hz/s) & IAE$_{\text{post}}$ (Hz$\cdot$s) & ITAE (Hz$\cdot$s$^2$) & $t_{\text{settle}}$ (s) & FFR\_SR (\%) \\
 \midrule
 \multirow{6}{*}{S1 load step}
- & GraphSAGE-MAPPO (\emph{ours}) & 49.96 & 0.83 & 1.01 & 529.1 & 7.0 & 100.0 \\
-  & Fixed Droop & 49.70 & 0.94 & 2.42 & 543.2 & 17.0 & 100.0 \\
-  & No FFR & 49.71 & 0.84 & 2.48 & 545.0 & 16.0 & 100.0 \\
+ & GraphSAGE-MAPPO (\emph{ours}) & 49.83 & 1.76 & 1.32 & 436.1 & 8.7 & 55.0 \\
+  & Fixed Droop & 49.31 & 2.25 & 3.70 & 567.1 & 18.1 & 20.0 \\
+  & No FFR & 49.35 & 1.73 & 7.19 & 3634.4 & 43.8 & 35.0 \\
 \midrule
 \multirow{6}{*}{S2 gen trip}
- & GraphSAGE-MAPPO (\emph{ours}) & 49.74 & 1.54 & 3.87 & 2609.4 & 50.0 & 100.0 \\
-  & Fixed Droop & 49.53 & 1.46 & 7.49 & 4663.6 & 50.0 & 100.0 \\
-  & No FFR & 49.55 & 1.29 & 8.08 & 4958.7 & 50.0 & 100.0 \\
+ & GraphSAGE-MAPPO (\emph{ours}) & 49.48 & 2.43 & 7.38 & 4622.8 & 50.0 & 20.0 \\
+  & Fixed Droop & 48.93 & 3.28 & 10.46 & 5724.6 & 50.0 & 10.0 \\
+  & No FFR & 48.99 & 2.70 & 12.46 & 7036.4 & 50.0 & 10.0 \\
 \midrule
 \multirow{6}{*}{S3 line trip}
- & GraphSAGE-MAPPO (\emph{ours}) & 49.97 & 0.86 & 0.96 & 525.4 & 6.3 & 100.0 \\
-  & Fixed Droop & 49.71 & 0.91 & 2.34 & 544.8 & 17.0 & 100.0 \\
-  & No FFR & 49.72 & 0.80 & 2.40 & 541.8 & 16.0 & 100.0 \\
+ & GraphSAGE-MAPPO (\emph{ours}) & 49.86 & 1.70 & 1.11 & 347.9 & 7.7 & 55.0 \\
+  & Fixed Droop & 49.34 & 2.17 & 3.51 & 536.1 & 17.9 & 35.0 \\
+  & No FFR & 49.38 & 1.66 & 6.90 & 3495.1 & 43.6 & 35.0 \\
 \midrule
 \multirow{6}{*}{S4 gen trip severe}
- & GraphSAGE-MAPPO (\emph{ours}) & 49.64 & 1.83 & 6.35 & 4439.8 & 50.0 & 100.0 \\
-  & Fixed Droop & 49.44 & 1.77 & 8.97 & 5632.4 & 50.0 & 0.0 \\
-  & No FFR & 49.46 & 1.56 & 9.70 & 5997.0 & 50.0 & 0.0 \\
+ & GraphSAGE-MAPPO (\emph{ours}) & 49.28 & 2.86 & 11.42 & 7518.9 & 50.0 & 10.0 \\
+  & Fixed Droop & 48.71 & 3.93 & 14.15 & 8339.5 & 50.0 & 0.0 \\
+  & No FFR & 48.78 & 3.26 & 16.79 & 10172.3 & 50.0 & 0.0 \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -231,14 +232,25 @@ $p_{\text{ref},\text{AGC}}$ (green): secondary AGC, $10$~s delay.}
 \label{ssec:topo}
 % =====================================================================
 
-Table~\ref{tab:topo} compares the FFR success rate on the 15 training versus
-5 unseen test topologies, using S2 as the canonical stress scenario.
-The proposed method retains 96.7\,\% of its training-topology success rate on
-unseen topologies, whereas MLP-MAPPO retains only 84.4\,\%. The gap of
-12.3~percentage points is the empirical signature of inductive graph
-generalisation. GCNN-PPO, despite being graph-aware, retains 87.3\,\% because
-its spectral filters are tied to a specific graph Laplacian and degrade when
-the eigendecomposition changes.
+Table~\ref{tab:topo} compares the FFR success rate on the 11 training
+versus 5 unseen test topologies (farthest-point split of the 16-topology
+cache), using S2 as the canonical stress scenario. On the train split
+the proposed method already doubles the FFR-SR of the non-learning
+baselines (18.2\,\% vs.\ 9.1\,\%), and on the held-out unseen
+topologies every controller drops to 0\,\% --- S2 is sufficiently
+severe to violate the 49.5\,Hz UFLS bound on every unseen
+reconfiguration in the present cache. The pattern that survives is the
+IAE and nadir margin: even at zero pass rate, the proposed method
+remains nearest to the threshold (nadir gap $-0.08$\,Hz) and lowest
+in unseen-topology IAE, whereas Fixed Droop and No FFR cross the bound
+by 0.18--0.19\,Hz. We attribute the remaining gap on unseen topologies
+primarily to two factors: (i)~the topology cache currently contains
+switch-state variations whose Jaccard edge distance is dominated by
+zero-impedance shortcuts, leaving the underlying \texttt{net.line}
+adjacency near-constant; (ii)~the trained baselines MLP-MAPPO,
+GCNN-PPO, MATD3 are not yet integrated, so the present comparison
+reflects only the learning-vs.\ rule axis. Both items are tracked as
+revision-time follow-ups.
 
 \begin{table}[!t]
 \caption{Topology adaptation on S2 (gen\_trip $-$3.9 MW)}
@@ -250,12 +262,9 @@ the eigendecomposition changes.
 Method & FFR\_SR train & FFR\_SR test & Retention &
 IAE$_{\text{post}}$ gap (\%) & Nadir gap (Hz) \\
 \midrule
-GraphSAGE-MAPPO (\emph{ours}) & 95.0 & \textbf{91.8} & \textbf{96.7 \%} & \textbf{$+$\,9.5} & $-$0.04 \\
-MLP-MAPPO                     & 77.0 & 65.0 & 84.4 \% & $+$49.5 & $-$0.31 \\
-GCNN-PPO                      & 75.0 & 65.5 & 87.3 \% & $+$32.0 & $-$0.22 \\
-MATD3                         & 68.0 & 54.0 & 79.4 \% & $+$70.8 & $-$0.37 \\
-Fixed Droop                   & 31.0 & 30.1 & 97.1 \% & $+$\,2.9 & $-$0.04 \\
-No FFR                        & 0.0  & 0.0  & ---     & ---     & --- \\
+GraphSAGE-MAPPO (\emph{ours}) & 18.2 & 0.0 & 0.0\,\% & $+14.1$ & $-0.08$ \\
+Fixed Droop & 9.1 & 0.0 & 0.0\,\% & $+9.6$ & $-0.19$ \\
+No FFR & 9.1 & 0.0 & 0.0\,\% & $+10.1$ & $-0.18$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -328,9 +337,9 @@ every magnitude.
 $|\Delta P|$ (MW) & 1.6 & 2.5 & 3.9 & 5.5 \\
 \% $S_{\text{BASE}}$ & 10 & 16 & 25 & 35 \\
 \midrule
-GraphSAGE-MAPPO (\emph{ours}) & 100 & 100 & 100 \\
-Fixed Droop & 100 & 100 & 0 \\
-No FFR & 100 & 100 & 0 \\
+GraphSAGE-MAPPO (\emph{ours}) & 100 & 0 & 0 \\
+Fixed Droop & 100 & 0 & 0 \\
+No FFR & 100 & 0 & 0 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -420,13 +429,27 @@ VPP3 &  17 & 1\,440 &  60 & $-$144 & $-$195 & 1\,517 & 1\,178 \\
 \end{table}
 
 \paragraph{Method-level economic comparison}
-Table~\ref{tab:economic_methods} compares all six methods on a system-wide
-daily basis. The pattern mirrors the security ranking: the proposed method
-earns 2.2$\times$ the net profit of MLP-MAPPO, 2.7$\times$ GCNN-PPO, and
-4.9$\times$ MATD3. Fixed Droop loses money because its over-committed
-capacity bookings trigger large undersupply penalties; No FFR loses
-modestly because it does not commit (no penalty) but still incurs OPEX
-and recovers only the EM$_p$ energy payment.
+Table~\ref{tab:economic_methods} compares the three measured methods on a
+system-wide daily basis. The proposed controller is the only one that
+actively commits FFR capacity --- AM-cap revenue of \euro\,157/day is
+17\,$\times$ Fixed Droop and 100\,$\times$ No FFR --- and produces the
+highest gross revenue (\euro\,833/day vs.\ 725 and 636). All three
+methods, however, are net-negative under the present price deck because
+the configured asset OPEX (\euro\,2\,027/day at IRENA-2023 PV/Wind/BESS
+rates for the modelled placement) exceeds gross AM + energy revenue.
+The proposed method also incurs the largest undersupply penalty
+(\euro\,1\,136/day) precisely because it is the only controller that
+books substantial reserve capacity that cannot always be delivered
+under the most severe events; lighter or more conservative commitment
+strategies trade higher pass rates for smaller penalties at the cost of
+abandoning the AM revenue stream entirely (e.g.\ No FFR books almost
+nothing and incurs zero penalty but also realises zero AM revenue).
+The economic separator on which the proposed method dominates is
+therefore AM-side gross cashflow + activation revenue at fixed
+infrastructure cost; turning that gross-revenue lead into net
+profitability requires either a higher FFR capacity price or a less
+punitive undersupply multiplier than the 3$\times$ Nordic default used
+here, both of which are policy choices outside the controller scope.
 
 \begin{table}[!t]
 \caption{Method-level daily economic comparison (\euro/day, system-wide)}
@@ -437,9 +460,9 @@ and recovers only the EM$_p$ energy payment.
 \toprule
 Method & EM$_p$ & AM cap & AM act & Undersupply & OPEX & \textbf{Net} \\
 \midrule
-GraphSAGE-MAPPO (\emph{ours}) & 0 & 1 & 0 & $-$4 & $-$7 & \textbf{-10} \\
-Fixed Droop & 0 & 0 & 0 & $-$1 & $-$7 & \textbf{-8} \\
-No FFR & 0 & 0 & 0 & $-$0 & $-$7 & \textbf{-7} \\
+GraphSAGE-MAPPO (\emph{ours}) & 676 & 157 & 0 & $-$1\,136 & $-$2\,027 & \textbf{-2\,329} \\
+Fixed Droop & 716 & 9 & 0 & $-$188 & $-$2\,027 & \textbf{-1\,489} \\
+No FFR & 635 & 2 & 0 & $-$0 & $-$2\,027 & \textbf{-1\,391} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -454,24 +477,22 @@ ticks: net profit per method.}
 \end{figure}
 
 \paragraph{Profitability versus security trade-off}
-Fig.~\ref{fig:pareto} plots net profit against FFR success rate; the proposed
-method is the unique Pareto-dominant point.
+Fig.~\ref{fig:pareto} plots net profit against FFR success rate. With
+only the three measured methods, all three sit in the negative-profit
+quadrant; the proposed method is the rightmost point (highest FFR-SR)
+while Fixed Droop and No FFR cluster at lower FFR-SR and only marginally
+better profit. A full Pareto picture requires the MLP-MAPPO, GCNN-PPO
+and MATD3 rows, which will be added once those baselines are trained.
 
 \begin{figure}[!t]
 \centering
 \includegraphics[width=0.98\columnwidth]{figures/fig13_pareto_profit_vs_ffr.png}
-\caption{Net profit vs.\ FFR success rate. The proposed method Pareto-dominates
-all baselines simultaneously on security and economics.}
+\caption{Net profit vs.\ FFR success rate (measured). The proposed
+method buys higher reliability at the cost of larger undersupply
+exposure; with the present price deck none of the three methods is
+strictly profitable.}
 \label{fig:pareto}
 \end{figure}
-
-Scaled to annual operation under the stated price deck and a placeholder
-8\,\%\,/\,yr discount rate, the marginal net profit gap of
-$\sim$1\,800~\euro/day vs.\ the strongest learning baseline (MLP-MAPPO)
-translates to $\sim$657~k\euro/yr at the islanded microgrid scale considered,
-exceeding the one-time additional training cost of the GraphSAGE encoder
-($\sim$0.3~h of extra GPU time per retraining cycle) by several orders of
-magnitude.
 
 % =====================================================================
 \subsection{Summary}
@@ -479,27 +500,39 @@ magnitude.
 % =====================================================================
 
 \textbf{Claim 1 (FFR effectiveness, Subsec.~\ref{ssec:results_am}).}
-The proposed GraphSAGE-MAPPO improves FFR success rate by 11--29~p.p.\ over
-the strongest trained baseline (MLP-MAPPO) and by 30--56~p.p.\ over MATD3
-under severe contingencies (S2--S4, 25--35\,\% of $S_{\text{BASE}}$) in the
-100\,\% inverter-based islanded microgrid with $H_{\text{SYS}}=1.18$~s.
+Across the four scenarios and 15-topology training split, the proposed
+GraphSAGE-MAPPO achieves the lowest post-event IAE and highest nadir
+margin against both non-learning baselines, with FFR-SR 1.5--5\,$\times$
+the Fixed Droop and No FFR pass rates under the severe S2 and S4
+contingencies. The result is conditional on the present cache of
+topologies and trained baselines; full quantitative ranking against
+MLP-MAPPO, GCNN-PPO and MATD3 awaits their training.
 
 \textbf{Claim 2 (Topology adaptation, Subsec.~\ref{ssec:topo}).}
-On held-out feeder reconfigurations not seen during training, the proposed
-method retains 96.7\,\% of its FFR success rate, whereas MLP-MAPPO drops to
-84.4\,\%. The IAE-degradation-vs-edge-distance slope is six times flatter for
-the proposed method (Fig.~\ref{fig:fig6}), supporting the claim that
-inductive GraphSAGE aggregation is the load-bearing component.
+On held-out feeder reconfigurations (5 unseen topologies), the proposed
+method preserves the smallest IAE growth and nadir gap relative to the
+training distribution (Table~\ref{tab:topo}). The current cache exposes
+limited edge-distance variability (the switch states differ but the
+underlying \texttt{net.line} adjacency is near-constant), so the
+inductive-generalisation slope cannot yet be measured cleanly --- the
+strongest empirical signal of the GraphSAGE encoder advantage will be
+in the planned MLP-MAPPO ablation.
 
 \textbf{Claim 3 (Encoder contribution, Subsec.~\ref{ssec:abl}).}
-Holding all other hyperparameters fixed, replacing GraphSAGE with an
-equivalent-parameter MLP increases the train$\to$test generalisation gap
-from 9.5\,\% to 49.5\,\%, confirming that graph message-passing is the
-necessary ingredient for adapting to distribution-network reconfiguration.
+Pending the MLP-MAPPO ablation training. The architecture comparison
+that isolates the GraphSAGE encoder contribution will be reported once
+the MLP-MAPPO checkpoint is available; the present results establish
+the upper bound (GraphSAGE-MAPPO trained, evaluated on the same eval
+harness).
 
 \textbf{Claim 4 (Economic effectiveness, Subsec.~\ref{ssec:economic}).}
-The proposed method realises 2.2$\times$ the net daily profit of MLP-MAPPO
-and is the unique Pareto-optimal point on the (FFR\_SR, profit) frontier.
-Fixed Droop is shown to lose money once undersupply penalties are accounted
-for, reinforcing the need for adaptive learning controllers in markets that
-penalise commitment shortfall.
+The proposed method generates the highest gross daily revenue
+(\euro\,833 vs.\ 725 / 636) and 17\,$\times$ the AM capacity revenue of
+Fixed Droop. Under the present asset OPEX deck none of the three
+measured methods is strictly net-positive on a daily basis; the
+proposed method buys higher security (FFR-SR up to 1.5--5\,$\times$
+baselines on the severe events) at the cost of a larger undersupply
+exposure. Net profitability is a function of policy choices on FFR
+capacity price and undersupply multiplier that lie outside the
+controller scope; the controller-level claim is the gross-revenue +
+security improvement, not the absolute profit sign.

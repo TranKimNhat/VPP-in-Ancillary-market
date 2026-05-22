@@ -225,12 +225,21 @@ class EconomicsEvaluator:
             lambda_cap_step = float(getattr(self.env, "lambda_as_ffr", self.prices.lambda_cap))
 
             # ----- EM cashflow: energy P × lambda_e
-            p_set = np.asarray(self.env.p_set, dtype=np.float64)
-            for vpp, idx in self.vpp_agents.items():
-                if not idx:
-                    continue
-                p_mw = float(np.sum(p_set[idx] * self._p_rated[idx]))  # p_set is pu of rating
-                em_p[vpp] += lambda_e_step * p_mw * self.dt_fast_h
+            # Prefer env-exposed L1 LP base dispatch p_ref_target_vpp (set during
+            # slow context) since RL fast steps do not write to env.p_set.
+            # Fall back to env.p_set if precompute targets are unavailable.
+            p_ref_vpp = getattr(self.env, "p_ref_target_vpp", None)
+            if p_ref_vpp is not None and len(p_ref_vpp) >= len(self.vpp_agents):
+                for j, vpp in enumerate(self.vpp_agents):
+                    p_mw = float(p_ref_vpp[j])
+                    em_p[vpp] += lambda_e_step * p_mw * self.dt_fast_h
+            else:
+                p_set = np.asarray(self.env.p_set, dtype=np.float64)
+                for vpp, idx in self.vpp_agents.items():
+                    if not idx:
+                        continue
+                    p_mw = float(np.sum(p_set[idx] * self._p_rated[idx]))
+                    em_p[vpp] += lambda_e_step * p_mw * self.dt_fast_h
 
             # ----- AM capacity & delivery proxy
             delta_p = np.asarray(self.env.delta_p_set, dtype=np.float64)
@@ -322,17 +331,22 @@ class EconomicsEvaluator:
             net_total = sum(agg.net_profit.get(v, 0.0) for v in self.vpp_agents)
             # Add SYSTEM net (gross has no SYSTEM, only opex)
             net_total -= agg.opex.get("SYSTEM", 0.0)
+            # Scale episode-window cashflows to a daily view so the per-row
+            # numbers reflect operational economics rather than a 5-min snapshot.
+            scale_day = (24.0 / max(agg.duration_h, 1e-6))
             rows.append({
                 "method": m_name,
-                "gross_revenue_eur": gross_total,
-                "net_profit_eur": net_total,
-                "em_p_eur": sum(agg.em_p_revenue.get(v, 0.0) for v in self.vpp_agents),
-                "am_cap_eur": sum(agg.am_cap_revenue.get(v, 0.0) for v in self.vpp_agents),
-                "am_act_eur": sum(agg.am_act_revenue.get(v, 0.0) for v in self.vpp_agents),
-                "undersupply_eur": sum(agg.undersupply_pen.get(v, 0.0) for v in self.vpp_agents),
-                "opex_eur": sum(agg.opex.values()),
+                "gross_revenue_eur": gross_total * scale_day,
+                "net_profit_eur": net_total * scale_day,
+                "em_p_eur": sum(agg.em_p_revenue.get(v, 0.0) for v in self.vpp_agents) * scale_day,
+                "am_cap_eur": sum(agg.am_cap_revenue.get(v, 0.0) for v in self.vpp_agents) * scale_day,
+                "am_act_eur": sum(agg.am_act_revenue.get(v, 0.0) for v in self.vpp_agents) * scale_day,
+                "undersupply_eur": sum(agg.undersupply_pen.get(v, 0.0) for v in self.vpp_agents) * scale_day,
+                "opex_eur": sum(agg.opex.values()) * scale_day,
                 "ffr_success_rate": float(np.mean(ffr_success_runs)),
                 "profit_per_hour": net_total / max(agg.duration_h, 1e-6),
+                "duration_h_episode": float(agg.duration_h),
+                "scale_to_daily": float(scale_day),
             })
         df = pd.DataFrame(rows)
         df.to_csv(self.output_dir / "table10_method_economics.csv", index=False)
