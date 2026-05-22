@@ -284,7 +284,7 @@ class EconomicsEvaluator:
         policies: dict[str, Any],
         scenarios: dict[str, EventConfig],
         n_runs: int = 5,
-        topology_idx: int | None = 0,
+        topology_idx: int | None = None,
     ) -> pd.DataFrame:
         """Table IX: per-VPP daily revenue breakdown × method × scenario."""
         rows: list[dict[str, Any]] = []
@@ -305,7 +305,7 @@ class EconomicsEvaluator:
         policies: dict[str, Any],
         scenarios: dict[str, EventConfig],
         n_runs: int = 5,
-        topology_idx: int | None = 0,
+        topology_idx: int | None = None,
     ) -> pd.DataFrame:
         """Table X: method-level economic summary across all scenarios."""
         rows: list[dict[str, Any]] = []

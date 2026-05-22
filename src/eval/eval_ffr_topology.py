@@ -619,19 +619,22 @@ class FFRTopologyEvaluator:
 
         df = pd.DataFrame(rows)
 
-        # Compute generalization gap
-        for policy_name in self.policies.keys():
-            train_row = df[(df["method"] == policy_name) & (df["topology_split"] == "train")]
-            test_row = df[(df["method"] == policy_name) & (df["topology_split"] == "unseen")]
+        # Compute generalization gap (only if we collected rows; topology cache may be empty)
+        if not df.empty and "method" in df.columns:
+            for policy_name in self.policies.keys():
+                train_row = df[(df["method"] == policy_name) & (df["topology_split"] == "train")]
+                test_row = df[(df["method"] == policy_name) & (df["topology_split"] == "unseen")]
 
-            if not train_row.empty and not test_row.empty:
-                train_success = train_row["ffr_success_rate"].values[0]
-                test_success = test_row["ffr_success_rate"].values[0]
-                gap = train_success - test_success
-                retention = test_success / train_success if train_success > 0 else 0
+                if not train_row.empty and not test_row.empty:
+                    train_success = train_row["ffr_success_rate"].values[0]
+                    test_success = test_row["ffr_success_rate"].values[0]
+                    gap = train_success - test_success
+                    retention = test_success / train_success if train_success > 0 else 0
 
-                df.loc[(df["method"] == policy_name) & (df["topology_split"] == "unseen"), "generalization_gap"] = gap
-                df.loc[(df["method"] == policy_name) & (df["topology_split"] == "unseen"), "retention_ratio"] = retention
+                    df.loc[(df["method"] == policy_name) & (df["topology_split"] == "unseen"), "generalization_gap"] = gap
+                    df.loc[(df["method"] == policy_name) & (df["topology_split"] == "unseen"), "retention_ratio"] = retention
+        else:
+            print("[warn] Topology cache empty — Table 2 skipped (no train/test topologies)")
 
         df.to_csv(self.output_dir / "table2_topology_adaptation.csv", index=False)
         return df
@@ -695,10 +698,11 @@ class FFRTopologyEvaluator:
 
         fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
 
-        # Collect traces
+        # Collect traces — fall back to no forced topology if cache is empty
+        topo_idx = 0 if getattr(self.env.reconfig, "_cache", []) else None
         traces = {}
         for policy_name, policy in self.policies.items():
-            m = self.run_episode(policy, event=event, topology_idx=0)
+            m = self.run_episode(policy, event=event, topology_idx=topo_idx)
             traces[policy_name] = m.f_trace
 
         # Plot frequency
@@ -800,6 +804,10 @@ class FFRTopologyEvaluator:
         n = len(scenario_names)
         if n == 0:
             return
+
+        # Guard against empty topology cache (force_topology would raise IndexError)
+        if not getattr(self.env.reconfig, "_cache", []):
+            topology_idx = None
 
         # Layout: 2x2 if 4 scenarios, else 1xN
         if n == 4:
