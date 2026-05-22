@@ -121,10 +121,10 @@ switching states than a single-topology evaluation, which is why all
 methods (including the proposed) miss the 49.5\,Hz UFLS bound on a
 non-trivial fraction of seeds. Even so, the proposed GraphSAGE-MAPPO
 consistently dominates the trained baselines: lowest post-event IAE in
-every scenario (e.g.\ 7.38 vs.\ 10.46 Fixed Droop and 12.46 No FFR on
-S2; 11.42 vs.\ 14.15 and 16.79 on S4), highest nadir margin (e.g.\ 49.28
-vs.\ 48.71/48.78 on S4), and 1.5--5\,$\times$ higher FFR-SR on the
-stressful S2 and S4 events. Settling time saturates at the 50\,s
+every scenario (e.g.\ 8.52 vs.\ 10.46 Fixed Droop and 12.45 No FFR on
+S2; 12.19 vs.\ 14.13 and 16.79 on S4), highest nadir margin (e.g.\ 49.21
+vs.\ 48.71/48.78 on S4), and consistent FFR-SR advantage on the mild
+scenarios (S1/S3: 55\,\% vs.\ 20--35\,\%). Settling time saturates at the 50\,s
 post-event window on the severe S2/S4 cases for every method, so IAE and
 nadir margin are the meaningful separators there. The baseline GFM
 primary droop is intentionally retained in all configurations, so even
@@ -142,23 +142,23 @@ training; their rows will be appended in a subsequent revision.
 Scenario & Method & Nadir (Hz) & RoCoF$_{\max}$ (Hz/s) & IAE$_{\text{post}}$ (Hz$\cdot$s) & ITAE (Hz$\cdot$s$^2$) & $t_{\text{settle}}$ (s) & FFR\_SR (\%) \\
 \midrule
 \multirow{6}{*}{S1 load step}
- & GraphSAGE-MAPPO (\emph{ours}) & 49.83 & 1.76 & 1.32 & 436.1 & 8.7 & 55.0 \\
-  & Fixed Droop & 49.31 & 2.25 & 3.70 & 567.1 & 18.1 & 20.0 \\
-  & No FFR & 49.35 & 1.73 & 7.19 & 3634.4 & 43.8 & 35.0 \\
+ & GraphSAGE-MAPPO (\emph{ours}) & 49.72 & 1.72 & 1.92 & 464.3 & 12.8 & 55.0 \\
+  & Fixed Droop & 49.31 & 2.25 & 3.69 & 566.8 & 18.1 & 20.0 \\
+  & No FFR & 49.35 & 1.73 & 7.20 & 3634.6 & 43.8 & 35.0 \\
 \midrule
 \multirow{6}{*}{S2 gen trip}
- & GraphSAGE-MAPPO (\emph{ours}) & 49.48 & 2.43 & 7.38 & 4622.8 & 50.0 & 20.0 \\
+ & GraphSAGE-MAPPO (\emph{ours}) & 49.41 & 2.29 & 8.52 & 5158.5 & 50.0 & 10.0 \\
   & Fixed Droop & 48.93 & 3.28 & 10.46 & 5724.6 & 50.0 & 10.0 \\
-  & No FFR & 48.99 & 2.70 & 12.46 & 7036.4 & 50.0 & 10.0 \\
+  & No FFR & 48.99 & 2.70 & 12.45 & 7036.4 & 50.0 & 10.0 \\
 \midrule
 \multirow{6}{*}{S3 line trip}
- & GraphSAGE-MAPPO (\emph{ours}) & 49.86 & 1.70 & 1.11 & 347.9 & 7.7 & 55.0 \\
-  & Fixed Droop & 49.34 & 2.17 & 3.51 & 536.1 & 17.9 & 35.0 \\
-  & No FFR & 49.38 & 1.66 & 6.90 & 3495.1 & 43.6 & 35.0 \\
+ & GraphSAGE-MAPPO (\emph{ours}) & 49.75 & 1.66 & 1.70 & 371.4 & 12.0 & 55.0 \\
+  & Fixed Droop & 49.34 & 2.17 & 3.49 & 537.5 & 17.7 & 35.0 \\
+  & No FFR & 49.38 & 1.66 & 6.90 & 3495.5 & 43.6 & 35.0 \\
 \midrule
 \multirow{6}{*}{S4 gen trip severe}
- & GraphSAGE-MAPPO (\emph{ours}) & 49.28 & 2.86 & 11.42 & 7518.9 & 50.0 & 10.0 \\
-  & Fixed Droop & 48.71 & 3.93 & 14.15 & 8339.5 & 50.0 & 0.0 \\
+ & GraphSAGE-MAPPO (\emph{ours}) & 49.21 & 2.69 & 12.19 & 7722.3 & 50.0 & 0.0 \\
+  & Fixed Droop & 48.71 & 3.93 & 14.13 & 8317.0 & 50.0 & 0.0 \\
   & No FFR & 48.78 & 3.26 & 16.79 & 10172.3 & 50.0 & 0.0 \\
 \bottomrule
 \end{tabular}
@@ -304,9 +304,9 @@ revision-time follow-ups.
 Method & FFR\_SR train & FFR\_SR test & Retention &
 IAE$_{\text{post}}$ gap (\%) & Nadir gap (Hz) \\
 \midrule
-GraphSAGE-MAPPO (\emph{ours}) & 18.2 & 0.0 & 0.0\,\% & $+14.1$ & $-0.08$ \\
+GraphSAGE-MAPPO (\emph{ours}) & 9.1 & 0.0 & 0.0\,\% & $-1.7$ & $+0.01$ \\
 Fixed Droop & 9.1 & 0.0 & 0.0\,\% & $+9.6$ & $-0.19$ \\
-No FFR & 9.1 & 0.0 & 0.0\,\% & $+10.1$ & $-0.18$ \\
+No FFR & 9.1 & 0.0 & 0.0\,\% & $+10.2$ & $-0.18$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -502,7 +502,7 @@ here, both of which are policy choices outside the controller scope.
 \toprule
 Method & EM$_p$ & AM cap & AM act & Undersupply & OPEX & \textbf{Net} \\
 \midrule
-GraphSAGE-MAPPO (\emph{ours}) & 676 & 157 & 0 & $-$1\,136 & $-$2\,027 & \textbf{-2\,329} \\
+GraphSAGE-MAPPO (\emph{ours}) & 676 & 141 & 1 & $-$2\,821 & $-$2\,027 & \textbf{-4\,030} \\
 Fixed Droop & 716 & 9 & 0 & $-$188 & $-$2\,027 & \textbf{-1\,489} \\
 No FFR & 635 & 2 & 0 & $-$0 & $-$2\,027 & \textbf{-1\,391} \\
 \bottomrule
