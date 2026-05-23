@@ -703,45 +703,93 @@ class FFRTopologyEvaluator:
         ax.scatter([nadir_idx * dt], [f_trace[nadir_idx]], s=22, color=color, zorder=5,
                    edgecolor="black", linewidth=0.6)
 
-    def plot_frequency_traces(self, scenario_name: str = "S2_gen_trip") -> None:
-        """Plot frequency traces comparing methods (single scenario)."""
+    def plot_frequency_traces(
+        self,
+        scenario_name: str = "S2_gen_trip",
+        zoom_post_event_s: float | None = 20.0,
+        save_csv: bool = True,
+    ) -> None:
+        """Plot frequency traces comparing methods (single scenario), hi-res.
+
+        Uses the env sub-step (≈0.1 s) trace if available so the true nadir
+        of the underdamped ring-down is captured. Adds the cooperative control
+        windows (FFR / Primary / AGC) and a 20 s post-event zoom by default.
+        Optionally saves the per-method hi-res trace as a CSV.
+        """
         event = self.scenarios.get(scenario_name)
         if event is None:
             return
 
         fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+        event_t = float(event.t_inject)
 
         # Collect traces — fall back to no forced topology if cache is empty
         topo_idx = 0 if getattr(self.env.reconfig, "_cache", []) else None
-        traces = {}
+        traces: dict[str, tuple[np.ndarray, float]] = {}
         for policy_name, policy in self.policies.items():
             m = self.run_episode(policy, event=event, topology_idx=topo_idx)
-            traces[policy_name] = m.f_trace
+            if m.f_trace_hires.size > 0:
+                traces[policy_name] = (np.asarray(m.f_trace_hires, dtype=float), float(m.dt_hires))
+            else:
+                traces[policy_name] = (np.asarray(m.f_trace, dtype=float), 1.0)
+
+        # Optional CSV dump for reuse / external plotting
+        if save_csv and traces:
+            csv_rows: list[dict[str, float]] = []
+            dt_csv = next(iter(traces.values()))[1]
+            L_csv = min(len(arr) for arr, _ in traces.values())
+            for k in range(L_csv):
+                row = {"t_s": k * dt_csv}
+                for name, (arr, _) in traces.items():
+                    row[name] = float(arr[k])
+                csv_rows.append(row)
+            pd.DataFrame(csv_rows).to_csv(
+                self.output_dir / f"trace_{scenario_name}.csv", index=False
+            )
 
         # Plot frequency
         ax1 = axes[0]
-        for name, trace in traces.items():
-            ax1.plot(trace, label=name, linewidth=1.5)
+        ax1.axvspan(event_t,        event_t + 2.0,  color="#3a7bd5", alpha=0.08, label="FFR 0-2s")
+        ax1.axvspan(event_t + 2.0,  event_t + 10.0, color="#f5a623", alpha=0.08, label="Primary 2-10s")
+        for name, (trace, dt_loc) in traces.items():
+            color, lw, ls = self._style_for(name)
+            t = np.arange(len(trace)) * dt_loc
+            ax1.plot(t, trace, label=name, color=color, linewidth=lw, linestyle=ls)
         ax1.axhline(49.5, ls="--", color="red", alpha=0.7, label="UFLS threshold (49.5 Hz)")
         ax1.axhline(50.0, ls=":", color="gray", alpha=0.5)
-        ax1.axvline(event.t_inject, ls="--", color="orange", alpha=0.7, label=f"Event @ t={event.t_inject}s")
+        ax1.axvline(event_t, ls="--", color="orange", alpha=0.7, label=f"Event @ t={event_t:g}s")
         ax1.set_ylabel("Frequency (Hz)")
-        ax1.set_ylim(49.0, 50.5)
-        ax1.legend(loc="lower right", fontsize=9)
+        ax1.set_ylim(48.7, 51.0)
+        if zoom_post_event_s is not None:
+            ax1.set_xlim(max(0.0, event_t - 5.0), event_t + float(zoom_post_event_s))
+            ax1.axvspan(event_t + 10.0, event_t + float(zoom_post_event_s),
+                        color="#56c596", alpha=0.08, label="AGC ≥10s")
+        else:
+            ax1.axvspan(event_t + 10.0, ax1.get_xlim()[1],
+                        color="#56c596", alpha=0.08, label="AGC ≥10s")
+        ax1.legend(loc="lower right", fontsize=8)
         ax1.grid(alpha=0.3)
         ax1.set_title(f"FFR Performance: {scenario_name}")
 
         # Plot deviation
         ax2 = axes[1]
-        for name, trace in traces.items():
+        ax2.axvspan(event_t,       event_t + 2.0,  color="#3a7bd5", alpha=0.08)
+        ax2.axvspan(event_t + 2.0, event_t + 10.0, color="#f5a623", alpha=0.08)
+        for name, (trace, dt_loc) in traces.items():
+            color, lw, ls = self._style_for(name)
+            t = np.arange(len(trace)) * dt_loc
             delta_f = trace - 50.0
-            ax2.plot(delta_f, label=name, linewidth=1.5)
+            ax2.plot(t, delta_f, label=name, color=color, linewidth=lw, linestyle=ls)
         ax2.axhline(-0.5, ls="--", color="red", alpha=0.7)
         ax2.axhline(0.0, ls=":", color="gray", alpha=0.5)
-        ax2.axvline(event.t_inject, ls="--", color="orange", alpha=0.7)
+        ax2.axvline(event_t, ls="--", color="orange", alpha=0.7)
         ax2.set_xlabel("Time (s)")
         ax2.set_ylabel("Δf (Hz)")
-        ax2.set_ylim(-0.8, 0.3)
+        ax2.set_ylim(-1.5, 1.0)
+        if zoom_post_event_s is not None:
+            ax2.set_xlim(max(0.0, event_t - 5.0), event_t + float(zoom_post_event_s))
+            ax2.axvspan(event_t + 10.0, event_t + float(zoom_post_event_s),
+                        color="#56c596", alpha=0.08)
         ax2.grid(alpha=0.3)
 
         plt.tight_layout()
