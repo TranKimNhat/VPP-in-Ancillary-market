@@ -489,7 +489,7 @@ def main() -> None:
         "S1_load_step": EventConfig(type="load_step", delta_P_mw=2.5, location=45, t_inject=30.0),
         "S2_gen_trip": EventConfig(type="gen_trip", delta_P_mw=-3.9, location=67, t_inject=30.0),
         "S3_line_trip": EventConfig(type="line_trip", delta_P_mw=-2.4, location=67068, t_inject=30.0),
-        "S4_gen_trip_severe": EventConfig(type="gen_trip", delta_P_mw=-5.5, location=105, t_inject=30.0),
+        "S4_gen_trip_severe": EventConfig(type="gen_trip", delta_P_mw=-4.5, location=105, t_inject=30.0),
     }
 
     print("\n[1/3] Building Table IX (per-VPP revenue breakdown)...")

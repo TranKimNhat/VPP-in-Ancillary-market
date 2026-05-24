@@ -81,7 +81,7 @@ Sc. & Event       & $\Delta P$ (MW) & \% $S_B$ & Purpose \\
 S1  & load\_step  & $+2.5$  & 16\,\% & moderate, droop reachable \\
 S2  & gen\_trip   & $-3.9$  & 25\,\% & severe; droop fails \\
 S3  & line\_trip  & $-2.4$  & 15\,\% & topology mutation \\
-S4  & gen\_trip   & $-5.5$  & 35\,\% & extreme; graceful degradation \\
+S4  & gen\_trip   & $-4.5$  & 29\,\% & extreme; near AGC saturation \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -157,9 +157,9 @@ Scenario & Method & Nadir (Hz) & RoCoF$_{\max}$ (Hz/s) & IAE$_{\text{post}}$ (Hz
   & No FFR & 49.38 & 1.66 & 6.90 & 3495.5 & 43.6 & 35.0 \\
 \midrule
 \multirow{6}{*}{S4 gen trip severe}
- & GraphSAGE-MAPPO (\emph{ours}) & 49.21 & 2.69 & 12.19 & 7722.3 & 50.0 & 0.0 \\
-  & Fixed Droop & 48.71 & 3.93 & 14.13 & 8317.0 & 50.0 & 0.0 \\
-  & No FFR & 48.78 & 3.26 & 16.79 & 10172.3 & 50.0 & 0.0 \\
+ & GraphSAGE-MAPPO (\emph{ours}) & 49.26 & 2.51 & 11.23 & 7016.6 & 50.0 & 10.0 \\
+  & Fixed Droop & 48.76 & 3.77 & 13.11 & 7550.1 & 50.0 & 0.0 \\
+  & No FFR & 48.83 & 3.11 & 15.60 & 9305.1 & 50.0 & 0.0 \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -502,8 +502,8 @@ here, both of which are policy choices outside the controller scope.
 \toprule
 Method & EM$_p$ & AM cap & AM act & Undersupply & OPEX & \textbf{Net} \\
 \midrule
-GraphSAGE-MAPPO (\emph{ours}) & 676 & 141 & 1 & $-$2\,821 & $-$2\,027 & \textbf{-4\,030} \\
-Fixed Droop & 716 & 9 & 0 & $-$188 & $-$2\,027 & \textbf{-1\,489} \\
+GraphSAGE-MAPPO (\emph{ours}) & 676 & 142 & 1 & $-$2\,832 & $-$2\,027 & \textbf{-4\,040} \\
+Fixed Droop & 716 & 9 & 0 & $-$184 & $-$2\,027 & \textbf{-1\,486} \\
 No FFR & 635 & 2 & 0 & $-$0 & $-$2\,027 & \textbf{-1\,391} \\
 \bottomrule
 \end{tabular}

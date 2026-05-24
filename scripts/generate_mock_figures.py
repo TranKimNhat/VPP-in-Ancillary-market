@@ -485,7 +485,7 @@ def make_fig_cooperative_dispatch() -> None:
         ("S1 load_step +2.5 MW", 2.5),
         ("S2 gen_trip −3.9 MW", -3.9),
         ("S3 line_trip −2.4 MW", -2.4),
-        ("S4 gen_trip −5.5 MW", -5.5),
+        ("S4 gen_trip −4.5 MW", -5.5),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(12, 7.5), sharex=True)
     axes_flat = axes.flatten()
@@ -590,7 +590,7 @@ def make_fig_freq_analytic() -> None:
         ("S1 load_step (+2.5 MW)",  +2.5, 30.0, 80.0),
         ("S2 gen_trip (-3.9 MW)",   -3.9, 30.0, 80.0),
         ("S3 line_trip (-2.4 MW)",  -2.4, 30.0, 80.0),
-        ("S4 gen_trip (-5.5 MW)",   -5.5, 30.0, 100.0),
+        ("S4 gen_trip (-4.5 MW)",   -4.5, 30.0, 100.0),
     ]
     method_ffr = {
         "GraphSAGE-MAPPO": 0.12,   # ~12% S_BASE of fast injection
@@ -658,7 +658,7 @@ def make_fig_freq_analytic_zoom() -> None:
         ("S1 load_step (+2.5 MW)",  +2.5, 30.0),
         ("S2 gen_trip (-3.9 MW)",   -3.9, 30.0),
         ("S3 line_trip (-2.4 MW)",  -2.4, 30.0),
-        ("S4 gen_trip (-5.5 MW)",   -5.5, 30.0),
+        ("S4 gen_trip (-4.5 MW)",   -4.5, 30.0),
     ]
     method_ffr = {
         "GraphSAGE-MAPPO": 0.12,
