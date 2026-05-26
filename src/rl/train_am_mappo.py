@@ -66,7 +66,7 @@ AM_PHASES: dict[str, dict[str, Any]] = {
         "max_delta_p_mw": 2.5,      # ~16% of S_BASE - covers S1 (load_step 2.5 MW)
         "event_probs": {"load_step": 1.0, "gen_trip": 0.0, "line_trip": 0.0, "high_ren": 0.0},
         "lr_factor": 1.0,
-        "entropy_bonus": 0.02,      # Extra exploration in early phase
+        "entropy_bonus": 0.005,     # Reduced 4x: prior 0.02 created equilibrium at std=0.5 where policy_loss could not dig out
         "description": "Foundation: load-only response, learn basic droop",
     },
     "B": {
@@ -75,7 +75,7 @@ AM_PHASES: dict[str, dict[str, Any]] = {
         "max_delta_p_mw": 3.0,      # ~19% of S_BASE - moderate
         "event_probs": {"load_step": 0.5, "gen_trip": 0.5, "line_trip": 0.0, "high_ren": 0.0},
         "lr_factor": 1.0,
-        "entropy_bonus": 0.01,
+        "entropy_bonus": 0.003,     # Reduced 4x (was 0.01)
         "description": "Bidirectional: add gen trips (under-frequency events)",
     },
     # STAGE 2: Complexity - Event variety and renewable uncertainty
@@ -85,7 +85,7 @@ AM_PHASES: dict[str, dict[str, Any]] = {
         "max_delta_p_mw": 4.0,      # ~25% of S_BASE - severe
         "event_probs": {"load_step": 0.35, "gen_trip": 0.35, "line_trip": 0.0, "high_ren": 0.3},
         "lr_factor": 1.0,
-        "entropy_bonus": 0.005,
+        "entropy_bonus": 0.002,     # Reduced ~2.5x (was 0.005)
         "description": "Renewable: add high_ren surges (over-frequency)",
     },
     "D": {
@@ -94,7 +94,7 @@ AM_PHASES: dict[str, dict[str, Any]] = {
         "max_delta_p_mw": 5.5,      # ~35% of S_BASE - covers S4 (gen_trip −5.5 MW)
         "event_probs": {"load_step": 0.3, "gen_trip": 0.3, "line_trip": 0.15, "high_ren": 0.25},
         "lr_factor": 0.8,           # Start LR decay
-        "entropy_bonus": 0.003,
+        "entropy_bonus": 0.001,     # Reduced 3x (was 0.003)
         "description": "Topology: introduce line trips (hardest events)",
     },
     # STAGE 3: Mastery - Full severity with fine-tuning
@@ -104,7 +104,7 @@ AM_PHASES: dict[str, dict[str, Any]] = {
         "max_delta_p_mw": 5.5,      # ~35% of S_BASE
         "event_probs": {"load_step": 0.3, "gen_trip": 0.3, "line_trip": 0.2, "high_ren": 0.2},
         "lr_factor": 0.5,
-        "entropy_bonus": 0.001,
+        "entropy_bonus": 0.0005,    # Reduced 2x (was 0.001)
         "description": "N-1 ready: full event mix, significant LR decay",
     },
     "F": {
@@ -529,7 +529,17 @@ class GAMAPPOAgent(nn.Module):
         max_grad_norm: float = 0.5,
         log_std_init: float = -1.0,
         min_std: float = 0.05,
+        log_std_max: float = -1.0,
+        log_std_min: float = -5.0,
     ):
+        """GraphSAGE+MAPPO agent.
+
+        log_std_max/log_std_min: hard clamp applied to the actor's raw
+        log_std parameter AFTER each optimizer.step(). Default upper bound
+        of -1.0 caps std at softplus(-1)+0.05 ~= 0.36, preventing the
+        runaway-exploration equilibrium that pinned std at 0.5 in the
+        pre-fix run.
+        """
         super().__init__()
         self.n_agents = n_agents
         self.n_bus = n_bus
@@ -545,6 +555,8 @@ class GAMAPPOAgent(nn.Module):
         self.value_coef = value_coef
         self.entropy_coef = entropy_coef
         self.max_grad_norm = max_grad_norm
+        self.log_std_max = float(log_std_max)
+        self.log_std_min = float(log_std_min)
 
         # Networks
         self.encoder = FeederGraphSAGEAgentEncoder(obs_feat, hidden_dim, embed_dim)
@@ -677,6 +689,11 @@ class GAMAPPOAgent(nn.Module):
             old_log_probs: [n_samples, n_agents] per-agent log probs
             returns: [n_samples, n_agents] per-agent returns
             advantages: [n_samples, n_agents] per-agent advantages
+
+        Diagnostics:
+            grad_log_std_dim{d}        : |net gradient| on log_std (abs).
+            grad_log_std_signed_dim{d} : signed net gradient (entropy push
+                + policy push). Near zero => equilibrium, not detached.
         """
         n_samples = obs_batch.shape[0]
 
@@ -701,6 +718,7 @@ class GAMAPPOAgent(nn.Module):
         total_action_abs_per_dim = np.zeros(action_dim, dtype=np.float64)
         total_grad_mean_head_per_dim = np.zeros(action_dim, dtype=np.float64)
         total_grad_log_std_per_dim = np.zeros(action_dim, dtype=np.float64)
+        total_grad_log_std_signed_per_dim = np.zeros(action_dim, dtype=np.float64)
         total_kl_per_dim = np.zeros(action_dim, dtype=np.float64)
         total_ratio = 0.0
         total_clip_fraction = 0.0
@@ -784,7 +802,9 @@ class GAMAPPOAgent(nn.Module):
                 # Backward pass
                 self.optimizer.zero_grad()
                 loss.backward()
-                # Capture per-dim gradient norms BEFORE clipping (more interpretable)
+                # Capture per-dim gradient norms BEFORE clipping (more interpretable).
+                # Record BOTH |net grad| (legacy) AND signed net grad so the
+                # equilibrium-cancellation pattern is visible.
                 with torch.no_grad():
                     mh_grad = self.actor.mean_head.weight.grad
                     ls_grad = self.actor.log_std.grad
@@ -794,10 +814,17 @@ class GAMAPPOAgent(nn.Module):
                         total_grad_mean_head_per_dim += mh_norm.astype(np.float64)
                     if ls_grad is not None:
                         # log_std shape: [action_dim]
-                        ls_norm = ls_grad.abs().cpu().numpy()
-                        total_grad_log_std_per_dim += ls_norm.astype(np.float64)
+                        ls_np = ls_grad.cpu().numpy().astype(np.float64)
+                        total_grad_log_std_per_dim += np.abs(ls_np)
+                        total_grad_log_std_signed_per_dim += ls_np
                 nn.utils.clip_grad_norm_(self.parameters(), self.max_grad_norm)
                 self.optimizer.step()
+
+                # Hard upper/lower clamp on raw log_std parameter. Default
+                # log_std_max=-1.0 caps softplus(log_std)+min_std at ~0.36,
+                # preventing the std=0.5 runaway-exploration equilibrium.
+                with torch.no_grad():
+                    self.actor.log_std.data.clamp_(self.log_std_min, self.log_std_max)
 
                 total_loss += loss.item()
                 total_policy_loss += policy_loss.item()
@@ -816,7 +843,7 @@ class GAMAPPOAgent(nn.Module):
                 n_updates += 1
 
         with torch.no_grad():
-            # log_std is the raw pre-softplus param; real std uses softplus+min_std (no clamp).
+            # log_std is the raw pre-softplus param; real std uses softplus+min_std.
             log_std_t = self.actor.log_std
             std_t = self.actor._std()
             actor_log_std = log_std_t.mean().item()
@@ -831,6 +858,7 @@ class GAMAPPOAgent(nn.Module):
             per_dim_dict[f"action_abs_dim{d}"] = float(total_action_abs_per_dim[d] / nu)
             per_dim_dict[f"grad_mean_head_dim{d}"] = float(total_grad_mean_head_per_dim[d] / nu)
             per_dim_dict[f"grad_log_std_dim{d}"] = float(total_grad_log_std_per_dim[d] / nu)
+            per_dim_dict[f"grad_log_std_signed_dim{d}"] = float(total_grad_log_std_signed_per_dim[d] / nu)
             per_dim_dict[f"approx_kl_dim{d}"] = float(total_kl_per_dim[d] / nu)
             per_dim_dict[f"log_std_dim{d}"] = float(log_std_per_dim[d])
             per_dim_dict[f"std_dim{d}"] = float(std_per_dim[d])
@@ -1372,7 +1400,8 @@ def train_am_mappo(
                         f"H={_recent(f'entropy_dim{d}'):.3f} "
                         f"|a|={_recent(f'action_abs_dim{d}'):.3f} "
                         f"g_mh={_recent(f'grad_mean_head_dim{d}'):.2e} "
-                        f"g_ls={_recent(f'grad_log_std_dim{d}'):.2e}]"
+                        f"g_ls={_recent(f'grad_log_std_dim{d}'):.2e} "
+                        f"g_ls_s={_recent(f'grad_log_std_signed_dim{d}'):+.2e}]"
                     )
                 print("        " + " | ".join(parts))
 
@@ -1611,6 +1640,102 @@ def main() -> None:
         result_path.write_text(json.dumps(result_payload, indent=2), encoding="utf-8")
 
     print(f"\nTraining complete. Saved to {checkpoint_dir}")
+
+
+def smoke_gate(
+    n_updates: int = 5,
+    n_episodes_per_update: int = 1,
+) -> dict[str, list[float]]:
+    """Smoke gate for the AM-MAPPO fix.
+
+    Verifies:
+      1. Agent constructs on a real env.
+      2. N rollout+update cycles run without NaN / shape errors.
+      3. value_loss bounded (< 50). actor_std stays below the clamp
+         ceiling (default ~0.36, well under the pre-fix 0.5 equilibrium).
+      4. At least one of grad_log_std_signed_dim{d} has |value| > 1e-4
+         (autograd path is alive even if abs(net) ~ 0 at equilibrium).
+
+    Returns per-update traces of std, value_loss, signed log_std grad.
+    """
+    env = MicrogridEnvDual(
+        placement_path="artifacts/placement/official_placement_v3.json",
+        mpc_path="data/grid_IEEE123_complete.m",
+        seed=42,
+        ffr_mode="mappo_dual",
+    )
+
+    sample_obs_fast, _, _ = env.reset()
+    sample_obs_full = build_am_full_feeder_obs(env, sample_obs_fast)
+    n_bus = int(sample_obs_full.shape[0])
+    obs_feat = int(sample_obs_full.shape[1])
+    agent_bus_indices = np.asarray(
+        getattr(env, "_agent_bus_pp", np.arange(env.n_agents)), dtype=np.int64
+    )
+    agent_bus_indices = np.clip(agent_bus_indices, 0, max(n_bus - 1, 0))
+
+    agent = GAMAPPOAgent(
+        obs_feat=obs_feat,
+        n_agents=env.n_agents,
+        n_bus=n_bus,
+        agent_bus_indices=agent_bus_indices,
+        action_dim_per_agent=2,
+        entropy_coef=0.005,  # Phase A value after the fix
+    )
+
+    stds: list[float] = []
+    value_losses: list[float] = []
+    signed_grads: list[tuple[float, float]] = []
+
+    for k in range(int(n_updates)):
+        history = train_am_mappo(
+            env=env,
+            agent=agent,
+            n_episodes=int(n_episodes_per_update),
+            steps_per_episode=300,
+            update_epochs=4,
+            mini_batch_size=64,
+            log_interval=max(1, int(n_episodes_per_update)),
+            checkpoint_dir=None,
+            _phase_name="SMOKE",
+            _max_delta_p_mw=2.5,
+        )
+        last_std = history["actor_std"][-1] if history["actor_std"] else float("nan")
+        # value_loss not stored in history dict by default; recompute proxy from explained_var.
+        # Use 'loss' as proxy; it includes value_coef*value_loss but we just need a sanity bound.
+        last_loss = history["loss"][-1] if history["loss"] else float("nan")
+        pd = history.get("per_dim", {})
+        g0 = pd.get("grad_log_std_signed_dim0", [float("nan")])[-1]
+        g1 = pd.get("grad_log_std_signed_dim1", [float("nan")])[-1]
+        stds.append(float(last_std))
+        value_losses.append(float(last_loss))
+        signed_grads.append((float(g0), float(g1)))
+        print(
+            f"  smoke update {k+1}/{n_updates}: "
+            f"std={last_std:.3f}  loss={last_loss:+.3f}  "
+            f"g_ls_s=({g0:+.2e}, {g1:+.2e})"
+        )
+
+    # Assertions
+    max_std = max(stds)
+    max_loss = max(abs(v) for v in value_losses if np.isfinite(v))
+    max_abs_g = max(abs(g0) + abs(g1) for g0, g1 in signed_grads)
+    assert max_std < 0.45, (
+        f"actor_std reached {max_std:.3f} > 0.45 -- log_std clamp not working. "
+        f"Expected ceiling ~softplus({agent.log_std_max:.2f})+0.05 = "
+        f"{float(F.softplus(torch.tensor(agent.log_std_max)).item() + 0.05):.3f}"
+    )
+    assert max_loss < 50.0, (
+        f"|loss| reached {max_loss:.2f} > 50 -- critic divergent."
+    )
+    assert max_abs_g > 1e-4, (
+        f"All signed log_std grads near zero ({max_abs_g:.2e}). "
+        f"Autograd graph may be detached -- THIS IS THE BUG WE WERE LOOKING FOR."
+    )
+    assert all(np.isfinite(v) for v in stds + value_losses), "NaN/inf in smoke metrics"
+
+    print("AM-MAPPO GATE: PASS")
+    return {"std": stds, "loss": value_losses, "g_ls_signed": signed_grads}
 
 
 if __name__ == "__main__":
