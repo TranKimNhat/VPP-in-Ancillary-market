@@ -33,9 +33,7 @@ import pandas as pd
 import torch
 
 from src.baselines.gcnn_ppo import GCNNPPOAgent, ensure_edge_index
-from src.baselines.graph_ppo import GraphPPOAgent
 from src.baselines.matd3 import MATD3Agent, MATD3Config
-from src.baselines.sgac import SGACAgent
 from src.env.events import EventConfig
 from src.env.microgrid_env_dual import MicrogridEnvDual
 from src.eval.evaluate_dual import DeterministicDualPolicy, FixedDroopPolicy, NoFFRPolicy
@@ -198,70 +196,8 @@ class _GCNNPPOWrapper:
         obs_slow = np.zeros_like(obs_fast_legacy)
         combined = GCNNPPOAgent._combine_obs(obs_fast_legacy, obs_slow)
         global_obs = combined.reshape(-1)
-        raw, _lp, _v = self._agent.act(combined, edge_index, global_obs)
-        return self._map(raw)
-
-    def act_slow(self, obs_slow: np.ndarray, edge_index: np.ndarray) -> np.ndarray:  # noqa: ARG002
-        return np.zeros((82,), dtype=np.float32)
-
-
-class _SGACWrapper:
-    def __init__(self, agent: SGACAgent, env: MicrogridEnvDual) -> None:
-        self._agent = agent
-        self._env = env
-
-    def _map(self, raw: np.ndarray) -> np.ndarray:
-        a = np.asarray(raw, dtype=np.float32).reshape(41, 3)
-        p_all = a[:, 0]
-        droop_all = a[:, 2]
-        vpp_droop = np.zeros(3, dtype=np.float32)
-        vpp_agents = [
-            list(range(9, 12)) + list(range(18, 21)),
-            list(range(12, 15)) + list(range(21, 24)),
-            list(range(15, 18)) + list(range(24, 27)),
-        ]
-        for i, agents in enumerate(vpp_agents):
-            vpp_droop[i] = float(droop_all[agents].mean())
-        return np.clip(np.concatenate([p_all, vpp_droop]).astype(np.float32), -1.0, 1.0)
-
-    def act_fast(self, obs_fast: np.ndarray, edge_index: np.ndarray) -> np.ndarray:
-        obs_fast_legacy = _to_legacy_obs5(obs_fast)
-        obs_slow = np.zeros_like(obs_fast_legacy)
-        combined = SGACAgent._combine_obs(obs_fast_legacy, obs_slow)
-        raw = self._agent.act(combined, edge_index)
-        return self._map(raw)
-
-    def act_slow(self, obs_slow: np.ndarray, edge_index: np.ndarray) -> np.ndarray:  # noqa: ARG002
-        return np.zeros((82,), dtype=np.float32)
-
-
-class _GraphPPOWrapper:
-    def __init__(self, agent: GraphPPOAgent, env: MicrogridEnvDual) -> None:
-        self._agent = agent
-        self._env = env
-        self._agent.env = env
-
-    def _map(self, raw: np.ndarray) -> np.ndarray:
-        a = np.asarray(raw, dtype=np.float32).reshape(41, 3)
-        p_all = a[:, 0]
-        droop_all = a[:, 2]
-        vpp_droop = np.zeros(3, dtype=np.float32)
-        vpp_agents = [
-            list(range(9, 12)) + list(range(18, 21)),
-            list(range(12, 15)) + list(range(21, 24)),
-            list(range(15, 18)) + list(range(24, 27)),
-        ]
-        for i, agents in enumerate(vpp_agents):
-            vpp_droop[i] = float(droop_all[agents].mean())
-        return np.clip(np.concatenate([p_all, vpp_droop]).astype(np.float32), -1.0, 1.0)
-
-    def act_fast(self, obs_fast: np.ndarray, edge_index: np.ndarray) -> np.ndarray:
-        obs_fast_legacy = _to_legacy_obs5(obs_fast)
-        obs_slow = np.zeros_like(obs_fast_legacy)
-        combined = GraphPPOAgent._combine_obs(obs_fast_legacy, obs_slow)
-        adj_phys, adj_ed = self._agent._get_adjacencies(edge_index)
-        raw, _lp, _v = self._agent.act(combined, adj_phys, adj_ed)
-        return self._map(raw)
+        action_env, _lp, _v, _raw = self._agent.act(combined, edge_index, global_obs)
+        return self._map(action_env)
 
     def act_slow(self, obs_slow: np.ndarray, edge_index: np.ndarray) -> np.ndarray:  # noqa: ARG002
         return np.zeros((82,), dtype=np.float32)
@@ -383,7 +319,6 @@ class BaselineComparison:
         proposed_checkpoint: Path,
         nograph_checkpoint: Path | None,
         fixedtopo_checkpoint: Path | None,
-        graphppo_checkpoint: Path | None,
         gcnn_checkpoint: Path | None,
         env_config: dict[str, Any],
         seed: int = 42,
@@ -409,8 +344,6 @@ class BaselineComparison:
             self.methods["No-Graph Dual-PPO"] = DeterministicDualPolicy(nograph_checkpoint)
         if fixedtopo_checkpoint is not None and fixedtopo_checkpoint.exists():
             self.methods["Fixed-Topology Dual-PPO"] = DeterministicDualPolicy(fixedtopo_checkpoint)
-        if graphppo_checkpoint is not None and graphppo_checkpoint.exists() and hasattr(GraphPPOAgent, "load"):
-            self.methods["Graph-PPO"] = _GraphPPOWrapper(GraphPPOAgent.load(graphppo_checkpoint), self.env)
         if gcnn_checkpoint is not None and gcnn_checkpoint.exists() and hasattr(GCNNPPOAgent, "load"):
             self.methods["GCNN-PPO"] = _GCNNPPOWrapper(GCNNPPOAgent.load(gcnn_checkpoint), self.env)
         if mlp_mappo_checkpoint is not None and mlp_mappo_checkpoint.exists():
@@ -794,7 +727,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--proposed", type=Path, required=True)
     parser.add_argument("--nograph", type=Path, default=None)
     parser.add_argument("--fixedtopo", type=Path, default=None)
-    parser.add_argument("--graphppo", type=Path, default=None)
     parser.add_argument("--gcnn", type=Path, default=None)
     parser.add_argument("--out-dir", type=Path, default=Path("results"))
     parser.add_argument("--placement", type=Path, default=Path("artifacts/placement/official_placement_v3.json"))
@@ -827,7 +759,6 @@ def main() -> None:
         proposed_checkpoint=args.proposed,
         nograph_checkpoint=args.nograph,
         fixedtopo_checkpoint=args.fixedtopo,
-        graphppo_checkpoint=args.graphppo,
         gcnn_checkpoint=args.gcnn,
         env_config=env_config,
         topology_cache=topology_cache_data,
