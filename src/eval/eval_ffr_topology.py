@@ -432,13 +432,17 @@ class MLPMAPPOPolicy:
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         agent_state = ckpt.get("model_state_dict", ckpt.get("agent_state_dict", ckpt))
 
-        # Infer dimensions from checkpoint weights
+        # Infer dimensions from checkpoint weights.
+        # In MLPMAPPOAgent, the encoder uses embed_dim for ALL of its layers
+        # (encoder.net.0 hidden = embed_dim, encoder.net.4 output = embed_dim),
+        # while the actor uses a separate hidden_dim. So we need to read the
+        # actor's hidden_dim from actor.net.0.weight, not from any encoder layer.
         embed_dim = 64
         hidden_dim = 128
-        if "encoder.net.0.weight" in agent_state:
-            hidden_dim = agent_state["encoder.net.0.weight"].shape[0]
         if "encoder.net.4.weight" in agent_state:
             embed_dim = agent_state["encoder.net.4.weight"].shape[0]
+        if "actor.net.0.weight" in agent_state:
+            hidden_dim = agent_state["actor.net.0.weight"].shape[0]
 
         # Build agent
         sample_obs_fast, _, _ = env.reset()
