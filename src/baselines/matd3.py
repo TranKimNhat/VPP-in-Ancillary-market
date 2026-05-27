@@ -325,7 +325,7 @@ class MATD3Agent:
 
     def load(self, path: Path) -> None:
         """Load agent checkpoint."""
-        ckpt = torch.load(path, map_location=self.device)
+        ckpt = torch.load(path, map_location=self.device, weights_only=False)
         self.actors.load_state_dict(ckpt["actors"])
         self.target_actors.load_state_dict(ckpt["target_actors"])
         self.critic.load_state_dict(ckpt["critic"])
