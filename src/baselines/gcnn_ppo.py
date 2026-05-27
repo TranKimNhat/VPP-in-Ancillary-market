@@ -684,13 +684,46 @@ class GCNNPPOAgent:
 
     @classmethod
     def load(cls, checkpoint_path: Path) -> "GCNNPPOAgent":
+        """Load a GCNNPPOAgent checkpoint.
+
+        Reads model dims from the saved 'config' dict (new checkpoints).
+        For legacy checkpoints with no config, auto-infer dims from the
+        state_dict shapes so old runs can still be evaluated.
+        """
         ckpt = torch.load(Path(checkpoint_path), map_location="cpu", weights_only=False)
+        sd = ckpt["model"]
         cfg = ckpt.get("config") or {}
-        in_dim = int(cfg.get("in_dim", 10))
-        hidden_dim = int(cfg.get("hidden_dim", 64))
-        emb_dim = int(cfg.get("emb_dim", 64))
-        action_dim = int(cfg.get("action_dim", 82))
-        global_obs_dim = int(cfg.get("global_obs_dim", 0))
+
+        # Infer from state_dict shapes when config absent (legacy ckpts).
+        # state_dict layout:
+        #   log_std                  : (action_dim,)
+        #   encoder.layer1.weight    : (in_dim, hidden_dim)
+        #   encoder.layer2.weight    : (hidden_dim, emb_dim)
+        #   actor.0.weight           : (256, emb_dim + global_obs_dim)
+        def _infer(key: str, default: int) -> int:
+            val = cfg.get(key)
+            if val is not None:
+                return int(val)
+            if key == "action_dim":
+                return int(sd["log_std"].shape[0])
+            if key == "in_dim":
+                return int(sd["encoder.layer1.weight"].shape[0])
+            if key == "hidden_dim":
+                return int(sd["encoder.layer1.weight"].shape[1])
+            if key == "emb_dim":
+                return int(sd["encoder.layer2.weight"].shape[1])
+            if key == "global_obs_dim":
+                feature_dim = int(sd["actor.0.weight"].shape[1])
+                emb_dim = int(sd["encoder.layer2.weight"].shape[1])
+                return feature_dim - emb_dim
+            return default
+
+        in_dim = _infer("in_dim", 10)
+        hidden_dim = _infer("hidden_dim", 64)
+        emb_dim = _infer("emb_dim", 64)
+        action_dim = _infer("action_dim", 82)
+        global_obs_dim = _infer("global_obs_dim", 0)
+
         obj = cls.__new__(cls)
         obj.model = GCNActorPPO(
             in_dim=in_dim,
@@ -699,7 +732,7 @@ class GCNNPPOAgent:
             action_dim=action_dim,
             global_obs_dim=global_obs_dim,
         )
-        obj.model.load_state_dict(ckpt["model"])
+        obj.model.load_state_dict(sd)
         obj.model.eval()
         obj.env = None
         obj.last_entropy = 0.0
