@@ -366,14 +366,16 @@ class GCNNPPOPolicy:
         return np.clip(np.concatenate([p_all, vpp_droop]).astype(np.float32), -1.0, 1.0)
 
     def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
-        from src.baselines.gcnn_ppo import GCNNPPOAgent
+        # GCNN-PPO is trained on build_am_full_feeder_obs (shape (n_bus, 20))
+        # not the legacy 10-feature _combine_obs. Use the same obs builder
+        # the trainer's rollout_episode uses, otherwise the encoder's
+        # in_dim=20 will mismatch the eval-side 10-feature input.
+        from src.rl.train_am_mappo import build_am_full_feeder_obs
         if obs_fast is None:
             raise ValueError("GCNNPPOPolicy requires obs_fast")
-        legacy = self._to_legacy_obs5(obs_fast)
-        slow_zero = np.zeros_like(legacy)
-        combined = GCNNPPOAgent._combine_obs(legacy, slow_zero)
-        global_obs = combined.reshape(-1)
-        action_env, _lp, _v, _raw = self._agent.act(combined, edge_index, global_obs)
+        obs_full = build_am_full_feeder_obs(env, obs_fast)
+        global_obs = obs_full.reshape(-1)
+        action_env, _lp, _v, _raw = self._agent.act(obs_full, edge_index, global_obs)
         return self._map_to_env_action(action_env, env)
 
 
