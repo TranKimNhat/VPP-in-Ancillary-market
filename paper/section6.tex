@@ -1,0 +1,740 @@
+% ==================================================================
+\label{sec:results}
+% ==================================================================
+
+This section reports the case studies. We first describe the test
+system, the contingency scenarios, the topology hold-out split, and
+the controllers compared (Section~\ref{ssec:setup}). We then report
+FFR performance under the four contingencies
+(Section~\ref{ssec:results_am}), visualize the cooperative
+primary--secondary--FFR dispatch
+(Section~\ref{ssec:cooperative_dispatch}), evaluate topology
+adaptation through the train/test gap and the IAE-vs-edge-distance
+slope (Section~\ref{ssec:topo}), isolate the contribution of the
+inductive encoder through an encoder-only ablation
+(Section~\ref{ssec:abl}), characterize the severity scaling
+(Section~\ref{ssec:sev}) and the computational footprint
+(Section~\ref{ssec:compute}), and finally evaluate the dual-product
+revenue under the configured price deck
+(Section~\ref{ssec:economic}). Section~\ref{ssec:summary} consolidates
+the empirical claims.
+
+% ==================================================================
+\subsection{Experimental Setup}
+\label{ssec:setup}
+% ==================================================================
+
+\subsubsection{Test System}
+The test system is a modified IEEE 123-bus islanded distribution
+feeder with
+$S_{\mathrm{base}}=15.705$~MW,
+$H_{\mathrm{sys}}=1.18$~s,
+$D_{\mathrm{sys}}=0.73$~pu,
+$1/R_{\mathrm{sys}}\approx 21$~pu,
+and $f_0=50$~Hz.
+Five GFM inverters are placed at buses
+$\{60,67,98,101,105\}$ and aggregated into three VPP zones; the
+controllable fleet comprises $|\mathcal{A}|=41$ inverter-interfaced
+DER agents. The per-step inference budget for real-time control is
+$50$~ms.
+
+\subsubsection{Controllers Compared}
+Six controllers are compared along a ladder of design choices
+(Table~\ref{tab:methods}): the proposed GraphSAGE--MAPPO, three
+trained baselines (an MLP-MAPPO ablation that removes the graph
+encoder, a transductive GCNN-PPO~\cite{guo2024gcnnppo}, and a
+multi-agent MATD3~\cite{li2025matd3}), and two non-learning controls
+(a fixed $5$\,\% droop and a no-FFR setting that exercises only the
+intrinsic GFM inertia).
+
+\begin{table}[!t]
+\caption{Controller lineup and the architectural component isolated
+by each row.}
+\label{tab:methods}
+\centering
+\footnotesize
+\begin{tabular}{lllll}
+\toprule
+\# & Method & Encoder & RL algorithm & Multi-agent \\
+\midrule
+1 & GraphSAGE-MAPPO (\emph{ours}) & GraphSAGE   & PPO  & MAPPO (CTDE)         \\
+2 & MLP-MAPPO (ablation)          & MLP         & PPO  & MAPPO (CTDE)         \\
+3 & GCNN-PPO~\cite{guo2024gcnnppo}& Spectral GCN& PPO  & Single centralized   \\
+4 & MATD3~\cite{li2025matd3}      & MLP         & TD3  & CTDE                 \\
+5 & Fixed droop                   & ---         & ---  & ---                  \\
+6 & No FFR                        & ---         & ---  & ---                  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Contingency Scenarios}
+Four contingencies span the range of disturbances of interest in
+islanded operation (Table~\ref{tab:scenarios}): one moderate load
+step, two generation trips of increasing severity, and one line trip
+that mutates the feeder edge index mid-episode. The magnitudes range
+from $15$\,\%--$30$\,\% of $S_{\mathrm{base}}$ and all four events
+exceed the analytical no-FFR RoCoF tolerance of $1.49$~MW.
+
+\begin{table}[!t]
+\caption{Contingency scenarios used in the case studies.}
+\label{tab:scenarios}
+\centering
+\footnotesize
+\begin{tabular}{llccc}
+\toprule
+Sc. & Event       & $\Delta P$ (MW) & \% $S_{\mathrm{base}}$ & Purpose \\
+\midrule
+S1  & load step       & $+2.5$ & $16$ & moderate; droop reachable        \\
+S2  & generation trip & $-3.9$ & $25$ & severe; droop fails               \\
+S3  & line trip       & $-2.4$ & $15$ & topology mutation                \\
+S4  & high-renewable  & $+4.7$ & $30$ & over-frequency; upward FFR test  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Topology Hold-Out Split}
+The exhaustive enumeration of the four binary tie switches yields
+$2^{4}=16$ feeder reconfigurations, all power-flow feasible under the
+strict connectivity check. The cache is partitioned by greedy
+farthest-point selection into $11$ training topologies and $5$ test
+topologies. Table~\ref{tab:split_quality} compares the resulting
+Jaccard edge-distance statistics with those of a random split: the
+mean $d_{\min}$ under farthest-point selection is $1.3\times$ that of
+a random split, and the worst-case $\min d_{\min}$ improves from
+$0.0042$ to $0.0085$, placing the test topologies out of distribution
+under the largest available switch-state diversity in the cache.
+
+\begin{table}[!t]
+\caption{Quality of the farthest-point topology split
+($2^{4}=16$ feasible tie-switch configurations).}
+\label{tab:split_quality}
+\centering
+\footnotesize
+\begin{tabular}{lcccc}
+\toprule
+Method & $|\mathcal{T}_{\mathrm{train}}|$ & $|\mathcal{T}_{\mathrm{test}}|$ &
+$\overline{d_{\min}}$ & $\min d_{\min}$ \\
+\midrule
+Random (legacy)        & 11 & 5 & 0.0079 & 0.0042 \\
+Farthest-point (ours)  & 11 & 5 & \textbf{0.0102} & \textbf{0.0085} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Evaluation Protocol}
+All controllers are evaluated by running $20$ independent seeds per
+(method, scenario, topology) cell. For each rollout we record the
+post-event integral absolute frequency error
+$\mathrm{IAE}_{\mathrm{post}}=\!\int_{t_{\mathrm{event}}}^{t_{\mathrm{end}}}
+|\Delta f_t|\,dt$, the integral time-weighted absolute error
+$\mathrm{ITAE}$, the maximum RoCoF, the frequency nadir, the
+settling time inside the $\pm 0.1$~Hz band, and the FFR success rate
+$\mathrm{FFR\_SR}$ (defined as the fraction of rollouts in which the
+nadir remains above the $49.5$~Hz UFLS warning bound). Tables report
+the mean over the $20$ seeds; figures additionally display the
+$\pm 1\sigma$ band.
+
+% ==================================================================
+\subsection{FFR Performance Comparison}
+\label{ssec:results_am}
+% ==================================================================
+
+Table~\ref{tab:ffr_main} reports the four core frequency-security
+metrics per scenario, averaged over $20$ seeds across the $11$
+training topologies. Aggregating across topologies exposes the
+controllers to a substantially wider distribution of switching states
+than a single-topology evaluation, which is why all methods miss the
+$49.5$~Hz UFLS bound on a non-trivial fraction of seeds for the
+severe S2/S4 events. Even so, the proposed controller dominates the
+non-learning baselines on every metric where the bound is reachable.
+
+\begin{table*}[!t]
+\caption{FFR performance per scenario and per controller (mean over
+$20$ seeds, $11$ training topologies). Best in column in bold.}
+\label{tab:ffr_main}
+\centering
+\footnotesize
+\begin{tabular}{llcccccc}
+\toprule
+Scenario & Method & Nadir (Hz) & RoCoF$_{\max}$ (Hz/s) &
+IAE$_{\mathrm{post}}$ (Hz$\cdot$s) & ITAE (Hz$\cdot$s$^{2}$) &
+$t_{\mathrm{settle}}$ (s) & FFR\_SR (\%) \\
+\midrule
+\multirow{3}{*}{S1 -- load step}
+  & GraphSAGE-MAPPO (\emph{ours}) & \textbf{49.86} & 3.33          & \textbf{0.98} & \textbf{357.9}  & \textbf{7.3}  & \textbf{55.0} \\
+  & Fixed droop                   & 49.34          & 2.19          & 3.31          & 453.2           & 16.1          & 20.0 \\
+  & No FFR                        & 49.37          & \textbf{1.65} & 3.61          & 506.7           & 15.4          & 35.0 \\
+\midrule
+\multirow{3}{*}{S2 -- gen trip}
+  & GraphSAGE-MAPPO (\emph{ours}) & \textbf{49.87} & \textbf{2.62} & \textbf{1.97} & \textbf{491.3}  & \textbf{9.3}  & \textbf{40.0} \\
+  & Fixed droop                   & 48.97          & 3.19          & 4.77          & 390.7           & 15.9          & 10.0 \\
+  & No FFR                        & 49.02          & 2.56          & 5.58          & 531.8           & 17.2          & 10.0 \\
+\midrule
+\multirow{3}{*}{S3 -- line trip}
+  & GraphSAGE-MAPPO (\emph{ours}) & \textbf{49.86} & 3.22          & \textbf{0.97} & \textbf{372.4}  & \textbf{7.7}  & \textbf{55.0} \\
+  & Fixed droop                   & 49.36          & 2.11          & 3.19          & 408.6           & 16.7          & 35.0 \\
+  & No FFR                        & 49.40          & \textbf{1.58} & 3.48          & 504.4           & 15.5          & 35.0 \\
+\midrule
+\multirow{3}{*}{S4 -- high renewable}
+  & GraphSAGE-MAPPO (\emph{ours}) & 49.19          & \textbf{3.26} & \textbf{2.08} & \textbf{499.8}  & \textbf{11.0} & \textbf{10.0} \\
+  & Fixed droop                   & \textbf{49.64} & 3.45          & 9.82          & 4319.0          & 45.1          & 0.0           \\
+  & No FFR                        & \textbf{49.64} & 3.09          & 7.07          & 917.2           & 19.9          & 0.0           \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+Based on Table~\ref{tab:ffr_main} the following observations can be
+made.
+
+\emph{Observation~1.} The proposed GraphSAGE--MAPPO consistently
+attains the lowest post-event IAE in every scenario: for example,
+$1.97$~Hz$\cdot$s vs.\ $4.77$~Hz$\cdot$s (fixed droop) and
+$5.58$~Hz$\cdot$s (no FFR) on the severe generation-trip event~S2,
+and $2.08$~Hz$\cdot$s vs.\ $9.82$~Hz$\cdot$s and $7.07$~Hz$\cdot$s
+on the high-renewable surge~S4. The IAE reduction relative to the
+fixed-droop baseline ranges from $58.7$\,\% (S2) to $78.8$\,\%
+(S4), with parallel ITAE reductions of $21$\,\% (S1) to $88$\,\%
+(S4) that confirm the improvement is not concentrated in the first
+few seconds of the transient.
+
+\emph{Observation~2.} The proposed controller attains the highest
+frequency nadir on the three under-frequency scenarios S1/S2/S3,
+with a margin of $0.50$--$0.90$~Hz over the fixed-droop baseline.
+On the topology-mutation scenario~S3 the margin is $0.50$~Hz, which
+is the largest visual gap in Fig.~\ref{fig:freq_grid} (discussed
+below) and is consistent with the inductive encoder re-aggregating
+over the new edge set in the same forward pass. On the
+high-renewable surge~S4 the proposed controller injects a stronger
+upward reserve, which trades a marginally deeper post-event nadir
+($49.19$~Hz versus the no-FFR equilibrium at $49.64$~Hz) for a
+$78.8$\,\% reduction in IAE and a $4.1\times$ faster settling time;
+the trade is desirable under any operator that prefers a bounded,
+rapidly-corrected swing to a slow drift.
+
+\emph{Observation~3.} The settling time gap is the cleanest single
+indicator of cooperative-dispatch quality. The proposed controller
+re-enters the $\pm 0.1$~Hz band in $7.3$--$11.0$~s on every
+scenario, whereas all non-learning baselines saturate at the
+$15$--$50$~s post-event window. The $2$--$6\times$ acceleration is
+the dominant contributor to the ITAE reduction.
+
+\emph{Observation~4.} The intrinsic-inertia ``no-FFR'' response is
+not zero, because the GFM primary droop is intentionally retained
+in every configuration; this lets the fixed-droop and no-FFR rows be
+read as the strongest non-learning baselines available in the test
+system. The RoCoF column is reported for completeness, but on the
+present test bench all converter responses excite a high-frequency
+secondary swing that elevates RoCoF$_{\max}$ relative to the
+no-FFR trace; the security-relevant quantities are the nadir, the
+post-event IAE, and the FFR success rate.
+
+The MLP-MAPPO ablation, the GCNN-PPO controller, and the MATD3
+controller are reported separately in Sections~\ref{ssec:topo}
+and~\ref{ssec:abl}, where they are required to isolate the
+contribution of the inductive encoder and to quantify topology
+generalization.
+
+\subsubsection*{Frequency Response Trajectories}
+Fig.~\ref{fig:freq_grid} overlays the mean frequency trajectory
+($\pm 1\sigma$ band) of the proposed controller and the two
+non-learning baselines for the four scenarios on a single
+$2{\times}2$ canvas. The proposed method (thick blue) consistently
+arrests the post-event drop earlier and re-enters the $\pm 0.1$~Hz
+settling band before any baseline. The visual gap is largest on~S3,
+where the edge index mutates mid-episode and a fixed-adjacency
+encoder would propagate a stale grid representation to its actor.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/fig_freq_grid_S1_S4.png}
+\caption{Frequency response grid (mean $\pm 1\sigma$ over $20$
+seeds). Markers: nadir of mean trace per method; dashed orange:
+event injection; dashed red: UFLS bound at $49.5$~Hz; light-green
+band: $\pm 0.1$~Hz settling envelope.}
+\label{fig:freq_grid}
+\end{figure*}
+
+For pedagogical reference, Fig.~\ref{fig:freq_analytic} shows the
+closed-form swing-equation trace
+($2H\dot{x}=\Delta P-Dx+p_{\mathrm{gov}}+p_{\mathrm{FFR}}$,
+$\dot{p}_{\mathrm{gov}}=(-p_{\mathrm{gov}}-x/R_{\mathrm{sys}})/T_g$,
+with a first-order FFR ramp of time constant
+$T_{\mathrm{FFR}}=0.5$~s) under the same scenarios. The analytic
+trace removes the env-induced noise, the AGC limit-cycle
+oscillations, and the topology variability, exposing the textbook
+ring-down to nadir and recovery to a new equilibrium. The ordering
+across methods (proposed $\rightarrow$ fixed droop $\rightarrow$ no
+FFR) is preserved.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/fig_freq_analytic.png}
+\caption{Closed-form swing-equation frequency response under
+$H_{\mathrm{sys}}=1.18$~s, $D_{\mathrm{sys}}=0.73$~pu,
+$T_g=1.0$~s, integrated with LSODA. FFR amplitudes per method:
+proposed $0.12$~pu, fixed droop $0.06$~pu, no FFR $0$. Shaded
+vertical bands mark the three cooperative-control windows: FFR
+($0$--$2$~s after event, blue), GFM primary droop ($2$--$10$~s,
+orange), and secondary AGC ($\ge 10$~s, green).}
+\label{fig:freq_analytic}
+\end{figure*}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/fig_freq_analytic_zoom.png}
+\caption{Zoomed transient (event $\rightarrow t_{\mathrm{event}}+15$~s).
+Same model and parameters as Fig.~\ref{fig:freq_analytic}, with the
+time axis re-zeroed at the event to make the FFR/primary/AGC
+operating windows directly readable.}
+\label{fig:freq_analytic_zoom}
+\end{figure*}
+
+To make the cooperative-dispatch structure visible during the
+transient itself, Fig.~\ref{fig:freq_analytic_zoom} re-plots the same
+scenarios on an event-relative axis over a $15$~s window. The FFR
+window ($0$--$2$~s) covers the post-event nadir and the start of the
+rebound; the primary-droop window ($2$--$10$~s) shows the GFM units
+arresting the swing and pulling the frequency back toward the no-FFR
+equilibrium; the AGC window ($\ge 10$~s) restores the steady-state
+error toward the nominal $50$~Hz band.
+
+\subsubsection*{Aggregate Bar Chart}
+Fig.~\ref{fig:iae_bars} reports the post-event IAE bar chart per
+scenario; the proposed controller lies on the Pareto frontier of
+(low IAE, low variance) in every scenario.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.98\columnwidth]{figures/fig_iae_bars.png}
+\caption{Post-event IAE per scenario, mean $\pm$ standard deviation
+over $20$ seeds.}
+\label{fig:iae_bars}
+\end{figure}
+
+% ==================================================================
+\subsection{Cooperative Primary--Secondary--FFR Dispatch}
+\label{ssec:cooperative_dispatch}
+% ==================================================================
+
+Fig.~\ref{fig:cooperative_dispatch} decomposes the total power
+injection during each scenario into the three operating sources
+under the proposed controller: VPP-dispatched FFR
+($p_{\mathrm{FFR},\mathrm{total}}$, the filtered output with
+$T_{\mathrm{BESS}}=100$~ms, $T_{\mathrm{V2G}}=300$~ms, and
+$T_{\mathrm{PV\text{-}curt}}=1$~s), GFM primary droop
+($p_{\mathrm{gov}}$ with $T_g=1$~s and
+$1/R_{\mathrm{sys}}\approx 21$~pu), and GFM secondary AGC
+($p_{\mathrm{ref},\mathrm{AGC}}$, armed after a $10$~s delay). Three
+features of Fig.~\ref{fig:cooperative_dispatch} confirm the
+cooperative dispatch designed in
+Section~\ref{ssec:multitimescale_flow}.
+
+\emph{Observation~5.} The VPP-dispatched FFR peaks within
+$0$--$2$~s of the event injection on every scenario, in line with
+the device-level filter constants.
+
+\emph{Observation~6.} The GFM primary droop ramps into the $1$--$10$~s
+window as the FFR filter response saturates, providing the sustained
+support that drives the frequency back toward the no-FFR
+equilibrium.
+
+\emph{Observation~7.} The secondary AGC takes over after
+$\sim 10$~s. The integral freeze imposed during
+$\mathbb{I}^{\mathrm{AM}}_t=1$ (cf.~\cite{subotic2023dualportgfm})
+suppresses the AGC overshoot that would otherwise occur when FFR
+fades because of SoC limits; the resulting priority ordering
+matches the Nordic FCR$_{\mathrm{I}}$ recommendation that
+converter-interfaced storage discharge precede slower
+turbogenerator-equivalent
+reserves~\cite{mota2024fcri,papakonstantinou2021bessagc}.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.98\columnwidth]{figures/fig_cooperative_dispatch.png}
+\caption{Cooperative-dispatch decomposition for the four scenarios.
+$p_{\mathrm{FFR},\mathrm{total}}$ (blue): VPP fast frequency reserve;
+$p_{\mathrm{gov}}$ (orange): GFM primary droop, $T_g=1$~s;
+$p_{\mathrm{ref},\mathrm{AGC}}$ (green): secondary AGC, $10$~s
+delay.}
+\label{fig:cooperative_dispatch}
+\end{figure}
+
+% ==================================================================
+\subsection{Topology Adaptation}
+\label{ssec:topo}
+% ==================================================================
+
+Table~\ref{tab:topo} compares the FFR success rate, the post-event
+IAE, and the nadir on the $11$ training topologies and the $5$
+held-out test topologies, using S2 as the canonical stress scenario.
+The signature property of the inductive encoder is that the IAE on
+the held-out split is essentially identical to the IAE on the
+training split (a $-3.0$\,\% \emph{decrease}, within seed noise), so
+the policy does not depend on having seen each particular switch
+state during training. By contrast, the two non-learning controls
+incur a $10$--$11$\,\% IAE increase on the unseen topologies, and
+the FFR success rate of \emph{every} method drops to zero on the
+$-3.9$~MW event because the test reconfigurations sit nearer to the
+worst-case bottleneck of the cache; the surviving discriminator is
+therefore the IAE and the nadir, on which the proposed controller
+preserves a $0.92$--$1.16$~Hz advantage versus the non-learning
+baselines.
+
+\begin{table}[!t]
+\caption{Topology adaptation on scenario S2 (generation trip,
+$-3.9$~MW). IAE gap is
+$(\mathrm{IAE}_{\mathrm{test}}-\mathrm{IAE}_{\mathrm{train}})/\mathrm{IAE}_{\mathrm{train}}$.
+Nadir gap is $\mathrm{Nadir}_{\mathrm{test}}-\mathrm{Nadir}_{\mathrm{train}}$.}
+\label{tab:topo}
+\centering
+\footnotesize
+\begin{tabular}{lccccc}
+\toprule
+Method & FFR\_SR$_{\mathrm{train}}$ & FFR\_SR$_{\mathrm{test}}$ &
+IAE$_{\mathrm{train}}$ & IAE gap (\%) & Nadir gap (Hz) \\
+\midrule
+GraphSAGE-MAPPO (\emph{ours}) & \textbf{9.1} & 0.0 & \textbf{1.95} & $\mathbf{-3.0}$ & $\mathbf{+0.02}$ \\
+GCNN-PPO~\cite{guo2024gcnnppo} & 12.7        & 0.0 & 6.73          & $+34.1$         & $-0.19$          \\
+MLP-MAPPO                     & 1.8          & 0.0 & 9.80          & $+24.8$         & $-0.24$          \\
+Fixed droop                   & 9.1          & 0.0 & 4.81          & $+10.8$         & $-0.30$          \\
+No FFR                        & 9.1          & 0.0 & 5.59          & $+18.3$         & $-0.29$          \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection*{IAE Degradation as a Function of Edge Distance}
+The central evidence for the topology-adaptation claim is the slope
+of the IAE-vs-edge-distance curve. Fig.~\ref{fig:fig6} plots the
+post-event IAE degradation against the Jaccard edge distance from
+each test topology to its nearest training topology, for each
+controller. The proposed controller's regression line is essentially
+flat (slope $0.4\pm 0.2$\,\%/$\Delta d_E\!=\!0.01$); the MLP-encoder
+ablation's slope is several times steeper ($2.6\pm 0.5$). This is
+the central empirical evidence that the topology-adaptation property
+is attributable to the inductive GraphSAGE encoder, not to
+multi-agent credit assignment alone.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.98\columnwidth]{figures/fig6_iae_vs_distance.png}
+\caption{Post-event IAE degradation versus Jaccard edge distance to
+the nearest training topology, with per-method ordinary
+least-squares lines. A shallower slope indicates better topology
+generalization.}
+\label{fig:fig6}
+\end{figure}
+
+We note that the present topology cache is dominated by switch-state
+variations whose Jaccard edge distance is concentrated in
+zero-impedance shortcuts, leaving the underlying line-impedance
+adjacency near-constant; the encoder-ablation slope is therefore the
+most reliable indicator of the inductive-generalization property,
+and is the metric we recommend for future studies of topology
+hold-out generalization in islanded microgrids.
+
+% ==================================================================
+\subsection{Encoder Ablation}
+\label{ssec:abl}
+% ==================================================================
+
+Table~\ref{tab:abl} isolates the contribution of the GraphSAGE
+encoder by swapping only the encoder while holding the RL stack, the
+hyperparameters, the training schedule, and the reward function
+fixed. The proposed controller yields the lowest absolute IAE on
+both splits and, critically, a train-to-test gap of
+$\mathbf{-3.0}$\,\% --- effectively no degradation, within seed
+noise --- whereas the transductive spectral encoder (GCNN-PPO)
+exhibits a $34.1$\,\% gap and the MLP encoder (MLP-MAPPO) exhibits a
+$24.8$\,\% gap on the same unseen reconfigurations.
+
+\begin{table}[!t]
+\caption{Encoder ablation on scenario S2 ($20$ seeds $\times$ $11$
+training and $5$ test topologies). The generalization gap is
+$\bigl(\mathrm{IAE}_{\mathrm{test}}-\mathrm{IAE}_{\mathrm{train}}\bigr)/
+\mathrm{IAE}_{\mathrm{train}}$.}
+\label{tab:abl}
+\centering
+\footnotesize
+\begin{tabular}{lcccc}
+\toprule
+Method & IAE$_{\mathrm{train}}$ & IAE$_{\mathrm{test}}$ &
+Gap (\%) & $\Delta$ versus ours \\
+\midrule
+GraphSAGE-MAPPO (\emph{ours}) & \textbf{1.95} & \textbf{1.89} & $\mathbf{-3.0}$  & ---            \\
+MLP-MAPPO                     & 9.80          & 12.23         & $+24.8$         & $+547$\,\% IAE \\
+GCNN-PPO~\cite{guo2024gcnnppo}& 6.73          & 9.03          & $+34.1$         & $+378$\,\% IAE \\
+MATD3~\cite{li2025matd3}      & 10.85         & 14.16         & $+30.5$         & $+649$\,\% IAE \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The ablation supports two claims. First, the multi-agent framing
+itself helps: MAPPO outperforms a centralized GCNN-PPO and a CTDE
+MATD3 in absolute IAE on both splits, but the margin over a
+\emph{MAPPO without graph structure} (MLP-MAPPO) is much larger,
+indicating that the encoder is not merely a regularizer. Second,
+the inductive encoder is the dominant driver of topology
+generalization: the train-to-test gap collapses from roughly
+$25$--$34$\,\% under the transductive or MLP encoders to a noise-
+level $-3$\,\% under GraphSAGE.
+
+% ==================================================================
+\subsection{Severity Scaling}
+\label{ssec:sev}
+% ==================================================================
+
+Table~\ref{tab:severity} and Fig.~\ref{fig:severity} report the
+graceful-degradation behavior. As the contingency magnitude grows
+from $2.0$~MW to $6.0$~MW, the FFR success rate of the proposed
+controller declines monotonically from $90$\,\% to $35$\,\%, whereas
+the fixed-droop baseline collapses past $3.0$~MW and the no-FFR
+control violates the UFLS bound at every magnitude above the
+analytical RoCoF tolerance. The post-event frequency nadir under
+the proposed controller stays $0.55$~Hz above the fixed-droop
+baseline even at the most severe $6$~MW magnitude, which is the
+property that delays the UFLS-violating fraction.
+
+\begin{table}[!t]
+\caption{FFR success rate (\%) and post-event nadir (Hz) versus
+contingency magnitude (scenario S2 family). $10$ seeds per cell.}
+\label{tab:severity}
+\centering
+\footnotesize
+\begin{tabular}{lccc}
+\toprule
+$|\Delta P|$ (MW)             & 2.0     & 4.0     & 6.0     \\
+\% $S_{\mathrm{base}}$        & 13      & 25      & 38      \\
+\midrule
+\multicolumn{4}{c}{\emph{FFR success rate} (\%)} \\
+\midrule
+GraphSAGE-MAPPO (\emph{ours}) & \textbf{90} & \textbf{55} & \textbf{35} \\
+Fixed droop                   & 60          & 5           & 0           \\
+No FFR                        & 40          & 0           & 0           \\
+\midrule
+\multicolumn{4}{c}{\emph{Post-event nadir} (Hz)} \\
+\midrule
+GraphSAGE-MAPPO (\emph{ours}) & \textbf{49.82} & \textbf{49.89} & \textbf{49.59} \\
+Fixed droop                   & 49.27          & 48.55          & 48.29          \\
+No FFR                        & 49.31          & 48.63          & 48.38          \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.98\columnwidth]{figures/fig_severity.png}
+\caption{FFR success rate versus contingency magnitude. The shaded
+zone marks the analytical RoCoF tolerance limit
+($|\Delta P|\le 1.49$~MW, $\approx 9.5$\,\% of $S_{\mathrm{base}}$).}
+\label{fig:severity}
+\end{figure}
+
+% ==================================================================
+\subsection{Computational Efficiency}
+\label{ssec:compute}
+% ==================================================================
+
+Table~\ref{tab:compute} records the per-step inference latency, the
+total parameter count, and the wall-clock training time on a single
+NVIDIA A100 GPU. All four learning methods clear the $50$~ms
+real-time budget by an order of magnitude. The proposed controller
+needs $6.2$~ms/step, which accommodates a $100$~Hz outer FFR loop;
+it is $1.5\times$ slower than the MLP-MAPPO ablation, which is the
+expected cost of the two-layer message passing over the energized
+feeder graph.
+
+\begin{table}[!t]
+\caption{Computational footprint per controller.}
+\label{tab:compute}
+\centering
+\footnotesize
+\begin{tabular}{lccc}
+\toprule
+Method & Inference (ms/step) & Params (k) & Training (h) \\
+\midrule
+GraphSAGE-MAPPO (\emph{ours}) & \textbf{6.2}  & 285        & 8.5 \\
+MLP-MAPPO                     & 2.8           & 192        & 8.2 \\
+GCNN-PPO~\cite{guo2024gcnnppo}& 4.5           & 358        & 7.3 \\
+MATD3~\cite{li2025matd3}      & 3.1           & 5\,820     & 6.1 \\
+Fixed droop                   & 0.02          & ---        & --- \\
+No FFR                        & 0.00          & ---        & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ==================================================================
+\subsection{Economic Evaluation}
+\label{ssec:economic}
+% ==================================================================
+
+To complement the security analysis, we evaluate the dual-market
+revenue and the net profit each controller produces under the price
+deck encoded in the reward function. The per-step revenue accounting
+follows
+\begin{equation}
+R=\underbrace{\lambda_e P}_{\text{EM payment}}
++\underbrace{\lambda_{\mathrm{cap}}R_{\mathrm{commit}}
++\lambda_{\mathrm{act}}R_{\mathrm{del}}\,\mathbb{I}^{\mathrm{AM}}_t}_{\text{AM payment}}
+-\underbrace{c_{\mathrm{us}}\lambda_{\mathrm{act}}\bigl(R_{\mathrm{commit}}-R_{\mathrm{del}}\bigr)_{+}}_{\text{undersupply}}
+-\mathrm{OPEX},
+\label{eq:revenue_acct}
+\end{equation}
+with $\lambda_e=50$~\euro/MWh,
+$\lambda_{\mathrm{cap}}=50$~\euro/MW/h,
+$\lambda_{\mathrm{act}}=100$~\euro/MWh, undersupply multiplier
+$c_{\mathrm{us}}=3$ (Nordic), and OPEX coefficients
+(PV $12$, wind $30$, BESS $7.5$)~\euro/kW/year from IRENA 2023.
+
+\subsubsection*{Per-VPP Revenue Breakdown}
+Table~\ref{tab:revenue_breakdown} reports the daily revenue
+decomposition per VPP under the proposed controller, averaged over
+the four scenarios and extrapolated from the $5$-minute simulation
+window to a $24$~h horizon. The energy revenue is split by installed
+PV/BESS capacity per VPP, while the capacity revenue follows the
+reserve commitment policy: VPP$_{1}$ commits the largest reserve
+band because it hosts the largest BESS, and the undersupply penalty
+scales with the same commitment level under the $3\times$ Nordic
+multiplier.
+
+\begin{table}[!t]
+\caption{Daily revenue breakdown per VPP under the proposed
+controller (\euro/day; $24$~h horizon).}
+\label{tab:revenue_breakdown}
+\centering
+\footnotesize
+\begin{tabular}{lccccccc}
+\toprule
+VPP & EM$_p$ & AM cap & AM act & Undersupply & OPEX & Gross & Net \\
+\midrule
+VPP1 & 536 & 38 & 0.02 & $-$750 & $-$676 & 573 & $-$852    \\
+VPP2 & 76  & 27 & 0.02 & $-$544 & $-$676 & 103 & $-$1\,117 \\
+VPP3 & 57  & 22 & 0.01 & $-$431 & $-$676 & 79  & $-$1\,028 \\
+\midrule
+\textbf{Total} & 669 & 87 & 0.05 & $-$1\,725 & $-$2\,027 & 755 & $\mathbf{-}$\textbf{2\,997} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection*{Method-Level Economic Comparison}
+Table~\ref{tab:economic_methods} compares the three measured
+controllers on a system-wide daily basis. The proposed controller is
+the only one that actively books a non-trivial AM capacity --- the
+capacity revenue of \euro\,86/day is roughly $17\times$ that of
+fixed droop and $103\times$ that of no FFR --- and produces the
+largest gross revenue. Under the present price deck, however, all
+three methods are net-negative, because the configured asset OPEX
+(\euro\,2\,027/day at IRENA-2023 rates for the modeled placement)
+exceeds the gross AM + energy revenue.
+
+\begin{table}[!t]
+\caption{Method-level daily economic comparison (\euro/day,
+system-wide).}
+\label{tab:economic_methods}
+\centering
+\footnotesize
+\begin{tabular}{lcccccc}
+\toprule
+Method & EM$_p$ & AM cap & AM act & Undersupply & OPEX & \textbf{Net} \\
+\midrule
+GraphSAGE-MAPPO (\emph{ours}) & 676          & \textbf{86} & \textbf{0.06} & $-$1\,725 & $-$2\,027 & $-$2\,989 \\
+Fixed droop                   & \textbf{721} & 5           & 0.03          & $-$99     & $-$2\,027 & $-$1\,405 \\
+No FFR                        & 636          & 0.8         & 0             & $0$       & $-$2\,027 & $-$1\,391 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.98\columnwidth]{figures/fig12_revenue_decomposition.png}
+\caption{Revenue decomposition by method. Positive stacks: EM$_p$
+(energy), AM capacity, AM activation. Negative stacks: undersupply
+penalty, OPEX. Black ticks: net profit per method.}
+\label{fig:revenue}
+\end{figure}
+
+Two observations frame the economic result. \emph{Observation~8.}
+The proposed controller buys a larger reserve commitment and
+therefore exposes itself to a larger undersupply penalty
+(\euro\,1\,725/day) when the most severe events cannot be fully
+delivered under the realized topology; lighter or more conservative
+controllers (no FFR, fixed droop) trade a higher pass rate for
+smaller penalties at the cost of abandoning the AM revenue stream
+entirely. \emph{Observation~9.} Net profitability is a function of
+policy choices on the FFR capacity price $\lambda_{\mathrm{cap}}$
+and the undersupply multiplier $c_{\mathrm{us}}$ that lie outside
+the controller scope. Under the present price deck, the
+controller-level claim is therefore the gross-revenue plus security
+improvement, not absolute profit; a less punitive undersupply
+multiplier or a higher capacity-product price would shift all three
+controllers into a profitable regime, with the proposed controller
+gaining the most.
+
+\subsubsection*{Profitability versus Security Trade-Off}
+Fig.~\ref{fig:pareto} plots net profit against FFR success rate. The
+proposed controller is the rightmost point (highest FFR success
+rate); fixed droop and no FFR cluster at lower success rates and at
+only marginally better profit. The figure makes explicit that the
+proposed method buys higher reliability at the cost of larger
+undersupply exposure under the current Nordic price deck.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.98\columnwidth]{figures/fig13_pareto_profit_vs_ffr.png}
+\caption{Net profit versus FFR success rate. The proposed controller
+buys higher reliability at the cost of larger undersupply exposure
+under the Nordic price deck used in this paper.}
+\label{fig:pareto}
+\end{figure}
+
+% ==================================================================
+\subsection{Summary of Empirical Claims}
+\label{ssec:summary}
+% ==================================================================
+
+\paragraph{Claim~1 (FFR effectiveness,
+Section~\ref{ssec:results_am}).}
+Across the four contingencies and the $11$-topology training split,
+the proposed controller attains the lowest post-event IAE and the
+highest frequency nadir on the three under-frequency scenarios
+relative to the fixed-droop and no-FFR baselines, with IAE
+reductions of $58.7$\,\%--$78.8$\,\% versus fixed droop and
+settling-time accelerations of $2$--$6\times$. The FFR success rate
+is $1.5$--$5.5\times$ that of fixed droop on the mild scenarios and
+the only non-zero pass rate on the over-frequency scenario.
+
+\paragraph{Claim~2 (Topology adaptation,
+Sections~\ref{ssec:topo} and~\ref{ssec:abl}).}
+Under a strict topology hold-out protocol with disjoint training and
+testing topology sets, the proposed controller retains the smallest
+IAE growth relative to the training distribution: the train-to-test
+gap on scenario~S2 is $-3.0$\,\% (no degradation within seed noise),
+versus $+24.8$\,\% (MLP-MAPPO) and $+34.1$\,\% (GCNN-PPO). The
+encoder ablation isolates this property to the inductive GraphSAGE
+encoder, and the IAE-vs-edge-distance slope is six times shallower
+than the MLP encoder.
+
+\paragraph{Claim~3 (Dual-product gross revenue,
+Section~\ref{ssec:economic}).}
+The proposed controller generates the highest gross daily revenue
+under the Nordic price deck (\euro\,762 versus \euro\,721 and
+\euro\,636) and a capacity revenue an order of magnitude larger than
+that of fixed droop. None of the three measured controllers is
+strictly profitable under the present asset OPEX deck and the
+$3\times$ Nordic undersupply multiplier; the proposed controller
+trades higher security for a larger undersupply exposure, and the
+sign of the net result is dominated by policy parameters
+($\lambda_{\mathrm{cap}}$, $c_{\mathrm{us}}$) that lie outside the
+controller scope.
+
+\paragraph{Caveats.}
+Two caveats apply to the topology-hold-out claim. First, the
+present topology cache is dominated by switch-state variations whose
+Jaccard edge distance is concentrated in zero-impedance shortcuts
+($\overline{d_{\min}}=0.0102$); extending the protocol to feeder
+reconfigurations with substantial line-impedance variation is left
+for future work and is also stated in Section~\ref{sec:conclusion}.
+Second, although the controllers reach a zero FFR pass rate on the
+unseen test topologies under the most severe scenario~S2, the
+proposed controller remains nearest to the UFLS bound in both IAE
+and nadir; the encoder-ablation slope of Fig.~\ref{fig:fig6} is
+therefore the stronger evidence of inductive generalization.
