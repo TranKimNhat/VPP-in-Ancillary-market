@@ -543,10 +543,17 @@ class FFRTopologyEvaluator:
         topo_cache = getattr(self.env.reconfig, "_cache", [])
         n_topos = len(topo_cache)
         if n_topos >= 5:
-            # Extract edge_index from each cached topology
+            # Extract edge_index from each cached topology.
+            # Cache entries are 3-tuples (net, edge_index, open_set); legacy
+            # dict format is also supported.
             topo_edges = []
             for topo in topo_cache:
-                ei = topo.get("edge_index", np.array([[],[]])) if isinstance(topo, dict) else np.array([[],[]])
+                if isinstance(topo, dict):
+                    ei = topo.get("edge_index", np.array([[], []]))
+                elif isinstance(topo, tuple) and len(topo) >= 2:
+                    ei = topo[1]
+                else:
+                    ei = np.array([[], []])
                 topo_edges.append(np.asarray(ei))
             self.train_topologies, self.test_topologies, split_stats = compute_farthest_split(topo_edges, n_test=5)
             print(f"Farthest-point split: {len(self.train_topologies)} train, {len(self.test_topologies)} test")
@@ -1043,7 +1050,12 @@ class FFRTopologyEvaluator:
         topo_cache = getattr(self.env.reconfig, "_cache", [])
         topo_edges: list[np.ndarray] = []
         for topo in topo_cache:
-            ei = topo.get("edge_index", np.array([[], []])) if isinstance(topo, dict) else np.array([[], []])
+            if isinstance(topo, dict):
+                ei = topo.get("edge_index", np.array([[], []]))
+            elif isinstance(topo, tuple) and len(topo) >= 2:
+                ei = topo[1]
+            else:
+                ei = np.array([[], []])
             topo_edges.append(np.asarray(ei))
 
         # Distance from each test topo to its nearest train topo
