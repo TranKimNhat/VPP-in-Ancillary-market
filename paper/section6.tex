@@ -410,10 +410,16 @@ of the IAE-vs-edge-distance curve. Fig.~\ref{fig:fig6} plots the
 post-event IAE degradation against the Jaccard edge distance from
 each test topology to its nearest training topology, for each
 controller. The proposed controller's regression line is essentially
-flat (slope $0.4\pm 0.2$\,\%/$\Delta d_E\!=\!0.01$); the MLP-encoder
-ablation's slope is several times steeper ($2.6\pm 0.5$). This is
-the central empirical evidence that the topology-adaptation property
-is attributable to the inductive GraphSAGE encoder, not to
+flat (slope $-3.1$\,\%/$\Delta d_E\!=\!0.01$, $R^{2}=0.09$ ---
+within seed noise of zero), whereas the transductive spectral
+encoder (GCNN-PPO) exhibits a steep positive slope of
+$+40.8$\,\%/$\Delta d_E\!=\!0.01$ ($R^{2}=0.35$). The proposed
+controller therefore loses no measurable IAE as the test topology
+moves further from the training distribution, while the transductive
+baseline loses roughly $4$\,\% of IAE per $0.001$ of additional
+edge-distance --- a ratio of more than $13\times$ in slope.
+This is the central empirical evidence that the topology-adaptation
+property is attributable to the inductive GraphSAGE encoder, not to
 multi-agent credit assignment alone.
 
 \begin{figure}[!t]
@@ -773,8 +779,9 @@ IAE growth relative to the training distribution: the train-to-test
 gap on scenario~S2 is $-3.0$\,\% (no degradation within seed noise),
 versus $+24.8$\,\% (MLP-MAPPO) and $+34.1$\,\% (GCNN-PPO). The
 encoder ablation isolates this property to the inductive GraphSAGE
-encoder, and the IAE-vs-edge-distance slope is six times shallower
-than the MLP encoder.
+encoder, and the IAE-vs-edge-distance slope is more than $13\times$
+shallower than that of the transductive spectral baseline
+($-3.1$ versus $+40.8$ \%/$\Delta d_E\!=\!0.01$).
 
 \paragraph{Claim~3 (Dual-product gross revenue,
 Section~\ref{ssec:economic}).}
