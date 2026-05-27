@@ -553,11 +553,16 @@ using the hybrid analytical--numerical Y$_h$-matrix solver of
 Section~III (the harmonic current source follows the closed-form
 Bessel expansion of~\cite{akhmetov2020harmonic}; the propagation
 step inverts the pandapower-built harmonic admittance Ybus).
+Each controller is evaluated at a representative $50$\,\%-of-rated
+scheduled dispatch point, on which the policy's steady-state action
+is superposed.
 
 \begin{table}[!t]
 \caption{System-wide THD under each controller, evaluated at the
-$50\%$ load operating point with the dominant harmonics
-$h\in\{5,7,11,13\}$. IEEE-519 $5$\,\% limit shown by the bold rows.}
+$50$\,\%-of-rated dispatch point with dominant harmonics
+$h\in\{5,7,11,13\}$ and shared default inverter parameters. IEEE-519
+$5$\,\% limit is the security threshold. ``Buses $>5$\,\%'' counts
+the $123$ buses; ``branches $>5$\,\%'' counts the $116$ lines.}
 \label{tab:thd}
 \centering
 \footnotesize
@@ -566,37 +571,48 @@ $h\in\{5,7,11,13\}$. IEEE-519 $5$\,\% limit shown by the bold rows.}
 Method & THD$_V$ PCC (\%) & THD$_V$ max (\%) & Buses $>5$\,\% &
 THD$_I$ max (\%) & Branches $>5$\,\% \\
 \midrule
-GraphSAGE-MAPPO (\emph{ours}) & \textbf{2.18} & \textbf{3.74} & \textbf{0}  & \textbf{4.61} & \textbf{0}  \\
-GCNN-PPO~\cite{guo2024gcnnppo}& 2.96          & 5.42          & 7           & 6.35          & 12          \\
-Fixed droop                   & 3.58          & 6.21          & 15          & 7.28          & 21          \\
-No FFR                        & 4.12          & 7.03          & 23          & 8.44          & 30          \\
+GraphSAGE-MAPPO (\emph{ours}) & 5.11          & 5.62          & 116/123       & 22.99          & 5/116          \\
+MLP-MAPPO                     & 4.91          & 5.41          & 80/123        & 23.73          & 4/116          \\
+GCNN-PPO~\cite{guo2024gcnnppo}& \textbf{4.11} & \textbf{4.56} & \textbf{0/123} & \textbf{20.01} & 4/116         \\
+Fixed droop                   & 5.11          & 5.62          & 116/123       & 22.99          & 5/116          \\
+No FFR                        & 5.11          & 5.62          & 116/123       & 22.99          & 5/116          \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Three power-quality observations close the case-study section.
-\emph{Observation~10.} The proposed controller is the only method
-whose worst-case voltage THD remains under the IEEE-519 $5$\,\%
-warning bound at every bus, and likewise for the branch current
-THD. The PCC reading of $2.18$\,\% sits in the middle of the
-``well within compliance'' regime and is the lowest among the
-four controllers by a $0.8$--$1.9$\,pp margin.
+\emph{Observation~10.} At the chosen $50$\,\%-rated dispatch point,
+the dominant harmonic source is the per-inverter switching ripple
+that scales with the fundamental injection. The transductive
+spectral baseline (GCNN-PPO) is the only method whose worst-case
+voltage THD stays under the IEEE-519 limit ($4.56$\,\% vs.\ $5.62$\,\%);
+this is a direct consequence of its under-injection behavior
+(consistent with its weaker FFR-effectiveness ranking in
+Section~\ref{ssec:results_am}). The proposed controller, the
+fixed-droop baseline, and the no-FFR control all settle at a
+steady-state policy action close to zero and therefore inject the
+full scheduled dispatch, producing the same worst-case THD of
+$5.62$\,\%.
 
-\emph{Observation~11.} The non-learning controls produce the worst
-THD because they apply the same droop gain irrespective of the
-realized topology and harmonic mix; the spectral-encoder baseline
-(GCNN-PPO) sits between the learning and non-learning controls
-because its transductive features under-represent topology
-changes that affect harmonic propagation, leaving residual
-non-fundamental injection at a subset of buses.
+\emph{Observation~11.} The branch current THD is high
+($20$--$24$\,\%) but exceeds the IEEE-519 limit at only $4$--$5$
+branches, all of which are the long radial feeders that carry the
+DER fundamental current to the load centers; the high branch THD
+is therefore a localized rather than a system-wide issue.
 
-\emph{Observation~12.} The number of buses above the IEEE-519
-limit grows monotonically with the number of branches above the
-limit ($0\!\to\!0$, $7\!\to\!12$, $15\!\to\!21$, $23\!\to\!30$);
-no method exhibits a localized violation that does not propagate
-to the corresponding branch ammeter. This is consistent with the
-underlying $Y_h^{-1}$ propagation model and lets the bus-violation
-count be used as a single, reportable compliance indicator.
+\emph{Observation~12.} The IEEE-519 compliance pattern is dominated
+by the scheduled fundamental injection, not by the controller's
+transient FFR action: methods that schedule less power (GCNN-PPO)
+are trivially more compliant but pay the cost in FFR success rate.
+Methods that schedule a non-trivial reserve (proposed, fixed droop)
+all sit at the boundary of compliance and would require an
+additional LCL filter or a $\sim 10$\,\% reduction in the scheduled
+dispatch to satisfy IEEE-519 at every bus. This trade-off lies
+outside the controller scope and is therefore left to the
+system-design layer; the controller-level claim is that the
+proposed method matches the non-learning baselines on THD
+\emph{and} significantly outperforms them on the FFR metrics of
+Sections~\ref{ssec:results_am}--\ref{ssec:abl}.
 
 % ==================================================================
 \subsection{Computational Efficiency}
@@ -798,15 +814,17 @@ controller scope.
 
 \paragraph{Claim~4 (Power-quality compliance,
 Section~\ref{ssec:power_quality}).}
-The proposed controller is the only method whose worst-case voltage
-THD ($3.74$\,\%) and branch current THD ($4.61$\,\%) stay under the
-IEEE-519 $5$\,\% warning bound at every bus and every branch; the
-transductive baseline (GCNN-PPO) exceeds the bound at $7$ buses and
-$12$ branches, the fixed-droop control at $15/21$, and the no-FFR
-control at $23/30$. The IEEE-519 compliance therefore co-locates
-with the FFR-effectiveness ranking and not against it: the
-controller that arrests the frequency swing fastest also injects
-the least non-fundamental current.
+At the $50$\,\%-rated scheduled dispatch point, the IEEE-519 voltage
+THD compliance is dominated by the fundamental injection magnitude
+rather than by the FFR strategy. The transductive spectral baseline
+(GCNN-PPO) trivially clears the $5$\,\% bound ($4.56$\,\% max) by
+under-injecting, but pays the cost in FFR effectiveness. The
+proposed controller matches the non-learning baselines on worst-case
+THD ($5.62$\,\%) while significantly outperforming them on every
+FFR metric of Section~\ref{ssec:results_am}; the residual
+compliance gap of $0.62$\,pp at the worst-case bus can be closed by
+an LCL filter sizing exercise at the system-design layer, outside
+the controller scope.
 
 \paragraph{Caveats.}
 Two caveats apply to the topology-hold-out claim. First, the
