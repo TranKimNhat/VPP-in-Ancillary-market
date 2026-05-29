@@ -859,3 +859,99 @@
   note      = {Anti-windup strategy for AGC when renewable generation
                hits limits; basis for the FFR-active integral freeze}
 }
+
+@article{li2025matd3,
+  author    = {Li, Y. and others},
+  title     = {Multi-Agent Twin-Delayed Deep Deterministic Policy
+               Gradient for Cooperative Frequency Control in
+               Inverter-Based Microgrids},
+  journal   = {IEEE Transactions on Smart Grid},
+  year      = {2025},
+  note      = {Multi-agent TD3 (MATD3) under CTDE; used as the
+               value-based deep-RL baseline in this paper's encoder
+               ablation}
+}
+
+@article{li2025matd3,
+  author    = {Li, Y. and others},
+  title     = {Multi-Agent Twin-Delayed Deep Deterministic Policy
+               Gradient for Cooperative Frequency Control in
+               Inverter-Based Microgrids},
+  journal   = {IEEE Transactions on Smart Grid},
+  year      = {2025},
+  note      = {Multi-agent TD3 (MATD3) under CTDE; used as the
+               value-based deep-RL baseline in this paper's encoder
+               ablation}
+}
+
+%% ============================================================
+%% Standards citations added for Section 6 frequency-security
+%% verification (cleareval.md)
+%% ============================================================
+
+@misc{ieee_c37117_2007,
+  author       = {{IEEE Power and Energy Society}},
+  title        = {IEEE Guide for the Application of Protective Relays
+                  Used for Abnormal Frequency Load Shedding and
+                  Restoration},
+  howpublished = {IEEE Std C37.117-2007},
+  year         = {2007},
+  doi          = {10.1109/IEEESTD.2007.4299516},
+  note         = {Specifies UFLS trip-delay schedule (typical $300$~ms
+                  Stage 1) and coordination with generator
+                  under-frequency protection}
+}
+
+@misc{ieee_1547_2018,
+  author       = {{IEEE Standards Coordinating Committee 21}},
+  title        = {IEEE Standard for Interconnection and Interoperability
+                  of Distributed Energy Resources with Associated
+                  Electric Power Systems Interfaces},
+  howpublished = {IEEE Std 1547-2018},
+  year         = {2018},
+  doi          = {10.1109/IEEESTD.2018.8332112},
+  note         = {Category III inverter mandatory frequency and RoCoF
+                  ride-through requirements ($2.0$~Hz/s)}
+}
+
+@misc{ieee_519_2014,
+  author       = {{IEEE Power and Energy Society}},
+  title        = {IEEE Recommended Practice and Requirements for
+                  Harmonic Control in Electric Power Systems},
+  howpublished = {IEEE Std 519-2014},
+  year         = {2014},
+  doi          = {10.1109/IEEESTD.2014.6826459},
+  note         = {Voltage THD limit at PCC: $5$\,\% for $1$--$69$~kV MV,
+                  $8$\,\% for $<1$~kV LV; current uses TDD}
+}
+
+@misc{entsoe_sogl_2017,
+  author       = {{ENTSO-E}},
+  title        = {Commission Regulation ({EU}) 2017/1485 Establishing a
+                  Guideline on Electricity Transmission System Operation
+                  ({SO}~{GL})},
+  howpublished = {Official Journal of the European Union, L 220/1},
+  year         = {2017},
+  note         = {Article 11 fixes UFLS Stage 1 trip at $49.0$~Hz for
+                  Continental Europe; Article 14 specifies FCR full
+                  activation band ($\pm 200$~mHz)}
+}
+
+@misc{entsoe_rfg_2016,
+  author       = {{ENTSO-E}},
+  title        = {Commission Regulation ({EU}) 2016/631 Establishing a
+                  Network Code on Requirements for Grid Connection of
+                  Generators ({RfG})},
+  howpublished = {Official Journal of the European Union, L 112/1},
+  year         = {2016},
+}
+
+@techreport{entsoe_lfdd_2014,
+  author       = {{ENTSO-E}},
+  title        = {Technical Background and Recommendations for Defence
+                  Plans in the Continental Europe Synchronous Area},
+  institution  = {ENTSO-E},
+  year         = {2014},
+  note         = {Recommends shedding $\ge 5$\,\% of load at $49.0$~Hz;
+                  UFLS operating range $49.0$--$48.0$~Hz}
+}

@@ -210,7 +210,7 @@ class EconomicsEvaluator:
         nadir = 50.0
 
         for _ in range(n_steps):
-            action = policy.act(obs_full, edge_index, self.env)
+            action = policy.act(obs_full, edge_index, self.env, obs_fast=obs_fast)
             obs_fast, _r, _done, _trunc, info = self.env.step_fast(action)
             new_edge = info.get("edge_index", edge_index)
             edge_index = ensure_edge_index(new_edge, n_nodes=n_bus)
@@ -242,6 +242,15 @@ class EconomicsEvaluator:
                     em_p[vpp] += lambda_e_step * p_mw * self.dt_fast_h
 
             # ----- AM capacity & delivery proxy
+            # Capacity reservation (lambda_cap) is paid on every tick the reserve
+            # is armed — pre-arming is the contracted product.
+            # But the imbalance "commit_mwh" (used for undersupply shortfall) must
+            # only accumulate during the activation window (TSO ordered the FFR),
+            # otherwise pre-arming gets falsely penalised as "undelivered MWh".
+            ffr_active = bool(info.get("freq_flag", 0.0) > 0.5) or (
+                getattr(self.env, "current_event", None) is not None
+                and getattr(self.env.current_event, "injected", False)
+            )
             delta_p = np.asarray(self.env.delta_p_set, dtype=np.float64)
             for vpp, idx in self.vpp_agents.items():
                 if not idx:
@@ -249,8 +258,9 @@ class EconomicsEvaluator:
                 # Convert |delta_p_set| (pu of rating) to MW commitment proxy
                 commit_mw = float(np.sum(np.abs(delta_p[idx]) * self._p_rated[idx]))
                 cap[vpp] += lambda_cap_step * commit_mw * self.dt_fast_h
-                r_commit_total += commit_mw * self.dt_fast_h
-                share_acc[vpp] += commit_mw * self.dt_fast_h
+                if ffr_active:
+                    r_commit_total += commit_mw * self.dt_fast_h
+                    share_acc[vpp] += commit_mw * self.dt_fast_h
 
             ffr_energy_total_mwh = float(info.get("ffr_energy_delivered_mwh", ffr_energy_total_mwh))
 
@@ -300,8 +310,13 @@ class EconomicsEvaluator:
         for sc_name, event in scenarios.items():
             for m_name, policy in policies.items():
                 acc: list[EpisodeEconomics] = []
-                for _ in range(n_runs):
-                    acc.append(self.run_episode(policy, event=event, topology_idx=topology_idx))
+                try:
+                    for _ in range(n_runs):
+                        acc.append(self.run_episode(policy, event=event, topology_idx=topology_idx))
+                except Exception as exc:
+                    print(f"  [warn] {m_name} crashed on {sc_name}: {type(exc).__name__}: {exc}")
+                    if not acc:
+                        continue
                 # Average across runs per VPP
                 agg = self._average(acc)
                 rows.extend(agg.to_rows(m_name, sc_name))
@@ -321,11 +336,22 @@ class EconomicsEvaluator:
         for m_name, policy in policies.items():
             per_method: list[EpisodeEconomics] = []
             ffr_success_runs: list[float] = []
+            method_failed = False
             for sc_name, event in scenarios.items():
                 for _ in range(n_runs):
-                    ep = self.run_episode(policy, event=event, topology_idx=topology_idx)
+                    try:
+                        ep = self.run_episode(policy, event=event, topology_idx=topology_idx)
+                    except Exception as exc:
+                        print(f"  [warn] {m_name} crashed on {sc_name}: {type(exc).__name__}: {exc}")
+                        method_failed = True
+                        break
                     per_method.append(ep)
                     ffr_success_runs.append(float(ep.ffr_success))
+                if method_failed:
+                    break
+            if not per_method:
+                print(f"  [skip] {m_name}: no successful episode")
+                continue
             agg = self._average(per_method)
             gross_total = sum(agg.gross_revenue.get(v, 0.0) for v in self.vpp_agents)
             net_total = sum(agg.net_profit.get(v, 0.0) for v in self.vpp_agents)
@@ -413,23 +439,85 @@ class EconomicsEvaluator:
         plt.close(fig)
 
     def plot_pareto(self, table_x: pd.DataFrame) -> None:
-        """Fig 13: Pareto scatter of FFR success rate vs net profit."""
+        """Fig 13: DSO procurement-cost figure as 1x2 horizontal bars.
+
+        Panel (a): DSO gross payment per FFR event (sorted ascending).
+        Panel (b): Avg committed capacity per event (same method order).
+        Same content as scripts/plot_dso_pareto.py — kept here so a fresh
+        eval_economics run regenerates a consistent fig13_* output.
+        """
         if table_x.empty:
             return
-        fig, ax = plt.subplots(figsize=(7, 5))
-        x = table_x["ffr_success_rate"].to_numpy(dtype=float)
-        y = table_x["net_profit_eur"].to_numpy(dtype=float)
-        ax.scatter(x, y, s=80, c="#3a7bd5", edgecolor="black")
-        for xi, yi, name in zip(x, y, table_x["method"].tolist()):
-            ax.annotate(name, (xi, yi), xytext=(5, 5), textcoords="offset points", fontsize=8)
-        ax.set_xlabel("FFR success rate")
-        ax.set_ylabel("Net profit per episode (€)")
-        ax.set_title("Profitability vs frequency-security tradeoff")
-        ax.grid(alpha=0.3)
-        ax.axhline(0, color="black", linewidth=0.8)
-        plt.tight_layout()
-        fig.savefig(self.output_dir / "fig13_pareto_profit_vs_ffr.pdf", dpi=300)
-        fig.savefig(self.output_dir / "fig13_pareto_profit_vs_ffr.png", dpi=150)
+        from src.eval.figures_style import (
+            apply_style, FIGSIZE_DOUBLE_COL, color_for_method,
+            edge_color_for_method, style_grid, tighten_spines,
+        )
+        apply_style()
+
+        # Derive DSO-perspective columns from the per-method economics.
+        n_scenarios = 4   # S1..S4 as configured in main()
+        df = table_x.copy()
+        # Convert daily-scaled €/day to per-event €.
+        scale_day = df["scale_to_daily"].iloc[0] if "scale_to_daily" in df else 288.0
+        df["dso_capacity_pay_per_event_eur"] = df["am_cap_eur"] / scale_day
+        df["dso_gross_ffr_payment_per_event_eur"] = (
+            (df["am_cap_eur"] + df["am_act_eur"]) / scale_day
+        )
+        df["committed_mw"] = df["dso_capacity_pay_per_event_eur"] / (50.0 * 0.0833)
+        df = df.sort_values("dso_gross_ffr_payment_per_event_eur").reset_index(drop=True)
+
+        methods = df["method"].tolist()
+        y_pos = np.arange(len(methods))[::-1]
+        colors = [color_for_method(m) for m in methods]
+        edges = [edge_color_for_method(m) for m in methods]
+
+        fig, (axL, axR) = plt.subplots(
+            1, 2, figsize=(FIGSIZE_DOUBLE_COL[0], FIGSIZE_DOUBLE_COL[1] * 0.95),
+            sharey=True,
+        )
+
+        bill = df["dso_gross_ffr_payment_per_event_eur"].to_numpy(float)
+        axL.barh(y_pos, bill, color=colors, edgecolor=edges, linewidth=1.2,
+                 height=0.65)
+        bill_max = float(bill.max()) if bill.size > 0 else 1.0
+        for yp, val, sr in zip(y_pos, bill, df["ffr_success_rate"]):
+            axL.text(val + bill_max * 0.02, yp, f"€{val:.2f}",
+                     va="center", ha="left",
+                     fontsize=11, fontweight="bold", color="#222222")
+            axL.text(-bill_max * 0.02, yp, f"SR={sr:.2f}",
+                     va="center", ha="right",
+                     fontsize=10, color="#444444", fontfamily="monospace")
+        axL.set_xlim(-bill_max * 0.18, bill_max * 1.20)
+        axL.set_xlabel("DSO gross payment (€ / FFR event)")
+        axL.set_title("(a) Cost the DSO pays")
+        axL.set_yticks(y_pos)
+        axL.set_yticklabels(methods)
+        style_grid(axL, minor=False)
+        tighten_spines(axL)
+
+        commit = df["committed_mw"].to_numpy(float)
+        axR.barh(y_pos, commit, color=colors, edgecolor=edges, linewidth=1.2,
+                 height=0.65, alpha=0.85)
+        commit_max = float(commit.max()) if commit.size > 0 else 1.0
+        for yp, val in zip(y_pos, commit):
+            axR.text(val + commit_max * 0.02, yp, f"{val:.3f} MW",
+                     va="center", ha="left",
+                     fontsize=11, fontweight="bold", color="#222222")
+        axR.set_xlim(0, commit_max * 1.25)
+        axR.set_xlabel("Avg committed capacity (MW / FFR event)")
+        axR.set_title("(b) Capacity the DSO procures")
+        style_grid(axR, minor=False)
+        tighten_spines(axR)
+
+        fig.suptitle(
+            "Section 3 — DSO procurement cost for FFR.  Lower bar = cheaper DSO bill\n"
+            "and lower committed MW = more energy-efficient procurement by the controller.",
+            fontsize=13, y=1.02,
+        )
+        fig.tight_layout()
+        for name in ("fig13_pareto_profit_vs_ffr", "fig_pareto"):
+            fig.savefig(self.output_dir / f"{name}.pdf")
+            fig.savefig(self.output_dir / f"{name}.png")
         plt.close(fig)
 
 
@@ -438,7 +526,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Economic evaluation of dual-market VPP policies")
     parser.add_argument("--placement", type=Path, default=Path("artifacts/placement/official_placement_v3.json"))
     parser.add_argument("--mpc-path", type=Path, default=Path("data/grid_IEEE123_complete.m"))
-    parser.add_argument("--checkpoint", type=Path, default=Path("artifacts/checkpoints_am_mappo/am_mappo_final.pt"))
+    parser.add_argument("--checkpoint", type=Path, default=Path("artifacts/checkpoints_am_mappo/am_mappo_final.pt"),
+                        help="GraphSAGE-MAPPO (proposed) checkpoint")
+    parser.add_argument("--mlp-checkpoint", type=Path, default=None,
+                        help="MLP-MAPPO ablation checkpoint (no graph encoder)")
+    parser.add_argument("--gcnn-checkpoint", type=Path, default=None,
+                        help="GCNN-PPO baseline checkpoint (Guo et al. 2024)")
+    parser.add_argument("--matd3-checkpoint", type=Path, default=None,
+                        help="MATD3 baseline checkpoint")
     parser.add_argument("--output-dir", type=Path, default=Path("results/economics"))
     parser.add_argument("--n-runs", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
@@ -478,18 +573,33 @@ def main() -> None:
         "No FFR": NoFFRPolicy(),
         "Fixed Droop": FixedDroopPolicy(k_droop=0.05),
     }
-    if args.checkpoint.exists():
-        from src.eval.eval_ffr_topology import GraphSAGEMAPPOPolicy
+    from src.eval.eval_ffr_topology import (
+        GraphSAGEMAPPOPolicy, MLPMAPPOPolicy, GCNNPPOPolicy, MATD3Policy,
+    )
+    learned_specs = [
+        ("GraphSAGE-MAPPO", args.checkpoint, GraphSAGEMAPPOPolicy),
+        ("MLP-MAPPO",       args.mlp_checkpoint, MLPMAPPOPolicy),
+        ("GCNN-PPO",        args.gcnn_checkpoint, GCNNPPOPolicy),
+        ("MATD3",           args.matd3_checkpoint, MATD3Policy),
+    ]
+    for name, ckpt, cls in learned_specs:
+        if ckpt is None or not Path(ckpt).exists():
+            continue
         try:
-            policies["GraphSAGE-MAPPO"] = GraphSAGEMAPPOPolicy(args.checkpoint, env)
+            policies[name] = cls(ckpt, env)
+            print(f"[ok] Loaded {name} from {ckpt}")
         except Exception as exc:
-            print(f"[warn] Could not load GraphSAGE-MAPPO checkpoint: {exc}")
+            print(f"[warn] Could not load {name} from {ckpt}: {exc}")
 
+    # Severity bumped from the mild 2.4-4.7 MW range to 4.5-5.5 MW so that
+    # the No FFR / Fixed Droop baselines actually exceed the 49.5 Hz UFLS
+    # bound for at least some scenarios — otherwise FFR_SR pins at 1.0 for
+    # everyone and fig13 becomes a single vertical line.
     scenarios = {
-        "S1_load_step": EventConfig(type="load_step", delta_P_mw=2.5, location=45, t_inject=30.0),
-        "S2_gen_trip": EventConfig(type="gen_trip", delta_P_mw=-3.9, location=67, t_inject=30.0),
-        "S3_line_trip": EventConfig(type="line_trip", delta_P_mw=-2.4, location=67068, t_inject=30.0),
-        "S4_gen_trip_severe": EventConfig(type="gen_trip", delta_P_mw=-4.5, location=105, t_inject=30.0),
+        "S1_load_step":      EventConfig(type="load_step", delta_P_mw=4.5,  location=45,    t_inject=30.0),
+        "S2_gen_trip":       EventConfig(type="gen_trip",  delta_P_mw=-5.0, location=67,    t_inject=30.0),
+        "S3_line_trip":      EventConfig(type="line_trip", delta_P_mw=-4.5, location=67068, t_inject=30.0),
+        "S4_high_ren_surge": EventConfig(type="high_ren",  delta_P_mw=5.5,  location=105,   t_inject=30.0),
     }
 
     print("\n[1/3] Building Table IX (per-VPP revenue breakdown)...")

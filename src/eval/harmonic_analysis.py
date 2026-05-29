@@ -7,6 +7,19 @@ using harmonic admittance matrix from pandapower network model.
 Method: Hybrid analytical + numerical Y_h matrix
 - Harmonic current source: closed-form (Akhhmetov 2020)
 - Harmonic propagation: Y_h inverse solve (pandapower Ybus)
+
+IEEE Std 519-2014 reference (compliance thresholds enforced by callers):
+  Voltage THD limit at PCC (Table 1):
+    - LV (< 1 kV):           8.0%
+    - MV (1 kV – 69 kV):     5.0%   <-- applies to this 4.16 kV microgrid
+    - HV (69 kV – 161 kV):   2.5%
+    - EHV (> 161 kV):        1.5%
+  Individual voltage harmonic (MV): 3.0%
+
+NOTE on current side: IEEE 519-2014 §5.2 uses Total Demand Distortion
+(TDD = sqrt(Σ I_h²) / I_L, referenced to max demand current I_L), not
+THD_I (referenced to fundamental I_1). This module currently reports
+THD_I; the strict-TDD migration is tracked in cleareval.md §2.4.
 """
 
 from __future__ import annotations
