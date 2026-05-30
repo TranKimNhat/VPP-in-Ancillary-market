@@ -202,37 +202,61 @@ class AMRewardConfig:
     deadband (30 mHz); it suppresses nuisance reward signals from
     measurement noise while preserving sensitivity to genuine events.
     """
-    # Frequency / safety terms (re-balanced for dual-action)
-    w_delta_f: float = 0.25
-    w_rocof: float = 0.12
-    w_violation: float = 0.22
-    w_nadir: float = 0.12
+    # Frequency / safety terms (P0 fix Bug 7: rescaled for actual event magnitudes)
+    # Worst-case safety penalty now ~-2.0 (was ~-0.71) so signal dominates noise
+    # post RewardNormalizer. Weights bumped 2-3× to make safety the primary
+    # learning signal vs the do-nothing equilibrium.
+    # Approach-C: the VPP fleet is grid-FOLLOWING (GFL). Peak RoCoF after a
+    # contingency is ΔP/(2·H_backbone), set by the 6-unit grid-FORMING backbone
+    # (G1 VSG inertia), and is provably method-invariant in eval — no GFL power
+    # action can change the t=0 RoCoF spike. Penalizing/rewarding the policy for
+    # RoCoF therefore feeds it a non-actionable gradient (pure noise). RoCoF is
+    # now treated as a backbone-governed constraint, NOT a VPP objective:
+    # w_rocof=0 and the FFR bonus uses only the frequency-deviation margin.
+    # The freed weight stays on Δf / nadir, which the GFL fleet genuinely
+    # controls (nadir / IAE / settling). See Zhou et al. 2021 (ISGT-Europe):
+    # GFL droop achieves good nadir but cannot improve RoCoF.
+    w_delta_f: float = 0.9
+    w_rocof: float = 0.0      # Approach-C: RoCoF not VPP-actionable (backbone-governed)
+    w_violation: float = 0.4
+    w_nadir: float = 0.6
     w_effort: float = 0.05
     w_tracking: float = 0.0   # disabled in dual mode: K_droop handles transient automatically
+    # P0 fix Bug 7 + Approach-C: positive FFR bonus for staying inside the
+    # under/over-frequency envelope (continuous shaping toward compliance).
+    # RoCoF margin removed from the bonus — only the frequency-deviation margin
+    # remains, matching what the GFL fleet can actually influence.
+    w_ffr_bonus: float = 0.4
     # New dual-product terms (revenue + storage health + gain stability)
     w_soc_pen: float = 0.08
-    w_market: float = 0.10
+    w_market: float = 0.05   # P0: reduced so market reward doesn't fight safety signal
     w_commit: float = 0.06
 
-    # Frequency references (ENTSO-E compliant)
+    # Frequency references (P0 fix Bug 7: match observed event magnitudes).
+    # Prior /0.5 saturated the penalty gradient for any |Δf| > 0.5 Hz, but eval
+    # shows nadir down to -2.5 Hz under gen_trip — policy had zero gradient in
+    # the regime where events actually occur.
     delta_f_target: float = 0.0
     delta_f_deadband: float = 0.02
-    delta_f_ref: float = 0.5
+    delta_f_ref: float = 3.0
     rocof_target: float = 0.0
     rocof_deadband: float = 0.1
-    rocof_ref: float = 1.0
+    rocof_ref: float = 3.5
 
     # Safety thresholds (ENTSO-E UFLS standards)
     f_limit: float = 0.5
     nadir_threshold: float = 49.5
-    nadir_ref: float = 0.5
+    nadir_ref: float = 2.5
+    # IEEE 1547-III Category III ride-through thresholds (used by w_ffr_bonus).
+    rocof_limit: float = 2.0   # Hz/s
 
     # Control effort and droop-like tracking references
     action_ref_scale: float = 0.75
-    # Smoothness coefficient bumped from 0.5 → 2.0 so |Δaction| dominates the
-    # effort term and the policy avoids step-like actuator commands that
-    # otherwise spike |df/dt| above the IEEE-1547 Cat-III 2 Hz/s eval bound.
-    effort_smoothness_coef: float = 2.0
+    # P2 fix Bug 6: smoothness coef lowered from 2.0 → 0.3. The 2.0 value was
+    # a band-aid for RoCoF spikes that were actually caused by the LTI input
+    # discretization bug (fixed in commit a5142fb), not by policy chattering.
+    # With env fixed, 2.0 over-penalizes legitimate fast FFR response.
+    effort_smoothness_coef: float = 0.3
     tracking_delta_f_ref: float = 0.5
     tracking_rocof_ref: float = 0.2
     tracking_k_delta_f: float = 0.5
@@ -286,9 +310,12 @@ def compute_am_reward(
     e_rocof = float(np.clip(max(rocof_abs - cfg.rocof_deadband, 0.0) / cfg.rocof_ref, 0.0, 1.0))
     r_rocof = -cfg.w_rocof * e_rocof
 
-    # Symmetric violation penalty (|Δf| > f_limit triggers in either direction).
-    in_violation = delta_f_abs > cfg.f_limit
-    e_violation = 1.0 if in_violation else 0.0
+    # P0 fix Bug 7: continuous violation penalty instead of binary step.
+    # Prior binary form gave no gradient on severity (|Δf|=0.6 same as |Δf|=3.0);
+    # continuous form lets the policy learn that being barely-over is preferable
+    # to way-over even before reaching full compliance.
+    excess_over_limit = max(delta_f_abs - cfg.f_limit, 0.0)
+    e_violation = float(np.clip(excess_over_limit / cfg.f_limit, 0.0, 2.0))
     r_violation = -cfg.w_violation * e_violation
 
     # Normalized control effort penalty.
@@ -329,6 +356,18 @@ def compute_am_reward(
     over_excursion = max(freq_hz - zenith_threshold, 0.0)
     e_nadir = float(np.clip((under_excursion + over_excursion) / cfg.nadir_ref, 0.0, 1.0))
     r_nadir = -cfg.w_nadir * e_nadir
+
+    # P0 fix Bug 7 + Approach-C: positive FFR-compliance bonus (continuous shaping).
+    # Awards the policy proportionally to how deep inside the under/over-frequency
+    # envelope it sits: full bonus when |Δf|≈0, zero at the ride-through limit,
+    # no further reward below 0. RoCoF margin intentionally excluded — peak RoCoF
+    # is backbone-governed and not influenced by GFL VPP power actions, so a RoCoF
+    # bonus term would be a non-actionable (noise) gradient for this policy.
+    if cfg.w_ffr_bonus > 0.0:
+        b_delta_f = float(np.clip(1.0 - delta_f_abs / cfg.f_limit, 0.0, 1.0))
+        r_ffr_bonus = cfg.w_ffr_bonus * b_delta_f
+    else:
+        r_ffr_bonus = 0.0
 
     # ── Dual-product terms (only active when corresponding inputs provided) ─────────
     # SoC band penalty: quadratic outside [soc_band_lo, soc_band_hi].
@@ -378,10 +417,10 @@ def compute_am_reward(
     else:
         r_commit = 0.0
 
-    # Total reward
+    # Total reward (includes positive FFR bonus from P0 Bug 7 fix)
     reward = (
         r_delta_f + r_rocof + r_violation + r_effort + r_tracking + r_nadir
-        + r_soc_pen + r_market + r_commit
+        + r_soc_pen + r_market + r_commit + r_ffr_bonus
     )
 
     info = {
@@ -395,6 +434,7 @@ def compute_am_reward(
         "r_soc_pen": r_soc_pen,
         "r_market": r_market,
         "r_commit": r_commit,
+        "r_ffr_bonus": r_ffr_bonus,
     }
 
     return float(reward), info
@@ -1224,8 +1264,12 @@ def train_am_mappo(
         for _t in range(steps_per_episode):
             policy_actions, log_probs, values, _ = agent.act(obs_norm, edge_index)
             # policy_actions shape: (n_agents, action_dim). For dual mode, dim 0=a_P, dim 1=a_K.
-            # Keep historical sign flip for a_P so reward's action_ref (positive when Δf<0) aligns.
-            # a_K maps to K_droop bounds [K_min, K_max] and is NOT flipped.
+            # P3 NOTE: the -a_P sign flip is the action->power convention shared by
+            # BOTH training (here) and evaluation (GraphSAGEMAPPOPolicy.act). It must
+            # stay identical on both sides. A prior attempt to remove it from training
+            # only created a train/eval mismatch that inverted the policy's frequency
+            # response at eval time (under-frequency events got near-zero / wrong-sign
+            # support). Kept consistent: flip in both. a_K (dim 1) is NOT flipped.
             action_dim = policy_actions.shape[1] if policy_actions.ndim > 1 else 1
             ctrl_p = -policy_actions[:, 0] if action_dim >= 1 else -policy_actions.flatten()
             ctrl_k = policy_actions[:, 1] if action_dim >= 2 else None

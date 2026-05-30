@@ -180,6 +180,10 @@ class MicrogridEnvDual(gym.Env):
 
         self.event_injector = EventInjector(seed=seed)
         self.freq_dyn = FrequencyDynamics()
+        # Time-step constants (must precede LTI init since dt_fast is passed in)
+        self.dt_fast_s = 1.0
+        self.dt_ode_s = 0.01
+        self.n_ode_substeps = max(1, int(round(self.dt_fast_s / self.dt_ode_s)))
         # LTI topology-aware frequency dynamics (plan Task A)
         self.use_lti_freq = True  # Toggle via config; True = new model
         try:
@@ -230,9 +234,6 @@ class MicrogridEnvDual(gym.Env):
         self.edge_index = np.zeros((2, 0), dtype=np.int64)
         self.current_open_set: set[int] = set()
         self.event_delta_p_pu = 0.0
-        self.dt_fast_s = 1.0
-        self.dt_ode_s = 0.01
-        self.n_ode_substeps = max(1, int(round(self.dt_fast_s / self.dt_ode_s)))
         self._topology_just_changed = False
 
         # GFM bus mapping for topology-aware frequency dynamics
@@ -623,20 +624,31 @@ class MicrogridEnvDual(gym.Env):
         p_net = np.nan_to_num(self._agent_p_net(), nan=0.0, posinf=1e3, neginf=-1e3)
         obs = np.zeros((self.n_agents, 7), dtype=np.float32)
 
+        # P0 fix (Bug 1): rescale Δf/RoCoF refs to match observed event magnitudes
+        # (nadir up to ~3 Hz, RoCoF up to ~3.5 Hz/s under severe contingencies).
+        # Prior /0.5 and /1.0 saturated obs for any meaningful event, making
+        # policy blind to severity above those thresholds.
+        OBS_DELTA_F_REF = 3.0   # Hz
+        OBS_ROCOF_REF = 3.5     # Hz/s
         if use_per_bus and hasattr(st, 'delta_f_per_bus'):
             # Per-bus frequency: each agent gets its local GFM's Δω
             for i in range(self.n_agents):
                 agent_pp_idx = self._agent_specs[i].get("pp_bus_idx", 0)
                 gfm_idx = self.freq_dyn_lti.get_gfm_bus_idx(agent_pp_idx)
-                obs[i, 0] = np.float32(np.clip(st.delta_f_per_bus[gfm_idx] / 0.5, -1.0, 1.0))
-                obs[i, 1] = np.float32(np.clip(st.rocof_per_bus[gfm_idx] / 1.0, -1.0, 1.0))
+                obs[i, 0] = np.float32(np.clip(st.delta_f_per_bus[gfm_idx] / OBS_DELTA_F_REF, -1.0, 1.0))
+                obs[i, 1] = np.float32(np.clip(st.rocof_per_bus[gfm_idx] / OBS_ROCOF_REF, -1.0, 1.0))
         else:
             # Legacy scalar broadcast
-            obs[:, 0] = np.float32(np.clip(float(st.delta_f_hz) / 0.5, -1.0, 1.0))
-            obs[:, 1] = np.float32(np.clip(float(st.rocof_hz_s) / 1.0, -1.0, 1.0))
+            obs[:, 0] = np.float32(np.clip(float(st.delta_f_hz) / OBS_DELTA_F_REF, -1.0, 1.0))
+            obs[:, 1] = np.float32(np.clip(float(st.rocof_hz_s) / OBS_ROCOF_REF, -1.0, 1.0))
 
-        obs[:, 2] = np.clip(p_net, -1e3, 1e3).astype(np.float32)
-        obs[:, 4] = np.clip(self._zone_lmp_vec, 0.0, 1e3).astype(np.float32)
+        # P2 fix (Bug 5): normalize p_net per-agent by P_rated (was clipped raw MW
+        # spanning [-1000, 1000] which dominated other [-1, 1] channels before
+        # RunningNormalizer catches up).
+        p_rated_safe = np.maximum(self._agent_p_rated.astype(np.float32), 0.1)
+        obs[:, 2] = np.clip(p_net.astype(np.float32) / p_rated_safe, -2.0, 2.0)
+        # P2 fix (Bug 5): scale zone_lmp by 100 €/MWh (typical price magnitude)
+        obs[:, 4] = np.clip(self._zone_lmp_vec.astype(np.float32) / 100.0, 0.0, 5.0)
         for i in range(self.n_agents):
             if i in self._batt_agent_indices:
                 batt_idx = i - self._batt_agent_indices[0]
@@ -831,7 +843,11 @@ class MicrogridEnvDual(gym.Env):
         else:
             self.current_event = self.event_injector.sample()
             if not bool(getattr(self.event_injector, "_events_disabled", False)):
-                self.current_event.t_inject = 30.0
+                # P1 fix Bug 2: randomize event injection time in [10, 50] s to
+                # prevent the policy from overfitting to event timing at exactly
+                # step 30. Eval still uses force_event with t_inject=30 for
+                # repeatable comparison.
+                self.current_event.t_inject = float(self.event_injector.rng.uniform(10.0, 50.0))
         self.current_event.injected = False
 
         sgen_index_map = {int(idx): pos for pos, idx in enumerate(self.net.sgen.index.to_numpy(dtype=np.int64, copy=False))}
