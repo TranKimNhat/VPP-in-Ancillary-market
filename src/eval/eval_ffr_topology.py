@@ -612,6 +612,9 @@ class FFRTopologyEvaluator:
 
         f_trace = []
         rocof_trace = []
+        # Per-bus traces for spatial analysis (when LTI freq dynamics active)
+        f_trace_per_bus: list[np.ndarray] = []
+        rocof_trace_per_bus: list[np.ndarray] = []
         # Hi-resolution trace (one sample per ODE sub-step, dt ~= 0.1 s)
         f_hires: list[float] = []
         # Clear the env's hi-res buffer if present; it accumulates over the episode
@@ -626,7 +629,15 @@ class FFRTopologyEvaluator:
             edge_index = ensure_edge_index(new_edge, n_nodes=n_bus)
             obs_full = build_am_full_feeder_obs(self.env, obs_fast)
 
-            freq_state = self.env.freq_dyn.get_state()
+            # Use LTI freq dynamics if active, else legacy scalar COI
+            use_lti = getattr(self.env, 'use_lti_freq', False) and getattr(self.env, 'freq_dyn_lti', None) is not None
+            if use_lti:
+                freq_state = self.env.freq_dyn_lti.get_state()
+                f_trace_per_bus.append(50.0 + freq_state.delta_f_per_bus.copy())
+                rocof_trace_per_bus.append(freq_state.rocof_per_bus.copy())
+            else:
+                freq_state = self.env.freq_dyn.get_state()
+            # Always append scalar COI for backward-compat metrics
             f_trace.append(50.0 + freq_state.delta_f_hz)
             rocof_trace.append(freq_state.rocof_hz_s)
 
@@ -642,6 +653,10 @@ class FFRTopologyEvaluator:
         # Attach hi-res trace for plotting helpers
         metrics.f_trace_hires = np.asarray(f_hires, dtype=np.float32)
         metrics.dt_hires = float(getattr(self.env, "dt_ode_s", 0.1))
+        # Attach per-bus traces if LTI was active (for spatial analysis figures)
+        if f_trace_per_bus:
+            metrics.f_trace_per_bus = np.stack(f_trace_per_bus, axis=0)  # (T, n_gfm)
+            metrics.rocof_trace_per_bus = np.stack(rocof_trace_per_bus, axis=0)
         return metrics
 
     def build_table1_ffr_comparison(self, n_runs: int = 20) -> pd.DataFrame:
@@ -1151,10 +1166,10 @@ class FFRTopologyEvaluator:
             "Steep slope → brittle on unseen topologies"
         )
         ax.text(0.02, 0.97, narrative,
-                transform=ax.transAxes, fontsize=11, ha="left", va="top",
+                transform=ax.transAxes, fontsize=16, ha="left", va="top",
                 color="#222222", fontstyle="italic",
-                bbox=dict(boxstyle="round,pad=0.30", facecolor="white",
-                          edgecolor="#888888", lw=0.7, alpha=0.96))
+                bbox=dict(boxstyle="round,pad=0.35", facecolor="white",
+                          edgecolor="#888888", lw=0.8, alpha=0.96))
 
         ax.set_xlabel(r"Jaccard edge distance $d_E$ (test $\to$ nearest train)")
         ax.set_ylabel("IAE degradation (%)")
@@ -1166,8 +1181,8 @@ class FFRTopologyEvaluator:
 
         # Legend at top of axes, single row, no frame — clear and uncluttered.
         ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.01),
-                  ncol=5, frameon=False, fontsize=11,
-                  handlelength=1.6, columnspacing=1.4)
+                  ncol=5, frameon=False, fontsize=16,
+                  handlelength=1.8, columnspacing=1.6)
 
         fig.tight_layout()
         fig.savefig(self.output_dir / "fig6_iae_vs_distance.pdf")
@@ -1556,16 +1571,17 @@ def _plot_thd_per_bus_lines(thd_v_per_method: dict[str, np.ndarray], out_path: P
                 linewidth=lw, zorder=zorder)
 
     # IEEE 519 5% limit drawn as a dashed red horizontal line + inline label.
-    ax.axhline(5.0, linestyle="--", color="#b25555", linewidth=1.6,
+    ax.axhline(5.0, linestyle="--", color="#b25555", linewidth=2.0,
                alpha=0.95, zorder=ZORDER_TREND)
     ax.text(max_valid * 0.995, 5.05, "IEEE 519-2014 MV limit (5%)",
-            ha="right", va="bottom", fontsize=11, color="#7a2828",
-            fontstyle="italic", zorder=ZORDER_TREND + 1,
-            bbox=dict(boxstyle="round,pad=0.20", facecolor="white",
-                      edgecolor="#b25555", lw=0.7, alpha=0.95))
+            ha="right", va="bottom", fontsize=16, color="#7a2828",
+            fontstyle="italic", fontweight="bold", zorder=ZORDER_TREND + 1,
+            bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
+                      edgecolor="#b25555", lw=0.8, alpha=0.96))
 
-    ax.set_xlabel("Bus index (IEEE 123 feeder)")
-    ax.set_ylabel(r"THD$_V$ (%)")
+    ax.set_xlabel("Bus index (IEEE 123 feeder)", fontsize=18)
+    ax.set_ylabel(r"THD$_V$ (%)", fontsize=18)
+    ax.tick_params(axis="both", labelsize=15)
     ax.set_xlim(0, max_valid)
     # Auto-zoom y to the actual data range with a small margin.
     all_y = np.concatenate([
@@ -1579,10 +1595,10 @@ def _plot_thd_per_bus_lines(thd_v_per_method: dict[str, np.ndarray], out_path: P
     style_grid(ax, minor=False)
     tighten_spines(ax)
 
-    # Compact legend at bottom, 3 cols.
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15),
-              ncol=3, frameon=False, fontsize=11,
-              handlelength=2.0, columnspacing=1.6)
+    # Legend at bottom, 3 cols, larger font.
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18),
+              ncol=3, frameon=False, fontsize=16,
+              handlelength=2.2, columnspacing=1.8)
 
     fig.tight_layout()
     out_path = Path(out_path)

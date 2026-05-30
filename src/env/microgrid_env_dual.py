@@ -16,6 +16,7 @@ from src.env.day_context import DayContextLoader
 from src.env.events import EventConfig, EventInjector
 from src.env.evcs_model import EVBatteryConfig, EVBatteryModel, mpc_correction
 from src.env.freq_dynamics import FrequencyDynamics
+from src.env.freq_dynamics_lti import LTITopologyFreqDynamics, FrequencyStateLTI
 from src.env.IEEE123bus import convert_near_zero_branches_to_switches
 from src.env.microgrid_env import _read_matpower_bus_numbers, _fix_mpc_file, _from_mpc_compat
 from src.opt.tie_switch_reconfig import TieSwitchReconfiguration
@@ -179,6 +180,26 @@ class MicrogridEnvDual(gym.Env):
 
         self.event_injector = EventInjector(seed=seed)
         self.freq_dyn = FrequencyDynamics()
+        # LTI topology-aware frequency dynamics (plan Task A)
+        self.use_lti_freq = True  # Toggle via config; True = new model
+        try:
+            self.freq_dyn_lti = LTITopologyFreqDynamics(
+                placement=self.placement,
+                base_net=self.base_net,
+                bus_map=self._bus_map,
+                f0=50.0,
+                dt_fast=self.dt_fast_s,
+                tau_default=0.1,
+                agc_ki=0.05,
+                cache_k_bins=5,
+                use_pseudoinverse=True,
+            )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(f"LTI freq_dyn init failed: {exc}; falling back to legacy")
+            self.freq_dyn_lti = None
+            self.use_lti_freq = False
+        self._current_topology_id: int = 0
         self.reconfig = TieSwitchReconfiguration(self.base_net, seed=seed)
         self.context_loader = DayContextLoader(
             precomputed_dir=precomputed_dir, seed=seed, split=day_split
@@ -227,6 +248,9 @@ class MicrogridEnvDual(gym.Env):
         self.q_set = np.zeros((self.n_agents,), dtype=np.float32)
         self.delta_p_set = np.zeros((self.n_agents,), dtype=np.float32)
         self.k_droop_vpp = np.zeros((self._n_vpps,), dtype=np.float32)  # 3 VPP-level droop coefficients
+        # Slew-rate buffers (reset() refreshes them per episode).
+        self._prev_a_p_fast = np.zeros((self.n_agents,), dtype=np.float32)
+        self._prev_k_droop_fast = np.zeros((self._n_vpps,), dtype=np.float32)
 
         # FFR activation trigger thresholds (ENTSO-E compliant)
         # Ref: ENTSO-E Network Code RfG, SO GL, Nordic FFR specifications
@@ -588,11 +612,29 @@ class MicrogridEnvDual(gym.Env):
         return float(m_j), float(d_j)
 
     def _build_obs_fast(self) -> np.ndarray:
-        st = self.freq_dyn.get_state()
+        # Get frequency state: use LTI (per-bus) if available, else legacy (scalar COI)
+        if self.use_lti_freq and self.freq_dyn_lti is not None:
+            st = self.freq_dyn_lti.get_state()
+            use_per_bus = True
+        else:
+            st = self.freq_dyn.get_state()
+            use_per_bus = False
+
         p_net = np.nan_to_num(self._agent_p_net(), nan=0.0, posinf=1e3, neginf=-1e3)
         obs = np.zeros((self.n_agents, 7), dtype=np.float32)
-        obs[:, 0] = np.float32(np.clip(float(st.delta_f_hz), -5.0, 5.0))
-        obs[:, 1] = np.float32(np.clip(float(st.rocof_hz_s), -10.0, 10.0))
+
+        if use_per_bus and hasattr(st, 'delta_f_per_bus'):
+            # Per-bus frequency: each agent gets its local GFM's Δω
+            for i in range(self.n_agents):
+                agent_pp_idx = self._agent_specs[i].get("pp_bus_idx", 0)
+                gfm_idx = self.freq_dyn_lti.get_gfm_bus_idx(agent_pp_idx)
+                obs[i, 0] = np.float32(np.clip(st.delta_f_per_bus[gfm_idx] / 0.5, -1.0, 1.0))
+                obs[i, 1] = np.float32(np.clip(st.rocof_per_bus[gfm_idx] / 1.0, -1.0, 1.0))
+        else:
+            # Legacy scalar broadcast
+            obs[:, 0] = np.float32(np.clip(float(st.delta_f_hz) / 0.5, -1.0, 1.0))
+            obs[:, 1] = np.float32(np.clip(float(st.rocof_hz_s) / 1.0, -1.0, 1.0))
+
         obs[:, 2] = np.clip(p_net, -1e3, 1e3).astype(np.float32)
         obs[:, 4] = np.clip(self._zone_lmp_vec, 0.0, 1e3).astype(np.float32)
         for i in range(self.n_agents):
@@ -693,6 +735,10 @@ class MicrogridEnvDual(gym.Env):
         self.q_set.fill(0.0)
         self.delta_p_set.fill(0.0)
         self.k_droop_vpp.fill(0.0)
+        # Slew-rate-limited previous-action buffers (units: normalized action ∈ [-1, 1]).
+        # Reset every episode so first step has a zero baseline.
+        self._prev_a_p_fast.fill(0.0)
+        self._prev_k_droop_fast.fill(0.0)
 
         # Reset FFR activation state
         self.ffr_active = False
@@ -727,6 +773,7 @@ class MicrogridEnvDual(gym.Env):
             self.net = deepcopy(sampled_net)
             self.edge_index = np.asarray(sampled_edge, dtype=np.int64).copy()
             self.current_open_set = set(selected_open_set)
+            self._current_topology_id = topo_idx
         else:
             try:
                 row = self.day_ctx.iloc[int(np.clip(self.day_step, 0, len(self.day_ctx) - 1))] if self.day_ctx is not None else None
@@ -744,13 +791,30 @@ class MicrogridEnvDual(gym.Env):
                 self.net = deepcopy(sampled_net)
                 self.edge_index = np.asarray(sampled_edge, dtype=np.int64)
                 self.current_open_set = set(selected_open_set)
+                # Find topology_id from cache by matching open_set
+                self._current_topology_id = 0
+                for idx, (_, _, open_set) in enumerate(self.reconfig._cache):
+                    if set(open_set) == self.current_open_set:
+                        self._current_topology_id = idx
+                        break
             except Exception as exc:
                 self._last_topology_fallback_reason = str(exc)
                 self.current_open_set = set()
                 self.edge_index = self.event_injector.rebuild_edge_index(self.net)
+                self._current_topology_id = 0
 
         # Update frequency dynamics based on topology (which GFMs are connected)
         self._update_freq_dyn_topology()
+
+        # Bind LTI freq_dyn to current operating point (requires converged PF)
+        if self.use_lti_freq and self.freq_dyn_lti is not None:
+            try:
+                pp.runpp(self.net, algorithm="nr", init="auto", calculate_voltage_angles=True)
+                self.freq_dyn_lti.bind_operating_point(self.net, self._current_topology_id)
+                self.freq_dyn_lti.reset(f0=50.0)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(f"LTI bind_operating_point failed: {exc}")
 
         force_event = options.get("force_event", None)
         if force_event is not None:
@@ -949,11 +1013,32 @@ class MicrogridEnvDual(gym.Env):
             a_k_raw = None
             k_droop_vpp_raw = af[n_ag:].copy()
 
+        # Slew-rate limit on the fast actuator command (normalized ∈ [-1, 1]).
+        # Constrains |a_t - a_{t-1}| ≤ slew_norm per fast step (dt_fast_s = 1.0 s),
+        # i.e. ≤ 20 % of rated P per second. Prevents step-like setpoint jumps
+        # from spiking |df/dt| above the IEEE-1547 Cat-III 2 Hz/s eval bound
+        # while still allowing full ramp within ~5 s — fast enough for FFR.
+        slew_norm = 0.2
+        delta_p_raw = np.clip(
+            delta_p_raw,
+            self._prev_a_p_fast - slew_norm,
+            self._prev_a_p_fast + slew_norm,
+        )
+        k_droop_vpp_raw = np.clip(
+            k_droop_vpp_raw,
+            self._prev_k_droop_fast - slew_norm,
+            self._prev_k_droop_fast + slew_norm,
+        )
+
         for idx, agent_i in enumerate(self._batt_agent_indices):
             p_kw = delta_p_raw[agent_i] * self._agent_p_rated[agent_i] * 1000.0
             p_rated_kw = float(self.batt_models[idx].cfg.P_rated_kw)
             p_kw_clipped = np.clip(p_kw, -p_rated_kw, p_rated_kw)
             delta_p_raw[agent_i] = p_kw_clipped / (self._agent_p_rated[agent_i] * 1000.0)
+
+        # Persist slew-limited commands as the new baseline for next step.
+        self._prev_a_p_fast = delta_p_raw.astype(np.float32).copy()
+        self._prev_k_droop_fast = k_droop_vpp_raw.astype(np.float32).copy()
 
         action_fast = np.concatenate([delta_p_raw, k_droop_vpp_raw], axis=0)
         self._apply_fast_actions(action_fast)
@@ -1134,17 +1219,60 @@ class MicrogridEnvDual(gym.Env):
         # Sample period = self.dt_ode_s (0.1 s with default 10 sub-steps per 1 s
         # fast step) which is fine enough to capture the true nadir of the
         # underdamped low-inertia response (occurs ~0.3-0.5 s after event).
-        for _ in range(self.n_ode_substeps):
-            freq_state = self.freq_dyn.step(
-                dt=self.dt_ode_s,
-                delta_P_pu=event_term,
-                P_bess_pu=p_bess_agg,
-                P_v2g_pu=p_v2g_agg,
-                P_pv_pu=p_pv_agg,
+        if self.use_lti_freq and self.freq_dyn_lti is not None:
+            # LTI model: single matrix-exp step for full fast-step
+            # Build per-GFM power reference from delta_p_set (mapped via bus)
+            n_gfm = self.freq_dyn_lti.n_gfm
+            delta_P_ref = np.zeros(n_gfm, dtype=float)
+            K_droop_gfm = np.ones(n_gfm, dtype=float)
+            gfm_pp_idx = self.freq_dyn_lti.gfm_bus_indices
+            for gfm_i, pp_idx in enumerate(gfm_pp_idx):
+                # Find agents at or near this GFM bus
+                total_p_ref = 0.0
+                total_k = 0.0
+                count = 0
+                for agent_i, spec in enumerate(self._agent_specs):
+                    agent_pp = spec.get("pp_bus_idx", -1)
+                    if agent_pp == pp_idx or abs(agent_pp - pp_idx) < 5:
+                        total_p_ref += self.delta_p_set[agent_i] * self._agent_p_rated[agent_i]
+                        if hasattr(self, '_k_droop_last') and agent_i < len(self._k_droop_last):
+                            total_k += self._k_droop_last[agent_i]
+                        count += 1
+                if count > 0:
+                    delta_P_ref[gfm_i] = total_p_ref / S_BASE
+                    K_droop_gfm[gfm_i] = max(total_k / count, 0.1)
+            freq_state = self.freq_dyn_lti.step(
+                dt=self.dt_fast_s,
+                delta_P_ref=delta_P_ref,
+                delta_P_L=event_term,
+                K_droop=K_droop_gfm,
+                topology_id=self._current_topology_id,
                 ffr_active=self.ffr_active,
             )
             if hasattr(self, "_hires_df"):
                 self._hires_df.append(float(freq_state.delta_f_hz))
+            # Also step legacy for backward-compat logging
+            for _ in range(self.n_ode_substeps):
+                self.freq_dyn.step(
+                    dt=self.dt_ode_s,
+                    delta_P_pu=event_term,
+                    P_bess_pu=p_bess_agg,
+                    P_v2g_pu=p_v2g_agg,
+                    P_pv_pu=p_pv_agg,
+                    ffr_active=self.ffr_active,
+                )
+        else:
+            for _ in range(self.n_ode_substeps):
+                freq_state = self.freq_dyn.step(
+                    dt=self.dt_ode_s,
+                    delta_P_pu=event_term,
+                    P_bess_pu=p_bess_agg,
+                    P_v2g_pu=p_v2g_agg,
+                    P_pv_pu=p_pv_agg,
+                    ffr_active=self.ffr_active,
+                )
+                if hasattr(self, "_hires_df"):
+                    self._hires_df.append(float(freq_state.delta_f_hz))
 
         for idx, agent_i in enumerate(self._batt_agent_indices):
             p_cmd_kw = self.delta_p_set[agent_i] * self._agent_p_rated[agent_i] * 1000.0
@@ -1194,11 +1322,26 @@ class MicrogridEnvDual(gym.Env):
         self.feasibility_ok = (total_violations == 0)
 
         freq_flag = float(1.0 if (self.current_event is not None and self.current_event.injected) else 0.0)
+        # Expose worst-bus metrics for reward (plan Task A decision: worst-bus for reward)
+        if self.use_lti_freq and hasattr(freq_state, 'delta_f_worst'):
+            delta_f_worst = float(freq_state.delta_f_worst)
+            rocof_worst = float(freq_state.rocof_worst)
+            delta_f_per_bus = freq_state.delta_f_per_bus.copy() if hasattr(freq_state, 'delta_f_per_bus') else None
+            rocof_per_bus = freq_state.rocof_per_bus.copy() if hasattr(freq_state, 'rocof_per_bus') else None
+        else:
+            delta_f_worst = abs(float(freq_state.delta_f_hz))
+            rocof_worst = abs(float(freq_state.rocof_hz_s))
+            delta_f_per_bus = None
+            rocof_per_bus = None
         info = {
             "event_injected": bool(event_now),
             "freq_event_flag": freq_flag,
             "delta_f": float(np.nan_to_num(freq_state.delta_f_hz, nan=0.0, posinf=5.0, neginf=-5.0)),
             "rocof": float(np.nan_to_num(freq_state.rocof_hz_s, nan=0.0, posinf=10.0, neginf=-10.0)),
+            "delta_f_worst": delta_f_worst,
+            "rocof_worst": rocof_worst,
+            "delta_f_per_bus": delta_f_per_bus,
+            "rocof_per_bus": rocof_per_bus,
             "ffr_active": bool(self.ffr_active),
             "ffr_activation_count": int(self.ffr_activation_count),
             "ffr_energy_delivered_mwh": float(self.ffr_energy_delivered),
@@ -1221,8 +1364,9 @@ class MicrogridEnvDual(gym.Env):
     def _apply_slow_actions(self, action_slow: np.ndarray) -> None:
         """Slow (EM) action: per-agent P dispatch only (Q dropped — AM-only build)."""
         a = np.asarray(action_slow, dtype=np.float32).reshape(-1)
-        if a.shape[0] != self.n_agents:
-            raise ValueError(f"action_slow must have shape ({self.n_agents},), got {a.shape}")
+        # Accept either (n_agents,) or (2*n_agents,) for backward compatibility
+        if a.shape[0] not in (self.n_agents, 2 * self.n_agents):
+            raise ValueError(f"action_slow must have shape ({self.n_agents},) or ({2*self.n_agents},), got {a.shape}")
 
         self.p_set = a[: self.n_agents].copy()
         self.q_set.fill(0.0)  # Q product dropped in AM-only architecture

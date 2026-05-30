@@ -6,6 +6,7 @@ action_scale_q: 0.2
 signals:
   layer1_pref_csv: data/oedisi-ieee123-main/profiles/layer1_vpp/layer1_pref.csv
   market_signal_csv: data/oedisi-ieee123-main/profiles/layer0_hourly/layer0_zone_prices.csv
+  dlmp_per_bus_csv: data/oedisi-ieee123-main/profiles/layer0_hourly/layer0_dlmp_per_bus.csv
 
 zoning_mode: static
 vpp_mode: false
@@ -20,6 +21,12 @@ grid_source:
   source_mode: publish
   islanded_override_slack_to_g1: false
   g1_bus_name: 114
+
+freq_dynamics:
+  use_lti: true
+  reference_gfm: auto
+  cache_k_droop_bins: 5
+  loss_pseudoinverse_fallback: true
 
 reward_weights:
   tracking: 1.0

@@ -182,13 +182,25 @@ class RewardNormalizer:
 
 @dataclass
 class AMRewardConfig:
-    """Reward weights for Ancillary Market metrics.
+    """Reward weights for Ancillary Market FFR metrics.
 
-    Thresholds aligned with ENTSO-E Network Codes (RfG, SO GL):
-    - FCR deadband: ±10-20 mHz (Continental Europe)
-    - FCR activation: ±200 mHz (49.8-50.2 Hz)
-    - UFLS Stage 1: 49.0 Hz (Δf = -1.0 Hz)
-    - Pre-UFLS warning: 49.5 Hz (Δf = -0.5 Hz)
+    Thresholds aligned with grid codes:
+    - FCR full activation: |Δf| ≥ 200 mHz (ENTSO-E SO GL Art. 14)
+    - FCR maximum deadband: 10 mHz (Continental Europe; Statnett FCR-TR,
+      ENTSO-E IGD on FSM)
+    - Operator alarm threshold: 49.5 Hz (Δf = -0.5 Hz)
+      [NOT a UFLS stage; this is the FFR-margin requirement, 0.5 Hz
+       above the ENTSO-E UFLS Stage 1 trip at 49.0 Hz]
+    - UFLS Stage 1 trip: 49.0 Hz (ENTSO-E SO GL Art. 11)
+    - UFLS trip delay: 300 ms (IEEE Std C37.117-2007 §6.2)
+    - Inverter RoCoF ride-through: 2.0 Hz/s
+      (IEEE Std 1547-2018 Category III; NOT the stricter 1.0 Hz/s
+       ENTSO-E mainland protection-trip threshold)
+
+    The chosen ``delta_f_deadband = 20 mHz`` sits between the ENTSO-E FCR
+    maximum deadband (10 mHz) and the typical LFC/AGC restoration
+    deadband (30 mHz); it suppresses nuisance reward signals from
+    measurement noise while preserving sensitivity to genuine events.
     """
     # Frequency / safety terms (re-balanced for dual-action)
     w_delta_f: float = 0.25
@@ -217,7 +229,10 @@ class AMRewardConfig:
 
     # Control effort and droop-like tracking references
     action_ref_scale: float = 0.75
-    effort_smoothness_coef: float = 0.5
+    # Smoothness coefficient bumped from 0.5 → 2.0 so |Δaction| dominates the
+    # effort term and the policy avoids step-like actuator commands that
+    # otherwise spike |df/dt| above the IEEE-1547 Cat-III 2 Hz/s eval bound.
+    effort_smoothness_coef: float = 2.0
     tracking_delta_f_ref: float = 0.5
     tracking_rocof_ref: float = 0.2
     tracking_k_delta_f: float = 0.5
@@ -258,17 +273,21 @@ def compute_am_reward(
         reward: Scalar reward
         info: Dict of reward components for logging
     """
-    # Under-frequency-only normalized frequency and RoCoF penalties.
+    # Symmetric normalized frequency and RoCoF penalties (penalize over- AND
+    # under-frequency excursions; needed to keep policy well-behaved during
+    # high-renewable surge events and to suppress |df/dt| spikes from step-like
+    # actuator commands — which previously failed the IEEE-1547 Cat-III
+    # rocof_max ≤ 2.0 Hz/s eval criterion).
     delta_f_abs = abs(delta_f)
-    e_delta_f = float(np.clip(max(-(delta_f + cfg.delta_f_deadband), 0.0) / cfg.delta_f_ref, 0.0, 1.0))
+    e_delta_f = float(np.clip(max(delta_f_abs - cfg.delta_f_deadband, 0.0) / cfg.delta_f_ref, 0.0, 1.0))
     r_delta_f = -cfg.w_delta_f * e_delta_f
 
     rocof_abs = abs(rocof)
-    e_rocof = float(np.clip(max(-(rocof + cfg.rocof_deadband), 0.0) / cfg.rocof_ref, 0.0, 1.0))
+    e_rocof = float(np.clip(max(rocof_abs - cfg.rocof_deadband, 0.0) / cfg.rocof_ref, 0.0, 1.0))
     r_rocof = -cfg.w_rocof * e_rocof
 
-    # Under-frequency violation penalty (binary safety term).
-    in_violation = delta_f < -cfg.f_limit
+    # Symmetric violation penalty (|Δf| > f_limit triggers in either direction).
+    in_violation = delta_f_abs > cfg.f_limit
     e_violation = 1.0 if in_violation else 0.0
     r_violation = -cfg.w_violation * e_violation
 
@@ -283,14 +302,18 @@ def compute_am_reward(
     e_effort = float(np.clip(action_norm + cfg.effort_smoothness_coef * action_diff, 0.0, 1.0))
     r_effort = -cfg.w_effort * e_effort
 
-    if delta_f < -cfg.delta_f_deadband:
-        delta_f_tracking = delta_f + cfg.delta_f_deadband
-        rocof_tracking = min(rocof + cfg.rocof_deadband, 0.0) if rocof < -cfg.rocof_deadband else 0.0
+    if delta_f_abs > cfg.delta_f_deadband:
+        sign_f = -1.0 if delta_f < 0.0 else 1.0
+        delta_f_tracking = delta_f - sign_f * cfg.delta_f_deadband
+        if abs(rocof) > cfg.rocof_deadband:
+            rocof_tracking = rocof - (1.0 if rocof > 0 else -1.0) * cfg.rocof_deadband
+        else:
+            rocof_tracking = 0.0
         action_ref = -(
             cfg.tracking_k_delta_f * delta_f_tracking / cfg.tracking_delta_f_ref
             + cfg.tracking_k_rocof * rocof_tracking / cfg.tracking_rocof_ref
         )
-        action_ref = float(np.clip(action_ref, 0.0, cfg.action_ref_scale))
+        action_ref = float(np.clip(action_ref, -cfg.action_ref_scale, cfg.action_ref_scale))
         e_tracking = float(np.clip(np.mean(np.square((action_arr - action_ref) / cfg.action_ref_scale)), 0.0, 1.0))
         r_tracking = -cfg.w_tracking * e_tracking
     else:
@@ -298,8 +321,13 @@ def compute_am_reward(
         e_tracking = 0.0
         r_tracking = 0.0
 
-    # Under-frequency-only nadir safety term.
-    e_nadir = float(np.clip((cfg.nadir_threshold - freq_hz) / cfg.nadir_ref, 0.0, 1.0))
+    # Symmetric nadir/zenith safety term: penalize crossing nadir_threshold
+    # (e.g. 49.5 Hz under-trip / 50.5 Hz over-trip per ENTSO-E UFLS & OF protection).
+    f_nominal = 50.0
+    zenith_threshold = 2.0 * f_nominal - cfg.nadir_threshold
+    under_excursion = max(cfg.nadir_threshold - freq_hz, 0.0)
+    over_excursion = max(freq_hz - zenith_threshold, 0.0)
+    e_nadir = float(np.clip((under_excursion + over_excursion) / cfg.nadir_ref, 0.0, 1.0))
     r_nadir = -cfg.w_nadir * e_nadir
 
     # ── Dual-product terms (only active when corresponding inputs provided) ─────────
@@ -966,13 +994,22 @@ def get_am_obs(env: MicrogridEnvDual, obs_fast: np.ndarray, extended: bool = Tru
     n_feat = 16 if extended else 10
     obs = np.zeros((n_agents, n_feat), dtype=np.float32)
 
-    # Global frequency state
-    freq_state = env.freq_dyn.get_state()
-    delta_f = np.clip(freq_state.delta_f_hz / 0.5, -1.0, 1.0)
-    rocof = np.clip(freq_state.rocof_hz_s / 1.0, -1.0, 1.0)
-
-    obs[:, 0] = delta_f
-    obs[:, 1] = rocof
+    # Frequency state: use LTI per-bus if available, else legacy scalar
+    use_lti = getattr(env, 'use_lti_freq', False) and getattr(env, 'freq_dyn_lti', None) is not None
+    if use_lti:
+        freq_state = env.freq_dyn_lti.get_state()
+        # Per-agent's local GFM Δω (plan Task A: replace [0],[1] with per-bus)
+        for i, spec in enumerate(env._agent_specs):
+            agent_pp_idx = spec.get("pp_bus_idx", 0)
+            gfm_idx = env.freq_dyn_lti.get_gfm_bus_idx(agent_pp_idx)
+            obs[i, 0] = np.clip(freq_state.delta_f_per_bus[gfm_idx] / 0.5, -1.0, 1.0)
+            obs[i, 1] = np.clip(freq_state.rocof_per_bus[gfm_idx] / 1.0, -1.0, 1.0)
+    else:
+        freq_state = env.freq_dyn.get_state()
+        delta_f = np.clip(freq_state.delta_f_hz / 0.5, -1.0, 1.0)
+        rocof = np.clip(freq_state.rocof_hz_s / 1.0, -1.0, 1.0)
+        obs[:, 0] = delta_f
+        obs[:, 1] = rocof
 
     # Per-agent features from fast obs
     obs[:, 2] = np.clip(obs_fast[:, 2] / 1.0, -1.0, 1.0)
@@ -1212,9 +1249,15 @@ def train_am_mappo(
             next_obs_fast, _r_env, done, _trunc, info = env.step_fast(full_action)
 
             # Compute reward AFTER step to give correct RL signal
-            post_freq_state = env.freq_dyn.get_state()
-            post_delta_f = float(post_freq_state.delta_f_hz)
-            post_rocof = float(post_freq_state.rocof_hz_s)
+            # Use worst-bus values when LTI freq dynamics is active (topology-aware)
+            use_lti = getattr(env, 'use_lti_freq', False) and getattr(env, 'freq_dyn_lti', None) is not None
+            if use_lti and "delta_f_worst" in info:
+                post_delta_f = float(info["delta_f_worst"])
+                post_rocof = float(info["rocof_worst"])
+            else:
+                post_freq_state = env.freq_dyn.get_state()
+                post_delta_f = float(post_freq_state.delta_f_hz)
+                post_rocof = float(post_freq_state.rocof_hz_s)
             post_freq_hz = 50.0 + post_delta_f
 
             # Pull dual-product signals from env (only populated when ffr_mode == "mappo_dual")
