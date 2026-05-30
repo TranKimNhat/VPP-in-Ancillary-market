@@ -138,7 +138,7 @@ class LTITopologyFreqDynamics:
         self._current_topology_id: int | None = None
         self._current_k_bin: int | None = None
 
-        self._phi_cache: dict[tuple[int, int], np.ndarray] = {}
+        self._phi_cache: dict[tuple[int, int], tuple[np.ndarray, np.ndarray]] = {}
         self._A_f_cache: dict[tuple[int, int], np.ndarray] = {}
         self._B_ref: np.ndarray | None = None
         self._B_net: np.ndarray | None = None
@@ -196,6 +196,15 @@ class LTITopologyFreqDynamics:
         if ppc is None:
             raise RuntimeError("net._ppc is None after runpp; cannot extract Jacobian")
 
+        # Translate pandas indices (from _bus_map) to row positions in J_full.
+        # base_net.bus.index can have gaps (e.g., 0..449 with len=123 after MATPOWER
+        # conversion); Y_bus and J_full are indexed by row position (0..n_bus-1).
+        pandas_to_row = {int(p_idx): row for row, p_idx in enumerate(net.bus.index)}
+        self._gfm_row_idx = np.array(
+            [pandas_to_row.get(int(p_idx), -1) for p_idx in self._gfm_pp_idx],
+            dtype=int,
+        )
+
         J_full = self._build_jacobian(net, ppc)
         self._J_r, self._J_L = self._kron_reduce(J_full, net)
         self._current_topology_id = topology_id
@@ -225,6 +234,14 @@ class LTITopologyFreqDynamics:
 
         V_mag = bus[:, 7].copy()
         V_ang_rad = np.deg2rad(bus[:, 8])
+
+        # Isolated buses (NaN from runpp) -> nominal V=1.0, angle=0
+        nan_mask = ~np.isfinite(V_mag) | ~np.isfinite(V_ang_rad)
+        if nan_mask.any():
+            logger.debug(f"Replacing NaN at {int(nan_mask.sum())} isolated buses with V=1.0, angle=0")
+            V_mag[nan_mask] = 1.0
+            V_ang_rad[nan_mask] = 0.0
+
         V = V_mag * np.exp(1j * V_ang_rad)
 
         J_Ptheta = np.zeros((n_bus, n_bus), dtype=float)
@@ -251,10 +268,13 @@ class LTITopologyFreqDynamics:
             J_L = J_IL @ inv(J_LL)
         """
         n_bus = J_full.shape[0]
+        # Use row positions translated in bind_operating_point, falling back to
+        # _gfm_pp_idx if bind_operating_point wasn't called (legacy path).
+        gfm_indices = getattr(self, "_gfm_row_idx", self._gfm_pp_idx)
         dyn_mask = np.zeros(n_bus, dtype=bool)
-        for pp_idx in self._gfm_pp_idx:
-            if 0 <= pp_idx < n_bus:
-                dyn_mask[pp_idx] = True
+        for row_idx in gfm_indices:
+            if 0 <= row_idx < n_bus:
+                dyn_mask[row_idx] = True
 
         dyn_idx = np.where(dyn_mask)[0]
         pas_idx = np.where(~dyn_mask)[0]
@@ -289,12 +309,12 @@ class LTITopologyFreqDynamics:
         J_r = J_II - J_IL @ J_LL_inv @ J_LI
         J_L = J_IL @ J_LL_inv
 
-        gfm_order = np.argsort(self._gfm_pp_idx)
-        dyn_order = np.argsort(dyn_idx)
+        gfm_indices = getattr(self, "_gfm_row_idx", self._gfm_pp_idx)
+        gfm_order = np.argsort(gfm_indices)
         reorder = np.zeros(len(dyn_idx), dtype=int)
         for i, g_ord in enumerate(gfm_order):
-            pp_idx = self._gfm_pp_idx[g_ord]
-            pos_in_dyn = np.where(dyn_idx == pp_idx)[0]
+            row_idx = gfm_indices[g_ord]
+            pos_in_dyn = np.where(dyn_idx == row_idx)[0]
             if len(pos_in_dyn) > 0:
                 reorder[i] = pos_in_dyn[0]
 
@@ -353,8 +373,14 @@ class LTITopologyFreqDynamics:
         k_avg = float(np.mean(np.abs(K_droop)))
         return int(np.clip(np.round(k_avg * self.cache_k_bins), 0, self.cache_k_bins * 5))
 
-    def _get_phi(self, K_droop: np.ndarray, topology_id: int) -> np.ndarray:
-        """Get cached or compute Φ = exp(A_f * dt)."""
+    def _get_phi(self, K_droop: np.ndarray, topology_id: int) -> tuple[np.ndarray, np.ndarray]:
+        """Get cached or compute (Φ, M) where Φ = exp(A_f·dt), M = ∫₀^dt exp(A_f·τ)dτ.
+
+        M is the ZOH input integral applied to u_input; using M avoids the
+        forward-Euler overshoot when dt ≫ system time constants. Computed via
+        the augmented exponential trick (robust to singular A_f):
+            exp([[A_f, I], [0, 0]]·dt) = [[Φ, M], [0, I]]
+        """
         k_bin = self._get_k_bin(K_droop)
         key = (topology_id, k_bin)
 
@@ -362,13 +388,20 @@ class LTITopologyFreqDynamics:
             return self._phi_cache[key]
 
         A_f = self._assemble_A_f(K_droop)
-        Phi = scipy.linalg.expm(A_f * self.dt_fast)
 
-        self._phi_cache[key] = Phi
+        n = self._n_state
+        aug = np.zeros((2 * n, 2 * n), dtype=float)
+        aug[:n, :n] = A_f
+        aug[:n, n:] = np.eye(n)
+        aug_exp = scipy.linalg.expm(aug * self.dt_fast)
+        Phi = aug_exp[:n, :n]
+        M = aug_exp[:n, n:]
+
+        self._phi_cache[key] = (Phi, M)
         self._A_f_cache[key] = A_f
         self._current_k_bin = k_bin
 
-        return Phi
+        return Phi, M
 
     def reset(self, f0: float = 50.0) -> None:
         """Reset state to equilibrium."""
@@ -405,13 +438,30 @@ class LTITopologyFreqDynamics:
         """
         self._x_prev = self._x.copy()
 
-        Phi = self._get_phi(K_droop, topology_id)
+        Phi, M = self._get_phi(K_droop, topology_id)
 
-        u_ref = np.zeros(self._n_state, dtype=float)
+        u_input = np.zeros(self._n_state, dtype=float)
+        rating_total = float(np.sum(self._gfm_ratings))
+        share = self._gfm_ratings / rating_total
         if self._B_ref is not None:
             M_p = np.diag(1.0 / np.maximum(np.abs(K_droop), 1e-6))
             T_c_inv = np.diag(1.0 / self._tau_c)
-            u_ref[(self.n_gfm - 1):] = T_c_inv @ M_p @ delta_P_ref
+
+            # AGC closure: distribute previous-step integral as P_ref adjustment
+            # proportional to rating share. Sign: under-frequency (Δf<0) makes
+            # integral negative, so feedback (-integral·share) adds positive power
+            # to restore f→50 Hz. Uses one-step-delayed integral to avoid algebraic
+            # loop (integral updated below from this step's Δf).
+            delta_P_ref_eff = np.asarray(delta_P_ref, dtype=float) - self._agc_integral * share
+            u_input[(self.n_gfm - 1):] = T_c_inv @ M_p @ delta_P_ref_eff
+
+            # Passive-bus disturbance: scalar imbalance distributed across GFMs by
+            # rating share. Positive delta_P_L = generation deficit → Δω decreases.
+            # TODO: replace with J_L-based per-passive-bus injection for full
+            # topology-aware response (matches V-G derivation in bigupdate.md).
+            dP_L = np.asarray(delta_P_L, dtype=float)
+            dP_L_total = float(dP_L.sum()) if dP_L.ndim > 0 else float(dP_L)
+            u_input[(self.n_gfm - 1):] -= T_c_inv @ M_p @ (share * dP_L_total)
 
         delta_omega = self._x[(self.n_gfm - 1):]
         delta_f_coi = float(np.sum(self._gfm_ratings * delta_omega) / np.sum(self._gfm_ratings)) * self.f0
@@ -422,7 +472,7 @@ class LTITopologyFreqDynamics:
 
         self._p_ref_pu = float(np.mean(delta_P_ref))
 
-        self._x = Phi @ self._x + u_ref * dt
+        self._x = Phi @ self._x + M @ u_input
 
         self._t += dt
 
