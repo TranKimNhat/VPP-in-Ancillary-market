@@ -466,9 +466,19 @@ class LTITopologyFreqDynamics:
         delta_omega = self._x[(self.n_gfm - 1):]
         delta_f_coi = float(np.sum(self._gfm_ratings * delta_omega) / np.sum(self._gfm_ratings)) * self.f0
 
-        if not ffr_active:
-            self._agc_integral += self.agc_ki * delta_f_coi * dt
-            self._agc_integral = float(np.clip(self._agc_integral, -0.35, 0.35))
+        # Secondary control (AGC) runs CONCURRENTLY with primary droop/FFR — the
+        # textbook two-loop design: primary responds fast and leaves a steady-state
+        # offset, secondary slowly integrates the offset away. The previous code
+        # froze AGC for the ENTIRE ffr_active window, which is correct only for a
+        # one-shot imbalance: for a SUSTAINED disturbance (e.g. high_ren surplus)
+        # where the policy cannot drive |Δf| below the FFR-deactivation threshold,
+        # ffr_active stayed True forever, AGC never engaged, and the frequency got
+        # stuck off-nominal (the S4 bimodal failure — confirmed: stuck topos had
+        # ffr_active 29/30 steps & agc_integral ~0). AGC is slow (agc_ki small) and
+        # anti-windup-clipped, so concurrent operation does not disturb the fast
+        # primary transient. Always integrate.
+        self._agc_integral += self.agc_ki * delta_f_coi * dt
+        self._agc_integral = float(np.clip(self._agc_integral, -0.35, 0.35))
 
         self._p_ref_pu = float(np.mean(delta_P_ref))
 
