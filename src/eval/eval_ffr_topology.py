@@ -280,6 +280,8 @@ class FixedDroopPolicy:
 
 class GraphSAGEMAPPOPolicy:
     """Our method: GraphSAGE-MAPPO trained agent."""
+    ffr_mode = "mappo_dual"  # env must run dual (per-DER P,K) to match training
+
     def __init__(self, checkpoint_path: Path, env: MicrogridEnvDual):
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
@@ -326,21 +328,30 @@ class GraphSAGEMAPPOPolicy:
 
     def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
         obs_norm = self.obs_normalizer.normalize(obs)
-        action = self.agent.act_deterministic(obs_norm, edge_index)
-
-        # Negate for droop response convention
-        control_actions = -action
+        action = self.agent.act_deterministic(obs_norm, edge_index)  # (n_agents, action_dim)
+        action = np.asarray(action, dtype=np.float32)
+        if action.ndim == 1:
+            action = action.reshape(-1, 1)
 
         n_agents = env.n_agents
         n_vpps = len(env._vpp_droop_agents)
-        full_action = np.zeros(n_agents + n_vpps, dtype=np.float32)
-        full_action[:n_agents] = control_actions.flatten()[:n_agents]
 
-        for vpp_idx, (_, member_agents) in enumerate(env._vpp_droop_agents.items()):
-            vpp_action = np.mean([control_actions[ai, 0] for ai in member_agents if ai < len(control_actions)])
-            full_action[n_agents + vpp_idx] = vpp_action
+        # Build the dual-action vector EXACTLY as training does (train_am_mappo loop):
+        #   ctrl_p = -a_P  (the shared action->power sign convention; see P3 note in
+        #            train_am_mappo.py — flip must match on both train and eval sides)
+        #   ctrl_k =  a_K  (NOT flipped; maps to K_droop bounds in env)
+        #   layout = [a_P (n_agents), a_K (n_agents), VPP-K legacy zeros (n_vpps)]
+        # env runs in "mappo_dual" mode (set by the evaluator before reset), which
+        # expects this 2*n_agents + n_vpps vector. The prior code built a single-mode
+        # (n_agents + n_vpps) vector that discarded the K channel and mis-indexed P.
+        ctrl_p = -action[:, 0]
+        ctrl_k = action[:, 1] if action.shape[1] >= 2 else np.zeros(n_agents, dtype=np.float32)
 
-        return np.clip(full_action, -1.0, 1.0)
+        full_action = np.zeros(2 * n_agents + n_vpps, dtype=np.float32)
+        full_action[:n_agents] = np.clip(ctrl_p[:n_agents], -1.0, 1.0)
+        full_action[n_agents:2 * n_agents] = np.clip(ctrl_k[:n_agents], -1.0, 1.0)
+        # VPP-K legacy slots stay zero: per-DER K replaces VPP aggregation in dual mode.
+        return full_action
 
 
 class GCNNPPOPolicy:
@@ -445,6 +456,8 @@ class MLPMAPPOPolicy:
     only differing variable is the graph encoder. This is the most important
     ablation for proving GraphSAGE's contribution to topology generalization.
     """
+    ffr_mode = "mappo_dual"  # same RL stack as GraphSAGE-MAPPO; dual (P,K) per DER
+
     def __init__(self, checkpoint_path: Path, env: MicrogridEnvDual):
         from src.baselines.train_mlp_mappo import MLPMAPPOAgent
 
@@ -495,21 +508,30 @@ class MLPMAPPOPolicy:
 
     def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
         obs_norm = self.obs_normalizer.normalize(obs)
-        action = self.agent.act_deterministic(obs_norm, edge_index)
-
-        # Negate for droop response convention
-        control_actions = -action
+        action = self.agent.act_deterministic(obs_norm, edge_index)  # (n_agents, action_dim)
+        action = np.asarray(action, dtype=np.float32)
+        if action.ndim == 1:
+            action = action.reshape(-1, 1)
 
         n_agents = env.n_agents
         n_vpps = len(env._vpp_droop_agents)
-        full_action = np.zeros(n_agents + n_vpps, dtype=np.float32)
-        full_action[:n_agents] = control_actions.flatten()[:n_agents]
 
-        for vpp_idx, (_, member_agents) in enumerate(env._vpp_droop_agents.items()):
-            vpp_action = np.mean([control_actions[ai, 0] for ai in member_agents if ai < len(control_actions)])
-            full_action[n_agents + vpp_idx] = vpp_action
+        # Build the dual-action vector EXACTLY as training does (train_am_mappo loop):
+        #   ctrl_p = -a_P  (the shared action->power sign convention; see P3 note in
+        #            train_am_mappo.py — flip must match on both train and eval sides)
+        #   ctrl_k =  a_K  (NOT flipped; maps to K_droop bounds in env)
+        #   layout = [a_P (n_agents), a_K (n_agents), VPP-K legacy zeros (n_vpps)]
+        # env runs in "mappo_dual" mode (set by the evaluator before reset), which
+        # expects this 2*n_agents + n_vpps vector. The prior code built a single-mode
+        # (n_agents + n_vpps) vector that discarded the K channel and mis-indexed P.
+        ctrl_p = -action[:, 0]
+        ctrl_k = action[:, 1] if action.shape[1] >= 2 else np.zeros(n_agents, dtype=np.float32)
 
-        return np.clip(full_action, -1.0, 1.0)
+        full_action = np.zeros(2 * n_agents + n_vpps, dtype=np.float32)
+        full_action[:n_agents] = np.clip(ctrl_p[:n_agents], -1.0, 1.0)
+        full_action[n_agents:2 * n_agents] = np.clip(ctrl_k[:n_agents], -1.0, 1.0)
+        # VPP-K legacy slots stay zero: per-DER K replaces VPP aggregation in dual mode.
+        return full_action
 
 
 # =============================================================================
@@ -603,6 +625,15 @@ class FFRTopologyEvaluator:
             options["force_event"] = deepcopy(event)
         if topology_idx is not None:
             options["force_topology"] = topology_idx
+
+        # Each policy is evaluated in its NATIVE control mode (user decision):
+        # proposed/ablation MAPPO -> "mappo_dual" (per-DER P,K from the policy);
+        # baselines (No-FFR, Fixed Droop) -> "droop" (env's built-in droop law).
+        # The frequency physics (event injection, LTI dynamics, AGC) is identical
+        # across modes — only the FFR control law differs — so this is a fair
+        # like-for-like comparison. step_fast reads self.ffr_mode each call and the
+        # per-DER K buffers are always initialised, so switching here is safe.
+        self.env.ffr_mode = getattr(policy, "ffr_mode", "droop")
 
         obs_fast, _, _ = self.env.reset(options=options)
         n_bus = len(self.env.net.bus.index)
