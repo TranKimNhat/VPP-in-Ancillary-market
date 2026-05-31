@@ -775,24 +775,30 @@ class FFRTopologyEvaluator:
                     "rocof_max_mean": float(np.mean(metrics_agg["rocof_max_hz_s"])),
                     "settling_time_mean": float(np.mean(metrics_agg["settling_time_s"])),
                     "iae_post_mean": float(np.mean(metrics_agg["iae_post"])),
+                    "iae_post_std": float(np.std(metrics_agg["iae_post"])),
                 })
 
         df = pd.DataFrame(rows)
 
-        # Compute generalization gap (only if we collected rows; topology cache may be empty)
+        # Generalization measured on a CONTINUOUS metric (IAE_post), not the binary
+        # ffr_success — for the large design contingencies (gen_trip -3.9 MW → nadir
+        # ~47.9 Hz) no controller keeps |Δf|<0.5 Hz within 300 ms, so ffr_success is
+        # 0 for every method and cannot discriminate topology generalization. IAE
+        # (lower=better) does. gap = relative IAE degradation on unseen topologies;
+        # retention = train/unseen (≤1 better, →1 = generalizes perfectly).
         if not df.empty and "method" in df.columns:
             for policy_name in self.policies.keys():
                 train_row = df[(df["method"] == policy_name) & (df["topology_split"] == "train")]
                 test_row = df[(df["method"] == policy_name) & (df["topology_split"] == "unseen")]
 
                 if not train_row.empty and not test_row.empty:
-                    train_success = train_row["ffr_success_rate"].values[0]
-                    test_success = test_row["ffr_success_rate"].values[0]
-                    gap = train_success - test_success
-                    retention = test_success / train_success if train_success > 0 else 0
+                    iae_train = float(train_row["iae_post_mean"].values[0])
+                    iae_unseen = float(test_row["iae_post_mean"].values[0])
+                    gap = (iae_unseen - iae_train) / iae_train if iae_train > 1e-9 else float("nan")
+                    retention = iae_train / iae_unseen if iae_unseen > 1e-9 else float("nan")
 
-                    df.loc[(df["method"] == policy_name) & (df["topology_split"] == "unseen"), "generalization_gap"] = gap
-                    df.loc[(df["method"] == policy_name) & (df["topology_split"] == "unseen"), "retention_ratio"] = retention
+                    df.loc[(df["method"] == policy_name) & (df["topology_split"] == "unseen"), "iae_generalization_gap"] = gap
+                    df.loc[(df["method"] == policy_name) & (df["topology_split"] == "unseen"), "iae_retention_ratio"] = retention
         else:
             print("[warn] Topology cache empty — Table 2 skipped (no train/test topologies)")
 
@@ -1278,11 +1284,14 @@ class FFRTopologyEvaluator:
         print("=" * 60)
         pivot1 = table1.pivot_table(index=["scenario", "method"], columns="metric",
                                    values="mean", aggfunc="first")
-        print("\nTable 1 - FFR Success Rate by Method:")
-        print(pivot1[["ffr_success", "nadir_hz", "settling_time_s"]].round(3))
-        print("\nTable 2 - Topology Generalization:")
-        print(table2[["method", "topology_split", "ffr_success_rate",
-                      "generalization_gap"]].to_string(index=False))
+        print("\nTable 1 - FFR Performance by Method:")
+        _t1cols = [c for c in ["iae_total", "nadir_hz", "settling_time_s"] if c in pivot1.columns]
+        print(pivot1[_t1cols].round(3))
+        print("\nTable 2 - Topology Generalization (IAE-based):")
+        _t2cols = [c for c in ["method", "topology_split", "iae_post_mean",
+                               "iae_generalization_gap", "iae_retention_ratio"]
+                   if c in table2.columns]
+        print(table2[_t2cols].to_string(index=False))
 
         print(f"\nResults saved to: {self.output_dir}")
         return {"table1": table1, "table2": table2, "table3": table3}

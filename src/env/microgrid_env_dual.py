@@ -1281,6 +1281,29 @@ class MicrogridEnvDual(gym.Env):
                     k_vpp_sum_per_gfm[gfm_i] += float(self._k_droop_last[agent_i])
             delta_P_ref /= S_BASE
             K_droop_gfm = K_BACKBONE + k_to_pu * k_vpp_sum_per_gfm
+
+            # Nadir Safety Layer (in-the-loop): closed-form minimal-perturbation
+            # projection of delta_P_ref so the predicted next-step COI Δf stays
+            # inside the nadir/zenith band. Active during BOTH training and eval so
+            # the policy learns aware of the layer (reduced distribution shift).
+            # RoCoF is NOT projected here — it is backbone-governed for the GFL
+            # fleet (see Approach-C); the layer guards nadir/zenith only.
+            if getattr(self, "nadir_safety_enabled", True):
+                df_lim = float(getattr(self, "nadir_margin_hz", 0.5))
+                delta_P_ref, _ns_act, _ns_dist, _ns_pred = self.freq_dyn_lti.nadir_safe_projection(
+                    delta_P_ref=delta_P_ref,
+                    delta_P_L=event_term,
+                    K_droop=K_droop_gfm,
+                    topology_id=self._current_topology_id,
+                    delta_f_under=df_lim,
+                    delta_f_over=df_lim,
+                )
+                self._nadir_safety_active = bool(_ns_act)
+                self._nadir_safety_dist = float(_ns_dist)
+            else:
+                self._nadir_safety_active = False
+                self._nadir_safety_dist = 0.0
+
             freq_state = self.freq_dyn_lti.step(
                 dt=self.dt_fast_s,
                 delta_P_ref=delta_P_ref,
@@ -1378,6 +1401,8 @@ class MicrogridEnvDual(gym.Env):
             "freq_event_flag": freq_flag,
             "delta_f": float(np.nan_to_num(freq_state.delta_f_hz, nan=0.0, posinf=5.0, neginf=-5.0)),
             "rocof": float(np.nan_to_num(freq_state.rocof_hz_s, nan=0.0, posinf=10.0, neginf=-10.0)),
+            "nadir_safety_active": bool(getattr(self, "_nadir_safety_active", False)),
+            "nadir_safety_dist": float(getattr(self, "_nadir_safety_dist", 0.0)),
             "delta_f_worst": delta_f_worst,
             "rocof_worst": rocof_worst,
             "delta_f_per_bus": delta_f_per_bus,

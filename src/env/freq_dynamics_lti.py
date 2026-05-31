@@ -478,6 +478,65 @@ class LTITopologyFreqDynamics:
 
         return self.get_state()
 
+    def nadir_safe_projection(
+        self,
+        delta_P_ref: np.ndarray,
+        delta_P_L: float | np.ndarray,
+        K_droop: np.ndarray,
+        topology_id: int,
+        delta_f_under: float = 0.5,
+        delta_f_over: float = 0.5,
+    ) -> tuple[np.ndarray, bool, float, float]:
+        """Closed-form minimal-perturbation safety projection on delta_P_ref.
+
+        Predicts the next-step COI Δf as an affine function of delta_P_ref using
+        the SAME ZOH dynamics as step(), then — if the prediction would breach the
+        nadir/zenith band [-delta_f_under, +delta_f_over] — Euclidean-projects
+        delta_P_ref onto the active half-space (single linear constraint, so the
+        projection is closed-form; no QP solver needed). This is the nadir
+        "Safety Layer": minimal intervention, near-zero compute, runs in-the-loop.
+
+        Δf_pred = a + bᵀ·ΔP_ref, with a,b built to mirror step() exactly
+        (AGC one-step-delay + rating-share disturbance). Assumes the refinement
+        does not hit the power cap (closed-form regime); downstream rating/reserve
+        clipping handles the rare cap case.
+
+        Returns (delta_P_ref_safe, activated, projection_distance, df_pred).
+        """
+        n = self.n_gfm
+        dPref0 = np.asarray(delta_P_ref, dtype=float).copy()
+        if self._B_ref is None:
+            return dPref0, False, 0.0, 0.0
+
+        Phi, M = self._get_phi(K_droop, topology_id)
+        rating_total = float(np.sum(self._gfm_ratings))
+        w = self._gfm_ratings / rating_total                       # COI weights
+        share = w                                                  # rating share
+        M_p = np.diag(1.0 / np.maximum(np.abs(K_droop), 1e-6))
+        T_c_inv = np.diag(1.0 / self._tau_c)
+        G = T_c_inv @ M_p                                          # ΔP_ref → u_omega
+        dP_L = np.asarray(delta_P_L, dtype=float)
+        dP_L_total = float(dP_L.sum()) if dP_L.ndim > 0 else float(dP_L)
+        c_u = -(T_c_inv @ M_p @ share) * (self._agc_integral + dP_L_total)
+
+        M_om_om = M[(n - 1):, (n - 1):]                            # omega-block of M
+        Phi_x_om = (Phi @ self._x)[(n - 1):]
+        a = self.f0 * float(w @ (Phi_x_om + M_om_om @ c_u))
+        b = self.f0 * (G.T @ (M_om_om.T @ w))                      # ∂Δf_pred/∂ΔP_ref
+        df_pred = a + float(b @ dPref0)
+
+        activated = False
+        bb = float(b @ b)
+        if bb > 1e-12:
+            if df_pred < -delta_f_under:
+                dPref0 = dPref0 + b * ((-delta_f_under - df_pred) / bb)
+                activated = True
+            elif df_pred > delta_f_over:
+                dPref0 = dPref0 + b * ((delta_f_over - df_pred) / bb)
+                activated = True
+        dist = float(np.linalg.norm(dPref0 - np.asarray(delta_P_ref, dtype=float)))
+        return dPref0, activated, dist, df_pred
+
     def get_state(self) -> FrequencyStateLTI:
         """Return current frequency state."""
         delta_omega = self._x[(self.n_gfm - 1):]
