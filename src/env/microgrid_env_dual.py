@@ -1239,24 +1239,32 @@ class MicrogridEnvDual(gym.Env):
             # LTI model: single matrix-exp step for full fast-step
             # Build per-GFM power reference from delta_p_set (mapped via bus)
             n_gfm = self.freq_dyn_lti.n_gfm
+            # Map each VPP agent to its nearest GFM via get_gfm_bus_idx — the SAME
+            # mapping the obs builder uses to assign per-bus frequency to agents.
+            # Prior code matched on spec["pp_bus_idx"] (a key that does not exist →
+            # always -1) against gfm pandapower indices with an |idx diff|<5 rule,
+            # so 0/41 agents ever matched: delta_P_ref stayed 0 and K_droop_gfm
+            # stayed at its init for ALL GFMs, making the LTI frequency trajectory
+            # completely policy-invariant. This routed the VPP control into the
+            # frequency model for the first time.
+            # P-channel coupling: each VPP agent's power reference is injected at
+            # its nearest GFM (sum of ΔP_set·P_rated, per-unit on S_BASE). Units are
+            # consistent (MW/S_BASE = pu) so this is numerically safe and is the
+            # dominant FFR mechanism for a grid-FOLLOWING fleet (they inject power).
             delta_P_ref = np.zeros(n_gfm, dtype=float)
+            for agent_i in range(self.n_agents):
+                agent_pp = int(self._agent_bus_pp[agent_i])
+                gfm_i = int(self.freq_dyn_lti.get_gfm_bus_idx(agent_pp))
+                delta_P_ref[gfm_i] += self.delta_p_set[agent_i] * self._agent_p_rated[agent_i]
+            delta_P_ref /= S_BASE
+            # K_droop_gfm stays the BACKBONE droop (default 1.0 in the model's own
+            # per-unit terms). The VPP per-DER K (~0.02-0.1 MW/Hz absolute) is NOT
+            # routed here: it lives on a different unit scale, and feeding it into
+            # M_p = 1/K blows the dynamics up (M_p≈100 → ~-200 Hz nadir). Coupling
+            # the VPP droop channel needs a proper per-unit conversion — tracked as
+            # an open modelling decision; the P-ref channel above carries the
+            # policy's influence in the meantime.
             K_droop_gfm = np.ones(n_gfm, dtype=float)
-            gfm_pp_idx = self.freq_dyn_lti.gfm_bus_indices
-            for gfm_i, pp_idx in enumerate(gfm_pp_idx):
-                # Find agents at or near this GFM bus
-                total_p_ref = 0.0
-                total_k = 0.0
-                count = 0
-                for agent_i, spec in enumerate(self._agent_specs):
-                    agent_pp = spec.get("pp_bus_idx", -1)
-                    if agent_pp == pp_idx or abs(agent_pp - pp_idx) < 5:
-                        total_p_ref += self.delta_p_set[agent_i] * self._agent_p_rated[agent_i]
-                        if hasattr(self, '_k_droop_last') and agent_i < len(self._k_droop_last):
-                            total_k += self._k_droop_last[agent_i]
-                        count += 1
-                if count > 0:
-                    delta_P_ref[gfm_i] = total_p_ref / S_BASE
-                    K_droop_gfm[gfm_i] = max(total_k / count, 0.1)
             freq_state = self.freq_dyn_lti.step(
                 dt=self.dt_fast_s,
                 delta_P_ref=delta_P_ref,
