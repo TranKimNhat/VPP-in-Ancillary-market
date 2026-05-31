@@ -255,27 +255,44 @@ def compute_ffr_metrics(
 # =============================================================================
 
 class NoFFRPolicy:
-    """Baseline: No frequency response."""
+    """Baseline: No frequency response from the VPP fleet.
+
+    Runs the SAME mappo_dual interface/coupling as the proposed method so the
+    comparison is symmetric. a_P=0 (no power reference) and a_K=-1 → K_droop=0
+    (K_min lowered to 0 in the env), i.e. the DERs do not participate in FFR at
+    all. Frequency is then governed solely by the GFM backbone + AGC.
+    """
+    ffr_mode = "mappo_dual"
+
     def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
         n_agents = env.n_agents
         n_vpps = len(env._vpp_droop_agents)
-        return np.zeros(n_agents + n_vpps, dtype=np.float32)
+        action = np.zeros(2 * n_agents + n_vpps, dtype=np.float32)
+        action[n_agents:2 * n_agents] = -1.0   # a_K = -1 → K_droop = K_min = 0
+        return action
 
 
 class FixedDroopPolicy:
-    """Baseline: Fixed droop control (linear proportional, 5% droop per IEEE/ENTSO-E)."""
-    def __init__(self, k_droop: float = 0.05):
+    """Baseline: fixed, uniform droop on every participating DER.
+
+    Same mappo_dual interface as the proposed method: a_P=0 (no learned power
+    reference) and a constant a_K so every DER holds a fixed mid-range droop
+    gain. This isolates the value of the LEARNED, heterogeneous (P,K) policy
+    over a flat classical droop using the identical coupling into A_f.
+    """
+    ffr_mode = "mappo_dual"
+
+    def __init__(self, k_droop: float = 0.05, a_k_fixed: float = 0.0):
+        # a_k_fixed = 0.0 → K = midpoint of [0, K_max] (a moderate fixed droop).
         self.k_droop = k_droop
+        self.a_k_fixed = a_k_fixed
 
     def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
-        freq_state = env.freq_dyn.get_state()
-        delta_f = freq_state.delta_f_hz
-        control = -self.k_droop * np.clip(delta_f / 0.5, -1.0, 1.0)
-
         n_agents = env.n_agents
         n_vpps = len(env._vpp_droop_agents)
-        action = np.full(n_agents + n_vpps, control, dtype=np.float32)
-        return np.clip(action, -1.0, 1.0)
+        action = np.zeros(2 * n_agents + n_vpps, dtype=np.float32)
+        action[n_agents:2 * n_agents] = self.a_k_fixed   # uniform fixed droop
+        return action
 
 
 class GraphSAGEMAPPOPolicy:

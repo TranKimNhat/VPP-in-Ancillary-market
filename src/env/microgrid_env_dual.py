@@ -354,15 +354,20 @@ class MicrogridEnvDual(gym.Env):
         # Per-DER K_droop bounds for "mappo_dual" mode (units: MW/Hz)
         # Mapping per proposal §2: K_i = R_i * P_rated_i with R_i in [R_min, R_max] per type.
         # PV (non-dispatchable) cannot provide FFR -> bounds collapse to 0.
+        # R_min = 0 for ALL types: the lower bound is no-participation (K=0), not a
+        # mandated droop floor. This (a) lets a_K=-1 express a TRUE no-FFR baseline,
+        # and (b) gives the dual policy the full [0, K_max] range (more freedom, and
+        # symmetric with the No-FFR / Fixed-Droop baselines that now share this exact
+        # action space and coupling). r_max unchanged.
         self._k_droop_min_per_agent = np.zeros(self.n_agents, dtype=np.float32)
         self._k_droop_max_per_agent = np.zeros(self.n_agents, dtype=np.float32)
         for i, spec in enumerate(self._agent_specs):
             atype = spec.get("type", "")
             p_rated = float(self._agent_p_rated[i])
             if "BESS" in atype:
-                r_min, r_max = 0.05, 0.30
+                r_min, r_max = 0.0, 0.30
             elif "V2G" in atype:
-                r_min, r_max = 0.05, 0.20
+                r_min, r_max = 0.0, 0.20
             elif "DPV" in atype:
                 r_min, r_max = 0.0, 0.15
             else:  # EVCS_PV (non-dispatchable PV) — no FFR
