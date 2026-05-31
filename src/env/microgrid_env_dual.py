@@ -1247,24 +1247,35 @@ class MicrogridEnvDual(gym.Env):
             # stayed at its init for ALL GFMs, making the LTI frequency trajectory
             # completely policy-invariant. This routed the VPP control into the
             # frequency model for the first time.
-            # P-channel coupling: each VPP agent's power reference is injected at
-            # its nearest GFM (sum of ΔP_set·P_rated, per-unit on S_BASE). Units are
-            # consistent (MW/S_BASE = pu) so this is numerically safe and is the
-            # dominant FFR mechanism for a grid-FOLLOWING fleet (they inject power).
+            # Couple BOTH VPP channels into the per-GFM frequency model, mapping
+            # each agent to its nearest GFM via get_gfm_bus_idx (same mapping the
+            # obs builder uses). Two unit systems must be reconciled:
+            #
+            #  P-ref channel: delta_P_ref = Σ ΔP_set·P_rated / S_BASE  [pu on S_BASE].
+            #    Direct power injection; units consistent, numerically safe.
+            #
+            #  K (droop) channel: the model's K_droop is a DIMENSIONLESS per-unit
+            #    droop (K = 1/R; Δω_pu = -(1/K)·ΔP_pu), with backbone default 1.0.
+            #    The per-DER _k_droop_last is ABSOLUTE [MW/Hz]. Conversion:
+            #        ΔP_MW = K_vpp·(-Δf),  Δf = f0·Δω_pu,  ΔP_pu = ΔP_MW/S_BASE
+            #      ⇒ K_model_contrib = K_vpp · f0 / S_BASE   (dimensionless).
+            #    Parallel droop sources add, and the VPP droop ADDS to the backbone:
+            #        K_droop_gfm = K_backbone + (f0/S_BASE)·Σ K_vpp.
+            #    (Feeding raw K_vpp [MW/Hz] straight into M_p=1/K gave M_p≈33-100 and
+            #    blew the dynamics up to ~-200 Hz; this conversion keeps K_gfm≳1 so
+            #    M_p≲1 stays bounded while the learned droop still modulates A_f.)
+            K_BACKBONE = 1.0
+            k_to_pu = self.freq_dyn_lti.f0 / S_BASE
             delta_P_ref = np.zeros(n_gfm, dtype=float)
+            k_vpp_sum_per_gfm = np.zeros(n_gfm, dtype=float)
             for agent_i in range(self.n_agents):
                 agent_pp = int(self._agent_bus_pp[agent_i])
                 gfm_i = int(self.freq_dyn_lti.get_gfm_bus_idx(agent_pp))
                 delta_P_ref[gfm_i] += self.delta_p_set[agent_i] * self._agent_p_rated[agent_i]
+                if hasattr(self, '_k_droop_last') and agent_i < len(self._k_droop_last):
+                    k_vpp_sum_per_gfm[gfm_i] += float(self._k_droop_last[agent_i])
             delta_P_ref /= S_BASE
-            # K_droop_gfm stays the BACKBONE droop (default 1.0 in the model's own
-            # per-unit terms). The VPP per-DER K (~0.02-0.1 MW/Hz absolute) is NOT
-            # routed here: it lives on a different unit scale, and feeding it into
-            # M_p = 1/K blows the dynamics up (M_p≈100 → ~-200 Hz nadir). Coupling
-            # the VPP droop channel needs a proper per-unit conversion — tracked as
-            # an open modelling decision; the P-ref channel above carries the
-            # policy's influence in the meantime.
-            K_droop_gfm = np.ones(n_gfm, dtype=float)
+            K_droop_gfm = K_BACKBONE + k_to_pu * k_vpp_sum_per_gfm
             freq_state = self.freq_dyn_lti.step(
                 dt=self.dt_fast_s,
                 delta_P_ref=delta_P_ref,
