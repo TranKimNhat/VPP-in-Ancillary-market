@@ -60,6 +60,11 @@ class FFRMetrics:
     f_trace: np.ndarray = field(default_factory=lambda: np.array([]))
     f_trace_hires: np.ndarray = field(default_factory=lambda: np.array([]))
     dt_hires: float = 0.1
+    # COI counterparts (reported in parallel for comparison). The headline fields
+    # above are worst-GFM when per-bus traces are available, else identical to COI.
+    nadir_coi_hz: float = 50.0
+    zenith_coi_hz: float = 50.0
+    rocof_max_coi_hz_s: float = 0.0
 
     def to_dict(self) -> dict[str, float]:
         return {
@@ -73,6 +78,9 @@ class FFRMetrics:
             "itae": self.itae,
             "time_in_violation_s": self.time_in_violation_s,
             "ffr_success": float(self.ffr_success),
+            "nadir_coi_hz": self.nadir_coi_hz,
+            "zenith_coi_hz": self.zenith_coi_hz,
+            "rocof_max_coi_hz_s": self.rocof_max_coi_hz_s,
         }
 
 
@@ -186,19 +194,56 @@ def compute_ffr_metrics(
     rocof_trace: np.ndarray,
     f_nominal: float = 50.0,
     f_limit: float = 0.5,
-    settle_band: float = 0.02,
+    settle_band: float = 0.05,  # ENTSO-E SO GL standard frequency range (±50 mHz, CE)
     event_step: int = 30,
     post_window: int = 50,
     dt: float = 1.0,
     rocof_limit: float = 2.0,  # IEEE 1547-2018 Cat III mandatory ride-through (NOT protection trip; ENTSO-E mainland uses 1.0 Hz/s)
+    f_trace_nadir: np.ndarray | None = None,
+    f_trace_zenith: np.ndarray | None = None,
+    rocof_trace_worst: np.ndarray | None = None,
 ) -> FFRMetrics:
-    """Compute FFR metrics from frequency trajectory (IEEE 1547 Cat III aligned)."""
-    delta_f = f_trace - f_nominal
+    """Compute FFR metrics from frequency trajectory (IEEE 1547 Cat III aligned).
 
-    # Basic metrics
-    nadir = float(np.min(f_trace))
-    zenith = float(np.max(f_trace))
-    rocof_max = float(np.max(np.abs(rocof_trace)))
+    When per-timestep worst-GFM traces are supplied (``f_trace_nadir`` = min over
+    GFMs, ``f_trace_zenith`` = max over GFMs, ``rocof_trace_worst`` = max |RoCoF|
+    over GFMs), the HEADLINE metrics are computed on the worst-GFM quantity and the
+    COI counterparts are reported in parallel. Absent those, behaviour is identical
+    to the legacy COI computation (back-compat).
+    """
+    f_trace = np.asarray(f_trace, dtype=float)
+    rocof_trace = np.asarray(rocof_trace, dtype=float)
+
+    # COI metrics (always computed; reported in parallel as *_coi fields).
+    nadir_coi = float(np.min(f_trace))
+    zenith_coi = float(np.max(f_trace))
+    rocof_max_coi = float(np.max(np.abs(rocof_trace)))
+
+    use_worst = (f_trace_nadir is not None and f_trace_zenith is not None
+                 and rocof_trace_worst is not None)
+    if use_worst:
+        f_nadir = np.asarray(f_trace_nadir, dtype=float)
+        f_zenith = np.asarray(f_trace_zenith, dtype=float)
+        nadir = float(np.min(f_nadir))
+        zenith = float(np.max(f_zenith))
+        # RoCoF headline stays on the COI (backbone-governed): peak RoCoF =
+        # ΔP/2H_sys is a system property set by the GFM backbone, ~common to all
+        # controllers, and the worst-GFM rate would be inflated by the same single
+        # diverging unit that motivates the nadir clamp. Only nadir/zenith use the
+        # worst unit (Approach-C / D1). rocof_trace_worst is still reported below.
+        rocof_max = rocof_max_coi
+        # Per-timestep worst deviation magnitude across BOTH directions. A synthetic
+        # trace pinned below nominal by this magnitude makes |Δf| = worst_dev, so the
+        # |Δf|-based integrals (IAE/ITAE/violation/settling) reuse the COI code paths.
+        worst_dev = np.maximum.reduce([
+            f_nominal - f_nadir, f_zenith - f_nominal, np.zeros_like(f_nadir)
+        ])
+        mag_trace = f_nominal - worst_dev
+    else:
+        nadir, zenith, rocof_max = nadir_coi, zenith_coi, rocof_max_coi
+        mag_trace = f_trace
+
+    delta_f = mag_trace - f_nominal
     delta_f_max = float(np.max(np.abs(delta_f)))
 
     # IAE (Integral Absolute Error)
@@ -211,7 +256,7 @@ def compute_ffr_metrics(
     iae_post = float(np.trapezoid(np.abs(post_delta_f), dx=dt)) if len(post_delta_f) > 0 else 0.0
 
     # ITAE (Integral of Time-weighted Absolute Error)
-    itae = compute_itae(f_trace, f_nominal, dt, t_event=event_step * dt)
+    itae = compute_itae(mag_trace, f_nominal, dt, t_event=event_step * dt)
 
     # Settling time (time to stay within deadband)
     settling_time = float(post_window * dt)
@@ -225,15 +270,19 @@ def compute_ffr_metrics(
     in_violation = np.abs(delta_f) > f_limit
     time_violation = float(np.sum(in_violation) * dt)
 
-    # FFR success criterion (frequency-security definition):
-    #   1. Continuous post-event excursion below 49.5 Hz < 300 ms — typical
-    #      UFLS Stage 1 trip delay per IEEE Std C37.117-2007 §6.2
-    #      (NOT IEEE 81; that is the grounding standard).
-    #   2. Max RoCoF ≤ rocof_limit — IEEE Std 1547-2018 Category III mandatory
-    #      ride-through for inverter-based resources (NOT the stricter
-    #      1.0 Hz/s ENTSO-E mainland protection-trip threshold).
-    # 300 ms = 3 hi-res samples @ dt=0.1s; time_violation sums all under-threshold samples.
-    ffr_success = (time_violation <= 0.3) and (rocof_max <= rocof_limit)
+    # FFR success criterion (frequency-security definition): the controllable
+    # GFL fleet shapes the frequency-deviation / nadir margin, so success is a
+    # continuous post-event excursion below the 49.5 Hz alarm for < 300 ms — the
+    # typical UFLS Stage 1 trip delay (IEEE Std C37.117-2007 §6.2; NOT IEEE 81,
+    # the grounding standard). 300 ms = 3 hi-res samples @ dt=0.1s; time_violation
+    # sums all under-threshold samples.
+    #
+    # RoCoF is deliberately NOT part of the gate: peak RoCoF = ΔP_imb/(2H_backbone)
+    # is set by the grid-forming backbone inertia, not by the GFL action (Approach-C),
+    # so it is reported (rocof_max_hz_s) for completeness and is ~identical across
+    # controllers; it does not discriminate them. rocof_limit is retained only for
+    # backward-compatible reporting of the ride-through threshold.
+    ffr_success = (time_violation <= 0.3)
 
     return FFRMetrics(
         nadir_hz=nadir,
@@ -247,6 +296,9 @@ def compute_ffr_metrics(
         time_in_violation_s=time_violation,
         ffr_success=ffr_success,
         f_trace=f_trace,
+        nadir_coi_hz=nadir_coi,
+        zenith_coi_hz=zenith_coi,
+        rocof_max_coi_hz_s=rocof_max_coi,
     )
 
 
@@ -263,6 +315,7 @@ class NoFFRPolicy:
     all. Frequency is then governed solely by the GFM backbone + AGC.
     """
     ffr_mode = "mappo_dual"
+    nadir_safety = False   # genuine baseline: no proposed nadir safety projection
 
     def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
         n_agents = env.n_agents
@@ -281,6 +334,7 @@ class FixedDroopPolicy:
     over a flat classical droop using the identical coupling into A_f.
     """
     ffr_mode = "mappo_dual"
+    nadir_safety = False   # genuine baseline: no proposed nadir safety projection
 
     def __init__(self, k_droop: float = 0.05, a_k_fixed: float = 0.0):
         # a_k_fixed = 0.0 → K = midpoint of [0, K_max] (a moderate fixed droop).
@@ -372,10 +426,13 @@ class GraphSAGEMAPPOPolicy:
 
 
 class GCNNPPOPolicy:
-    """Baseline: GCNN-PPO (Guo et al. 2024).
+    """Baseline: GCNN-PPO (Guo et al. 2024), adapted to our POMDP.
 
-    Spectral GCN + single centralized PPO. Uses legacy 5-column obs_fast.
+    Spectral GCN + centralized PPO. Evaluated under the SAME dual (a_P, a_K)
+    mappo_dual interface as the proposed method so the comparison is symmetric.
     """
+    ffr_mode = "mappo_dual"  # same MDP/interface as training; dual (P,K) per DER
+
     def __init__(self, checkpoint_path: Path, env: MicrogridEnvDual):
         from src.baselines.gcnn_ppo import GCNNPPOAgent
         self._agent = GCNNPPOAgent.load(checkpoint_path)
@@ -388,82 +445,88 @@ class GCNNPPOPolicy:
             raise ValueError(f"Expected obs_fast (N,>=5), got {arr.shape}")
         return arr[:, :5]
 
-    def _map_to_env_action(self, raw: np.ndarray, env: Any) -> np.ndarray:
-        raw = np.asarray(raw, dtype=np.float32).reshape(-1)
-        n_agents = env.n_agents
-        p_all = raw[:n_agents]
-        droop_all = raw[n_agents:2 * n_agents] if raw.size >= 2 * n_agents else np.zeros(n_agents, dtype=np.float32)
-        n_vpps = len(env._vpp_droop_agents)
-        vpp_droop = np.zeros(n_vpps, dtype=np.float32)
-        for vpp_idx, (_, members) in enumerate(env._vpp_droop_agents.items()):
-            members = [m for m in members if m < n_agents]
-            vpp_droop[vpp_idx] = float(np.mean(droop_all[members])) if members else 0.0
-        return np.clip(np.concatenate([p_all, vpp_droop]).astype(np.float32), -1.0, 1.0)
-
     def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
-        # GCNN-PPO is trained on build_am_full_feeder_obs (shape (n_bus, 20))
-        # not the legacy 10-feature _combine_obs. Use the same obs builder
-        # the trainer's rollout_episode uses, otherwise the encoder's
-        # in_dim=20 will mismatch the eval-side 10-feature input.
+        # GCNN-PPO is trained on build_am_full_feeder_obs (shape (n_bus, 20)).
         from src.rl.train_am_mappo import build_am_full_feeder_obs
         if obs_fast is None:
             raise ValueError("GCNNPPOPolicy requires obs_fast")
         obs_full = build_am_full_feeder_obs(env, obs_fast)
         global_obs = obs_full.reshape(-1)
-        action_env, _lp, _v, _raw = self._agent.act(obs_full, edge_index, global_obs)
-        return self._map_to_env_action(action_env, env)
+        # Deterministic eval (distribution mean, no sampling).
+        action_env = self._agent.act_deterministic(obs_full, edge_index, global_obs)
+        # Dual (a_P, a_K) layout, identical to training and to GraphSAGEMAPPOPolicy.
+        a = np.asarray(action_env, dtype=np.float32).reshape(-1)
+        n_agents = env.n_agents
+        n_vpps = len(env._vpp_droop_agents)
+        a = a.reshape(n_agents, 2) if a.size >= 2 * n_agents else a.reshape(-1, 1)
+        ctrl_p = -a[:, 0]
+        ctrl_k = a[:, 1] if a.shape[1] >= 2 else np.zeros(n_agents, dtype=np.float32)
+        full_action = np.zeros(2 * n_agents + n_vpps, dtype=np.float32)
+        full_action[:n_agents] = np.clip(ctrl_p[:n_agents], -1.0, 1.0)
+        full_action[n_agents:2 * n_agents] = np.clip(ctrl_k[:n_agents], -1.0, 1.0)
+        return full_action
 
 
 class MATD3Policy:
-    """Baseline: MATD3 (Li & Zhou 2025, base algorithm without EIE enhancements).
+    """Baseline: EIE-MATD3 (Li & Zhou 2025), adapted to our POMDP.
 
     CTDE multi-agent TD3 with MLP encoder. Builds per-agent obs from env state.
+    Evaluated under the SAME dual (a_P, a_K) mappo_dual interface as the proposed
+    method so the comparison is symmetric.
     """
+    ffr_mode = "mappo_dual"  # same MDP/interface as training; dual (P,K) per DER
+
     def __init__(self, checkpoint_path: Path, env: MicrogridEnvDual):
         from src.baselines.matd3 import MATD3Agent, MATD3Config
-        # Auto-detect obs_dim: prefer stored config, else infer from actor weights.
+        # Auto-detect obs_dim AND hidden_dim: prefer stored config, else infer from
+        # actor weights. hidden_dim MUST be restored — checkpoints trained with
+        # hidden_dim=256 fail load_state_dict against the default-128 actor (a latent
+        # bug: the prior code restored obs_dim only).
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         obs_dim = 24
+        hidden_dim = 128
         stored_cfg = ckpt.get("config") if isinstance(ckpt, dict) else None
         if stored_cfg is not None and hasattr(stored_cfg, "obs_dim"):
             obs_dim = int(stored_cfg.obs_dim)
+            hidden_dim = int(getattr(stored_cfg, "hidden_dim", hidden_dim))
         else:
             actors_blob = ckpt.get("actors") if isinstance(ckpt, dict) else None
             if isinstance(actors_blob, dict) and "0.net.0.weight" in actors_blob:
-                obs_dim = int(actors_blob["0.net.0.weight"].shape[1])
-        self._obs_dim = obs_dim
-        config = MATD3Config(obs_dim=obs_dim, action_dim=2, n_agents=env.n_agents)
+                w = actors_blob["0.net.0.weight"].shape
+                hidden_dim = int(w[0])
+                obs_dim = int(w[1])
+        config = MATD3Config(obs_dim=obs_dim, hidden_dim=hidden_dim, action_dim=2, n_agents=env.n_agents)
         self._agent = MATD3Agent(config, device="cpu")
         self._agent.load(checkpoint_path)
         self._agent.eval()
         self._env = env
 
-    def _build_obs(self, obs_fast: np.ndarray, env: Any) -> np.ndarray:
-        n_agents = env.n_agents
-        obs = np.zeros((n_agents, self._obs_dim), dtype=np.float32)
-        freq_state = env.freq_dyn.get_state()
-        tail_slot = self._obs_dim - 2  # first 2 slots reserved for delta_f + rocof
-        for i in range(n_agents):
-            obs[i, 0] = freq_state.delta_f_hz
-            obs[i, 1] = freq_state.rocof_hz_s
-            if i < len(obs_fast):
-                tail = obs_fast[i][:tail_slot]
-                obs[i, 2:2 + len(tail)] = tail
-        return obs
-
     def act(self, obs: np.ndarray, edge_index: np.ndarray, env: Any, obs_fast: np.ndarray | None = None) -> np.ndarray:
-        if obs_fast is None:
-            raise ValueError("MATD3Policy requires obs_fast")
-        per_agent_obs = self._build_obs(obs_fast, env)
-        actions = self._agent.act_deterministic(per_agent_obs)
-        p_actions = actions[:, 0]
+        # `obs` IS the full-feeder observation (n_bus, obs_feat) from
+        # build_am_full_feeder_obs — the SAME tensor train_matd3.py trains on.
+        # Extract per-agent rows by bus index exactly as training does
+        # (train_matd3.py: `obs = obs_full[agent_bus_idx]`). The prior _build_obs
+        # rebuilt a DIFFERENT vector (raw COI delta_f + raw fast-obs + zero-padded
+        # tail), a train/eval mismatch that fed the actor out-of-distribution input
+        # (15/20 channels differed; slots 9–19 zeroed) and invalidated the MATD3
+        # comparison. obs_fast is no longer needed (kept in signature for the
+        # shared policy.act interface).
+        agent_bus_idx = np.clip(
+            np.asarray(getattr(env, "_agent_bus_pp", np.arange(env.n_agents)), dtype=np.int64),
+            0, obs.shape[0] - 1,
+        )
+        per_agent_obs = obs[agent_bus_idx]  # (n_agents, obs_feat) — identical to training
+        actions = self._agent.act_deterministic(per_agent_obs)  # (n_agents, 2)
+        # Dual (a_P, a_K) layout, identical to training and to GraphSAGEMAPPOPolicy:
+        #   ctrl_p = -a_P (sign convention), ctrl_k = a_K (maps to per-DER K_droop).
+        n_agents = env.n_agents
         n_vpps = len(env._vpp_droop_agents)
-        vpp_droop = np.zeros(n_vpps, dtype=np.float32)
-        for vpp_idx, (_, members) in enumerate(env._vpp_droop_agents.items()):
-            valid = [m for m in members if m < len(actions)]
-            if valid:
-                vpp_droop[vpp_idx] = float(np.mean([actions[a, 1] for a in valid]))
-        return np.clip(np.concatenate([p_actions, vpp_droop]).astype(np.float32), -1.0, 1.0)
+        ctrl_p = -actions[:, 0]
+        ctrl_k = actions[:, 1] if actions.shape[1] >= 2 else np.zeros(n_agents, dtype=np.float32)
+        full_action = np.zeros(2 * n_agents + n_vpps, dtype=np.float32)
+        full_action[:n_agents] = np.clip(ctrl_p[:n_agents], -1.0, 1.0)
+        full_action[n_agents:2 * n_agents] = np.clip(ctrl_k[:n_agents], -1.0, 1.0)
+        return full_action
 
 
 class MLPMAPPOPolicy:
@@ -566,8 +629,14 @@ class FFRTopologyEvaluator:
         gcnn_checkpoint: Path | None = None,
         matd3_checkpoint: Path | None = None,
         mlp_mappo_checkpoint: Path | None = None,
+        base_reference: bool = False,
     ):
         self.env = MicrogridEnvDual(**env_config)
+        # Train-on-base, eval-on-all-reconfig protocol: when True, the reference is
+        # the nominal base feeder (topology sentinel -1) and ALL cached reconfig
+        # topologies are treated as unseen. Default False = farthest-split behaviour.
+        self.base_reference = base_reference
+        self.base_edges: np.ndarray | None = None
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -629,6 +698,19 @@ class FFRTopologyEvaluator:
             self.split_stats = {"d_min_mean": 0.0, "d_min_min": 0.0, "d_min_max": 0.0}
             print(f"Topologies: {len(self.train_topologies)} train, {len(self.test_topologies)} test (sequential split)")
 
+        if self.base_reference and n_topos >= 1:
+            # Capture the base feeder edge set (the ONLY topology models trained on),
+            # then mark every cached reconfig topology as unseen.
+            _prev = self.env.fixed_base_topology
+            self.env.fixed_base_topology = True
+            self.env.reset()
+            self.base_edges = np.asarray(self.env.edge_index).copy()
+            self.env.fixed_base_topology = _prev
+            self.train_topologies = [-1]                  # sentinel: base reference
+            self.test_topologies = list(range(n_topos))   # all topologies unseen
+            print(f"Base-reference mode: reference=base feeder, "
+                  f"{len(self.test_topologies)} reconfig topologies ALL unseen")
+
     def run_episode(
         self,
         policy: Any,
@@ -640,8 +722,9 @@ class FFRTopologyEvaluator:
         options = {}
         if event is not None:
             options["force_event"] = deepcopy(event)
-        if topology_idx is not None:
-            options["force_topology"] = topology_idx
+        use_base = topology_idx is not None and int(topology_idx) < 0
+        if topology_idx is not None and not use_base:
+            options["force_topology"] = int(topology_idx)
 
         # Each policy is evaluated in its NATIVE control mode (user decision):
         # proposed/ablation MAPPO -> "mappo_dual" (per-DER P,K from the policy);
@@ -651,8 +734,18 @@ class FFRTopologyEvaluator:
         # like-for-like comparison. step_fast reads self.ffr_mode each call and the
         # per-DER K buffers are always initialised, so switching here is safe.
         self.env.ffr_mode = getattr(policy, "ffr_mode", "droop")
+        # Per-policy nadir safety layer: classical references (No-FFR, Fixed-Droop)
+        # run WITHOUT the proposed in-the-loop nadir projection so they are genuine
+        # baselines (otherwise the layer injects power into the VPP channel and
+        # rescues even the No-FFR fleet, pinning nadir at the band edge). Learned
+        # methods keep it ON to match their training-time environment.
+        self.env.nadir_safety_enabled = bool(getattr(policy, "nadir_safety", True))
 
+        _prev_base_flag = self.env.fixed_base_topology
+        if use_base:
+            self.env.fixed_base_topology = True
         obs_fast, _, _ = self.env.reset(options=options)
+        self.env.fixed_base_topology = _prev_base_flag
         n_bus = len(self.env.net.bus.index)
         edge_index = ensure_edge_index(self.env.edge_index, n_nodes=n_bus)
 
@@ -684,7 +777,7 @@ class FFRTopologyEvaluator:
                 f_trace_per_bus.append(50.0 + freq_state.delta_f_per_bus.copy())
                 rocof_trace_per_bus.append(freq_state.rocof_per_bus.copy())
             else:
-                freq_state = self.env.freq_dyn.get_state()
+                freq_state = self.env.freq_dyn_lti.get_state()
             # Always append scalar COI for backward-compat metrics
             f_trace.append(50.0 + freq_state.delta_f_hz)
             rocof_trace.append(freq_state.rocof_hz_s)
@@ -693,18 +786,33 @@ class FFRTopologyEvaluator:
         f_hires = [50.0 + df for df in self.env._hires_df]
 
         event_step = int(event.t_inject) if event else 30
+        # Headline metrics are computed on the COI (rating-weighted system frequency).
+        # At the 1 s FFR/SFR control step the COI is the resolvable system-frequency
+        # observable (Anderson 1990); per-GFM (inter-machine) frequency is a
+        # sub-second phenomenon NOT resolvable at this timestep, so it is not used for
+        # the headline nadir/IAE/RoCoF/FFR-success -- only as a transient spatial-
+        # spread diagnostic (clamped to the model validity band so a divergent unit's
+        # leftover trace stays bounded).
         metrics = compute_ffr_metrics(
             np.array(f_trace),
             np.array(rocof_trace),
             event_step=event_step,
         )
-        # Attach hi-res trace for plotting helpers
+        # Attach hi-res trace for plotting helpers. When env.hires_substeps>1 the
+        # buffer holds n_sub samples per fast-step, so the true spacing is
+        # dt_fast_s / n_sub (NOT dt_ode_s, which is unused by the LTI path and was
+        # the source of the collapsed-time-axis blank figure).
+        n_sub = int(getattr(self.env, "hires_substeps", 0))
+        dt_fast = float(getattr(self.env, "dt_fast_s", 1.0))
         metrics.f_trace_hires = np.asarray(f_hires, dtype=np.float32)
-        metrics.dt_hires = float(getattr(self.env, "dt_ode_s", 0.1))
-        # Attach per-bus traces if LTI was active (for spatial analysis figures)
+        metrics.dt_hires = dt_fast / n_sub if n_sub > 1 else dt_fast
+        # Per-bus traces: transient spatial diagnostic ONLY (not headline metrics).
         if f_trace_per_bus:
-            metrics.f_trace_per_bus = np.stack(f_trace_per_bus, axis=0)  # (T, n_gfm)
+            pb = np.clip(np.stack(f_trace_per_bus, axis=0), 45.0, 55.0)  # (T, n_gfm)
+            metrics.f_trace_per_bus = pb
             metrics.rocof_trace_per_bus = np.stack(rocof_trace_per_bus, axis=0)
+            metrics.nadir_worstbus_hz = float(pb.min())
+            metrics.worstbus_spread_hz = float((pb.max(axis=1) - pb.min(axis=1)).max())
         return metrics
 
     def build_table1_ffr_comparison(self, n_runs: int = 20) -> pd.DataFrame:
@@ -743,7 +851,10 @@ class FFRTopologyEvaluator:
         rows = []
 
         for policy_name, policy in self.policies.items():
-            for split_name, topo_list in [("train", self.train_topologies), ("unseen", self.test_topologies)]:
+            for split_name, topo_list in [
+                ("base" if self.base_reference else "train", self.train_topologies),
+                ("unseen", self.test_topologies),
+            ]:
                 if not topo_list:
                     continue
 
@@ -787,8 +898,9 @@ class FFRTopologyEvaluator:
         # (lower=better) does. gap = relative IAE degradation on unseen topologies;
         # retention = train/unseen (≤1 better, →1 = generalizes perfectly).
         if not df.empty and "method" in df.columns:
+            ref_label = "base" if self.base_reference else "train"
             for policy_name in self.policies.keys():
-                train_row = df[(df["method"] == policy_name) & (df["topology_split"] == "train")]
+                train_row = df[(df["method"] == policy_name) & (df["topology_split"] == ref_label)]
                 test_row = df[(df["method"] == policy_name) & (df["topology_split"] == "unseen")]
 
                 if not train_row.empty and not test_row.empty:
@@ -866,7 +978,7 @@ class FFRTopologyEvaluator:
         topology_idx: int | None = 0,
         dt: float = 1.0,
         ufls_hz: float = 49.5,
-        settle_band: float = 0.1,
+        settle_band: float = 0.05,  # match compute_ffr_metrics (ENTSO-E ±50 mHz)
         zoom_post_event_s: float | None = 20.0,
         save_suffix: str = "",
     ) -> None:
@@ -942,7 +1054,15 @@ class FFRTopologyEvaluator:
         ZONE_PRIM = "#d9e8f5"  # cool blue (primary 2–10 s)
         ZONE_AGC  = "#dceedc"  # cool green (AGC ≥10 s)
 
-        for sub_i, (ax, sc_name) in enumerate(zip(axes_flat, scenario_names)):
+        # Resolve the sub-second transient for the illustrative curve: re-simulate
+        # each fast-step at dt_fast/100 = 10 ms (read-only, training-untouched; the
+        # textbook RMS/phasor-swing timestep). Restored in the finally block. The
+        # nadir/zenith ANNOTATION below is NOT taken from this 10 ms trace -- it uses
+        # the 1 s COI metric (compute_ffr_metrics) so the figure agrees with Tables.
+        _prev_hires = int(getattr(self.env, "hires_substeps", 0))
+        self.env.hires_substeps = 100
+        try:
+          for sub_i, (ax, sc_name) in enumerate(zip(axes_flat, scenario_names)):
             event = self.scenarios[sc_name]
             event_t = float(event.t_inject)
 
@@ -971,14 +1091,26 @@ class FFRTopologyEvaluator:
             for method_name in method_order:
                 policy = self.policies[method_name]
                 runs: list[np.ndarray] = []
+                coi_runs: list[np.ndarray] = []   # 1 s COI traces (table-timescale)
+                metric_vals: list[float] = []     # per-run table nadir/zenith
                 hires_dt = None
                 for _ in range(n_runs):
                     m = self.run_episode(policy, event=event, topology_idx=topology_idx)
+                    # Prefer the sub-step trace (env.hires_substeps>1 set below): it
+                    # resolves the true sub-second nadir transient at dt_fast/n_sub.
+                    # Falls back to the per-fast-step COI trace otherwise. (dt_hires
+                    # is now the correct spacing, not the old dt_ode_s bug that
+                    # collapsed the axis and blanked the figure.)
                     if m.f_trace_hires.size > 0:
                         runs.append(np.asarray(m.f_trace_hires, dtype=float))
                         hires_dt = float(m.dt_hires)
                     else:
                         runs.append(np.asarray(m.f_trace, dtype=float))
+                    # Keep the 1 s COI trace + the SAME control-timescale extremum the
+                    # Tables report (compute_ffr_metrics), so the annotation can never
+                    # disagree with the tabulated nadir_hz / zenith_hz.
+                    coi_runs.append(np.asarray(m.f_trace, dtype=float))
+                    metric_vals.append(float(m.zenith_hz if over_freq else m.nadir_hz))
                 if not runs:
                     continue
                 L = min(len(r) for r in runs)
@@ -997,17 +1129,28 @@ class FFRTopologyEvaluator:
                     ax.fill_between(t, mean - std, mean + std, color=color,
                                     alpha=0.18, linewidth=0, zorder=ZORDER_BAND)
 
-                # Record nadir/zenith — skip the first 0.5 s after event
-                # injection to avoid the simulator's numerical spike, then
-                # report the SETTLED extremum of the post-event window.
-                post_mask = (t >= event_t + 0.5) & (t <= event_t + 15.0)
-                if post_mask.any():
-                    post_mean = mean[post_mask]
-                    post_t = t[post_mask]
-                    idx = int(np.argmax(post_mean) if over_freq else np.argmin(post_mean))
-                    nadir_records.append(
-                        (method_name, float(post_mean[idx]), color, float(post_t[idx]))
-                    )
+                # Record nadir/zenith — report the SAME control-timescale (1 s COI)
+                # quantity as Tables 1/2 (mean per-run nadir_hz / zenith_hz from
+                # compute_ffr_metrics), NOT the 10 ms hi-res dip. The smooth hires
+                # curve above is illustrative only; pinning the label + marker to the
+                # tabulated extremum keeps the figure and the tables in lockstep, and
+                # honestly shows the resolved nadir is shallower than the sub-second
+                # excursion the controller neither optimises nor guards at 1 s.
+                if metric_vals:
+                    val = float(np.mean(metric_vals))
+                    # Marker time: extremum of the averaged 1 s COI trace over the
+                    # post-event window (skip 0.5 s spike); position only, height = val.
+                    Lc = min(len(r) for r in coi_runs)
+                    coi_mean = np.stack([r[:Lc] for r in coi_runs], axis=0).mean(axis=0)
+                    tc = np.arange(Lc) * dt
+                    c_mask = (tc >= event_t + 0.5) & (tc <= event_t + 15.0)
+                    if c_mask.any():
+                        seg, seg_t = coi_mean[c_mask], tc[c_mask]
+                        j = int(np.argmax(seg) if over_freq else np.argmin(seg))
+                        t_pos = float(seg_t[j])
+                    else:
+                        t_pos = event_t
+                    nadir_records.append((method_name, val, color, t_pos))
 
             # Mark the extremum point on each curve.
             for _, val, c, t_pos in nadir_records:
@@ -1053,6 +1196,8 @@ class FFRTopologyEvaluator:
             ax.set_ylim(47.5, 53.0)
             if zoom_post_event_s is not None:
                 ax.set_xlim(max(0.0, event_t - 2.0), event_t + float(zoom_post_event_s))
+        finally:
+            self.env.hires_substeps = _prev_hires
 
         # Single top-of-figure legend, 3 cols, no frame.
         handles, labels = axes_flat[0].get_legend_handles_labels()
@@ -1105,12 +1250,18 @@ class FFRTopologyEvaluator:
                 ei = np.array([[], []])
             topo_edges.append(np.asarray(ei))
 
-        # Distance from each test topo to its nearest train topo
+        # Distance from each test topo to the reference. In base-reference mode the
+        # reference is the base feeder (sentinel -1, not a cache index); otherwise
+        # it is the nearest train topology.
+        if self.base_reference and self.base_edges is not None:
+            ref_edges_list = [self.base_edges]
+        else:
+            ref_edges_list = [topo_edges[tr_idx] for tr_idx in self.train_topologies]
         d_min_per_test: dict[int, float] = {}
         for t_idx in self.test_topologies:
             d_min = min(
-                compute_jaccard_edge_distance(topo_edges[t_idx], topo_edges[tr_idx])
-                for tr_idx in self.train_topologies
+                compute_jaccard_edge_distance(topo_edges[t_idx], ref_edges)
+                for ref_edges in ref_edges_list
             )
             d_min_per_test[t_idx] = float(d_min)
 
@@ -1245,6 +1396,76 @@ class FFRTopologyEvaluator:
         print("Saved Fig.6: IAE degradation vs d_E")
         return df
 
+    def build_topology_paired_stats(
+        self,
+        n_runs: int = 10,
+        metrics: tuple[str, ...] = ("iae_post", "nadir_hz"),
+        proposed_name: str = "GraphSAGE-MAPPO",
+    ) -> pd.DataFrame:
+        """Per-topology dispersion + paired significance on the unseen split (M3).
+
+        The held-out topologies are the experimental unit: for each policy we
+        average over episodes WITHIN a topology, then report the mean and a 95%
+        confidence interval ACROSS topologies (not across rollouts). Significance
+        of the proposed controller versus the next-best baseline is a paired
+        Wilcoxon signed-rank test over the matched per-topology values (the same
+        topologies enter both arms), which is the correct paired design here.
+        """
+        from scipy import stats as _stats
+
+        event = self.scenarios["S2_gen_trip"]
+        topo_list = self.test_topologies
+        if not topo_list:
+            return pd.DataFrame()
+
+        # per-policy, per-metric: one value per topology (mean over its rollouts)
+        per_topo: dict[str, dict[str, list[float]]] = {}
+        for policy_name, policy in self.policies.items():
+            per_topo[policy_name] = {m: [] for m in metrics}
+            for topo_idx in topo_list:
+                acc = {m: [] for m in metrics}
+                for _ in range(n_runs):
+                    d = self.run_episode(policy, event=event, topology_idx=topo_idx).to_dict()
+                    for m in metrics:
+                        acc[m].append(float(d[m]))
+                for m in metrics:
+                    per_topo[policy_name][m].append(float(np.mean(acc[m])))
+
+        def _ci95(arr: list[float]) -> float:
+            a = np.asarray(arr, dtype=float)
+            if a.size < 2:
+                return 0.0
+            sem = a.std(ddof=1) / np.sqrt(a.size)
+            return float(_stats.t.ppf(0.975, a.size - 1) * sem)
+
+        rows = []
+        for m in metrics:
+            means = {p: float(np.mean(per_topo[p][m])) for p in per_topo}
+            others = {p: v for p, v in means.items() if p != proposed_name}
+            # nadir: higher is better; iae/rocof/settling: lower is better.
+            nb = (max(others, key=others.get) if m == "nadir_hz" else min(others, key=others.get)) \
+                if others else None
+            for policy_name in per_topo:
+                arr = per_topo[policy_name][m]
+                row = {
+                    "metric": m, "method": policy_name, "n_topologies": len(arr),
+                    "mean": float(np.mean(arr)), "ci95": _ci95(arr),
+                    "std": float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0,
+                }
+                if policy_name == proposed_name and nb is not None:
+                    a = np.asarray(per_topo[proposed_name][m], dtype=float)
+                    b = np.asarray(per_topo[nb][m], dtype=float)
+                    try:
+                        _, p = _stats.wilcoxon(a, b)
+                    except ValueError:  # zero-difference / too-few samples
+                        p = float("nan")
+                    row["paired_vs"] = nb
+                    row["wilcoxon_p"] = float(p)
+                rows.append(row)
+        df = pd.DataFrame(rows)
+        df.to_csv(self.output_dir / "table_topology_paired_stats.csv", index=False)
+        return df
+
     def run_all(self, n_runs: int = 20) -> dict[str, pd.DataFrame]:
         """Run the FFR + topology evaluation suite (Sections 1 & 2 of outline).
 
@@ -1270,13 +1491,21 @@ class FFRTopologyEvaluator:
         table3 = self.build_table3_severity_scaling(n_runs=max(n_runs // 2, 5))
 
         print("\n[4/5] Plotting multi-scenario freq grid (Proposed vs baselines, mean±std)...")
+        # Show the frequency response on the topology the policies were TRAINED on:
+        # in base-reference mode that is the nominal base feeder (sentinel -1);
+        # otherwise the first cached topology.
+        grid_topology = -1 if self.base_reference else 0
         self.plot_frequency_grid_all_scenarios(
             n_runs=max(n_runs // 5, 3),
+            topology_idx=grid_topology,
             zoom_post_event_s=20.0,
         )
 
         print("\n[5/5] Plotting Fig.6 (IAE degradation vs d_E)...")
         self.plot_iae_degradation_vs_distance(n_runs=max(n_runs // 4, 3))
+
+        print("\n[+] Per-topology dispersion + paired Wilcoxon (unseen split)...")
+        paired_stats = self.build_topology_paired_stats(n_runs=max(n_runs // 2, 5))
 
         # Summary
         print("\n" + "=" * 60)
@@ -1293,8 +1522,13 @@ class FFRTopologyEvaluator:
                    if c in table2.columns]
         print(table2[_t2cols].to_string(index=False))
 
+        if not paired_stats.empty:
+            print("\nPer-topology paired stats (unseen split):")
+            print(paired_stats.round(4).to_string(index=False))
+
         print(f"\nResults saved to: {self.output_dir}")
-        return {"table1": table1, "table2": table2, "table3": table3}
+        return {"table1": table1, "table2": table2, "table3": table3,
+                "paired_stats": paired_stats}
 
 
 # =============================================================================
@@ -1362,6 +1596,7 @@ def export_paper_sections(
         )
         env_econ = MicrogridEnvDual(
             placement_path=str(placement_path), mpc_path=str(mpc_path), seed=seed,
+            ffr_mode="mappo_dual",
         )
         evaluator_econ = EconomicsEvaluator(
             env_econ, MarketPriceConfig(), _load_placement(placement_path), sec3,
@@ -1415,6 +1650,7 @@ def export_paper_sections(
         from src.eval.harmonic_analysis import HarmonicAnalyzer, IEEE519_THD_V_LIMIT
         env_harm = MicrogridEnvDual(
             placement_path=str(placement_path), mpc_path=str(mpc_path), seed=seed,
+            ffr_mode="mappo_dual",
         )
         policies_harm = _build_all_policies(
             env_harm,
@@ -1424,7 +1660,7 @@ def export_paper_sections(
             matd3_checkpoint=matd3_checkpoint,
         )
         import pandapower as pp
-        from scripts.eval_thd import commanded_p_mw
+        from scripts.eval_thd import commanded_p_mw, agent_rated_mw
 
         thd_v_per_method: dict[str, np.ndarray] = {}
         rows: list[dict] = []
@@ -1452,15 +1688,18 @@ def export_paper_sections(
                     n_act = env_harm.n_agents + len(env_harm._vpp_droop_agents)
                     last_action = np.zeros(n_act, dtype=np.float32)
                 p_mw = commanded_p_mw(env_harm, np.asarray(last_action, dtype=float))
+                rated = agent_rated_mw(env_harm)
                 agent_bus_idx = [int(b) for b in env_harm._agent_bus_pp.tolist()]
                 gfm_idx = getattr(env_harm.net, "_gfm_bus_idx", None)
                 if gfm_idx is not None and int(gfm_idx) not in set(agent_bus_idx):
                     agent_bus_idx = agent_bus_idx + [int(gfm_idx)]
                     p_mw = np.concatenate([p_mw, np.zeros(1, dtype=float)])
+                    rated = np.concatenate([rated, np.ones(1, dtype=float)])
                 vm = env_harm.net.res_bus["vm_pu"].values
                 bus_mask = np.isfinite(vm) & (np.abs(vm) > 0.05)
                 analyzer = HarmonicAnalyzer(env_harm.net)
-                result = analyzer.run(p_mw, agent_bus_idx, bus_mask=bus_mask)
+                result = analyzer.run(p_mw, agent_bus_idx, bus_mask=bus_mask,
+                                      agent_p_rated_mw=rated)
             except Exception as exc:
                 print(f"  [warn] HarmonicAnalyzer failed for {m_name}: {exc}")
                 continue
@@ -1689,6 +1928,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=Path("results/ffr_topology"))
     parser.add_argument("--n-runs", type=int, default=20)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--base-reference", action="store_true",
+                        help="Train-on-base, eval-on-all-reconfig protocol: reference = nominal "
+                             "base feeder, ALL cached reconfig topologies treated as unseen.")
     parser.add_argument("--paper-sections-out", type=Path, default=None,
                         help="If set, after run_all also export all 4 paper sections "
                              "(stability/topology/economic/harmonic) into this root dir.")
@@ -1708,6 +1950,12 @@ def main() -> None:
         "placement_path": str(args.placement),
         "mpc_path": str(args.mpc_path),
         "seed": args.seed,
+        # MUST match training: policies were trained with the dual (a_P, a_K) action
+        # under mappo_dual; the env defaults to "droop", which would feed the policies
+        # the wrong action layout and invalidate the evaluation.
+        "ffr_mode": "mappo_dual",
+        # Operating points (load/PV/price) drawn from the held-out day partition.
+        "day_split": "eval",
     }
 
     evaluator = FFRTopologyEvaluator(
@@ -1717,6 +1965,7 @@ def main() -> None:
         gcnn_checkpoint=args.gcnn_checkpoint,
         matd3_checkpoint=args.matd3_checkpoint,
         mlp_mappo_checkpoint=args.mlp_mappo_checkpoint,
+        base_reference=args.base_reference,
     )
 
     results = evaluator.run_all(n_runs=args.n_runs)

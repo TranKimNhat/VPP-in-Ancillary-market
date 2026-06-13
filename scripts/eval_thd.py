@@ -31,21 +31,28 @@ PLACEMENT = ROOT / "artifacts/placement/official_placement_v3.json"
 MPC = ROOT / "data/grid_IEEE123_complete.m"
 
 CHECKPOINTS = {
-    "GraphSAGE-MAPPO": "artifacts/_smoke_am_mappo_200ep/am_mappo_final.pt",
-    "GCNN-PPO":        "artifacts/checkpoints_gcnn_ppo_OLD_buggy/final.pt",
-    "MLP-MAPPO":       "artifacts/checkpoints_mlp_mappo_6k/mlp_mappo_final.pt",
+    "GraphSAGE-MAPPO": "artifacts/ckpt_proposed_s42/am_mappo_final.pt",
+    "GCNN-PPO":        "artifacts/ckpt_gcnn_ppo/final.pt",
+    "MLP-MAPPO":       "artifacts/ckpt_mlp_mappo/mlp_mappo_final.pt",
+    "MATD3":           "artifacts/ckpt_matd3/matd3_ep3800.pt",
 }
 
 
 def build_env() -> MicrogridEnvDual:
-    # Use mappo mode (44-dim action: n_agents + n_vpps) so the policy
-    # wrappers in eval_ffr_topology.py emit compatible actions.
     return MicrogridEnvDual(
         placement_path=str(PLACEMENT),
         mpc_path=str(MPC),
         seed=42,
-        ffr_mode="mappo",
+        ffr_mode="mappo_dual",
     )
+
+
+def agent_rated_mw(env: MicrogridEnvDual) -> np.ndarray:
+    """True per-agent rated power in MW (specs key is `p_rated`, already MW)."""
+    rated = np.asarray(env._agent_p_rated, dtype=float)
+    if rated.shape[0] != env.n_agents:
+        rated = np.asarray([a.get("p_rated", 0.1) for a in env._agent_specs], dtype=float)
+    return rated
 
 
 def commanded_p_mw(env: MicrogridEnvDual, action_44: np.ndarray) -> np.ndarray:
@@ -58,8 +65,7 @@ def commanded_p_mw(env: MicrogridEnvDual, action_44: np.ndarray) -> np.ndarray:
     superposed on a representative scheduled dispatch (otherwise zero
     actions trivially give zero THD).
     """
-    agent_specs = env._agent_specs
-    rated = np.asarray([a.get("p_rated_kw", 100.0) / 1000.0 for a in agent_specs], dtype=float)
+    rated = agent_rated_mw(env)
     n = env.n_agents
     delta_p = np.asarray(action_44[:n], dtype=float) * rated  # normalized * rated
     baseline = 0.5 * rated  # 50%-rated scheduled dispatch
@@ -103,6 +109,7 @@ def thd_for_policy(env: MicrogridEnvDual, policy_fn, n_warmup: int = 10) -> dict
         n_vpps = len(env._vpp_droop_agents)
         last_action = np.zeros(n + n_vpps, dtype=np.float32)
     p_mw = commanded_p_mw(env, np.asarray(last_action, dtype=float))
+    rated = agent_rated_mw(env)
     agent_bus_idx = [int(b) for b in env._agent_bus_pp.tolist()]
     # Include GFM bus per HarmonicAnalyzer assertion (islanded mode)
     gfm_idx = getattr(env.net, "_gfm_bus_idx", None)
@@ -110,12 +117,13 @@ def thd_for_policy(env: MicrogridEnvDual, policy_fn, n_warmup: int = 10) -> dict
         agent_bus_idx = agent_bus_idx + [int(gfm_idx)]
         # extend p_mw to match (use zero injection for the GFM slack)
         p_mw = np.concatenate([p_mw, np.zeros(1, dtype=float)])
+        rated = np.concatenate([rated, np.ones(1, dtype=float)])
 
     vm = env.net.res_bus["vm_pu"].values
     bus_mask = np.isfinite(vm) & (np.abs(vm) > 0.05)
 
     analyzer = HarmonicAnalyzer(env.net)
-    result = analyzer.run(p_mw, agent_bus_idx, bus_mask=bus_mask)
+    result = analyzer.run(p_mw, agent_bus_idx, bus_mask=bus_mask, agent_p_rated_mw=rated)
 
     return {
         "THD_V_pct": np.asarray(result["THD_V_pct"], dtype=float),
@@ -123,6 +131,9 @@ def thd_for_policy(env: MicrogridEnvDual, policy_fn, n_warmup: int = 10) -> dict
         "THD_V_PCC": float(result["THD_V_PCC"]),
         "THD_V_max": float(result["THD_V_max"]),
         "THD_I_max": float(result["THD_I_max"]),
+        "TDD_I_max": float(result["TDD_I_max"]),
+        "TDD_I_PCC": float(result["TDD_I_PCC"]),
+        "branches_over_tdd": int(result["branches_over_tdd"]),
         "buses_over": int(np.sum(np.asarray(result["THD_V_pct"]) > 5.0)),
         "branches_over": int(np.sum(np.asarray(result["THD_I_pct"]) > 5.0)),
         "harmonic_valid": bool(result.get("harmonic_valid", True)),
@@ -132,7 +143,7 @@ def thd_for_policy(env: MicrogridEnvDual, policy_fn, n_warmup: int = 10) -> dict
 def make_policy(name: str, ckpt: str):
     """Return a callable matching policy_fn(obs_full, edge_index, env, obs_fast=...)."""
     from src.eval.eval_ffr_topology import (
-        GraphSAGEMAPPOPolicy, GCNNPPOPolicy, MLPMAPPOPolicy,
+        GraphSAGEMAPPOPolicy, GCNNPPOPolicy, MLPMAPPOPolicy, MATD3Policy,
     )
     env = build_env()
     if name == "GraphSAGE-MAPPO":
@@ -141,6 +152,8 @@ def make_policy(name: str, ckpt: str):
         return GCNNPPOPolicy(Path(ckpt), env), env
     if name == "MLP-MAPPO":
         return MLPMAPPOPolicy(Path(ckpt), env), env
+    if name == "MATD3":
+        return MATD3Policy(Path(ckpt), env), env
     raise ValueError(name)
 
 
@@ -186,15 +199,17 @@ def main() -> None:
             continue
         print(f"  {name:20s} THD_V_PCC={r['THD_V_PCC']:5.2f}%  "
               f"THD_V_max={r['THD_V_max']:5.2f}%  buses>5%={r['buses_over']:3d}  "
-              f"THD_I_max={r['THD_I_max']:5.2f}%  branches>5%={r['branches_over']:3d}  "
-              f"valid={r['harmonic_valid']}")
+              f"TDD_PCC={r['TDD_I_PCC']:5.2f}%  TDD_max={r['TDD_I_max']:5.2f}%  "
+              f"branches>TDD={r['branches_over_tdd']:3d}  valid={r['harmonic_valid']}")
         rows.append({
             "Method": name,
             "THD_V_PCC_pct": r["THD_V_PCC"],
             "THD_V_max_pct": r["THD_V_max"],
             "Buses_over_5pct": r["buses_over"],
             "THD_I_max_pct": r["THD_I_max"],
-            "Branches_over_5pct": r["branches_over"],
+            "TDD_I_PCC_pct": r["TDD_I_PCC"],
+            "TDD_I_max_pct": r["TDD_I_max"],
+            "Branches_over_TDD": r["branches_over_tdd"],
             "harmonic_valid": r["harmonic_valid"],
         })
 
@@ -208,15 +223,17 @@ def main() -> None:
             continue
         print(f"  {name:20s} THD_V_PCC={r['THD_V_PCC']:5.2f}%  "
               f"THD_V_max={r['THD_V_max']:5.2f}%  buses>5%={r['buses_over']:3d}  "
-              f"THD_I_max={r['THD_I_max']:5.2f}%  branches>5%={r['branches_over']:3d}  "
-              f"valid={r['harmonic_valid']}")
+              f"TDD_PCC={r['TDD_I_PCC']:5.2f}%  TDD_max={r['TDD_I_max']:5.2f}%  "
+              f"branches>TDD={r['branches_over_tdd']:3d}  valid={r['harmonic_valid']}")
         rows.append({
             "Method": name,
             "THD_V_PCC_pct": r["THD_V_PCC"],
             "THD_V_max_pct": r["THD_V_max"],
             "Buses_over_5pct": r["buses_over"],
             "THD_I_max_pct": r["THD_I_max"],
-            "Branches_over_5pct": r["branches_over"],
+            "TDD_I_PCC_pct": r["TDD_I_PCC"],
+            "TDD_I_max_pct": r["TDD_I_max"],
+            "Branches_over_TDD": r["branches_over_tdd"],
             "harmonic_valid": r["harmonic_valid"],
         })
 
@@ -225,7 +242,7 @@ def main() -> None:
     df.to_csv(OUT_RESULTS / "thd_per_method.csv", index=False)
     OUT_TABLE.parent.mkdir(parents=True, exist_ok=True)
     df_save = df[["Method", "THD_V_PCC_pct", "THD_V_max_pct", "Buses_over_5pct",
-                  "THD_I_max_pct", "Branches_over_5pct"]]
+                  "TDD_I_PCC_pct", "TDD_I_max_pct", "Branches_over_TDD"]]
     df_save.to_csv(OUT_TABLE, index=False)
     print(f"\nSaved: {OUT_RESULTS / 'thd_per_method.csv'}")
     print(f"Saved: {OUT_TABLE}")

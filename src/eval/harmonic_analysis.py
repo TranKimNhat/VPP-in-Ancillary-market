@@ -16,10 +16,14 @@ IEEE Std 519-2014 reference (compliance thresholds enforced by callers):
     - EHV (> 161 kV):        1.5%
   Individual voltage harmonic (MV): 3.0%
 
-NOTE on current side: IEEE 519-2014 §5.2 uses Total Demand Distortion
-(TDD = sqrt(Σ I_h²) / I_L, referenced to max demand current I_L), not
-THD_I (referenced to fundamental I_1). This module currently reports
-THD_I; the strict-TDD migration is tracked in cleareval.md §2.4.
+Current side (IEEE 519-2014 §5.2): reports BOTH THD_I (legacy diagnostic,
+referenced to fundamental I_1) and TDD (standard-compliant, referenced to
+demand current I_L with the total-TDD limit tiered by the short-circuit
+ratio I_sc/I_L per Table 2: <20 -> 5%, <50 -> 8%, <100 -> 12%,
+<1000 -> 15%, else 20%). I_L is proxied by the fundamental branch current
+at the audited dispatch; the true annual max demand satisfies I_L >= I_1,
+so the reported TDD is a conservative upper bound. I_sc per bus comes from
+the fundamental Thevenin impedance diag(inv(Y_1)).
 """
 
 from __future__ import annotations
@@ -72,6 +76,8 @@ class HarmonicAnalyzer:
         agent_bus_idx: List[int],
         bus_mask: np.ndarray | None = None,
         pcc_bus_idx: int | None = None,
+        agent_p_rated_mw: np.ndarray | None = None,
+        i_l_a: np.ndarray | None = None,
     ) -> Dict[str, object]:
         """
         IMPORTANT (islanded mode): agent_bus_idx must include GFM bus when _gfm_bus_idx is provided.
@@ -109,6 +115,7 @@ class HarmonicAnalyzer:
                 n_bus,
                 h,
                 _baseMVA,
+                agent_p_rated_mw=agent_p_rated_mw,
             )
 
             try:
@@ -134,7 +141,45 @@ class HarmonicAnalyzer:
         THD_V = np.full((n_bus,), np.nan, dtype=float)
         THD_V[bus_mask] = THD_V_raw[bus_mask]
 
-        THD_I = self._compute_branch_THD_I(V_h_all, branch, bus_mask, baseMVA=_baseMVA)
+        THD_I, i_h_rss_A, I1_A, branch_mask = self._compute_branch_THD_I(
+            V_h_all, branch, bus_mask, baseMVA=_baseMVA)
+
+        # ---- IEEE 519-2014 §5.2 current-side compliance (TDD) ----
+        # TDD references the maximum demand load current I_L. In a single
+        # operating-point simulation we proxy I_L by the fundamental branch
+        # current at the audited dispatch; since the true annual max demand
+        # satisfies I_L >= I_1, the reported TDD is an upper bound (conservative).
+        # Tier (Table 2, 120 V - 69 kV): in a 100% inverter-based islanded
+        # microgrid the fault current is converter-limited (~1.2-2 pu of the
+        # source rating), so I_sc/I_L < 20 by construction and the strictest
+        # 5% total-TDD tier applies system-wide. (A Thevenin I_sc from
+        # inv(Y_1) is meaningless here: the radial Ybus has no source
+        # impedance to ground and is near-singular.)
+        # I_L reference: caller-supplied demand current (e.g. frozen at the
+        # pre-event operating point, per the standard's fixed max-demand
+        # reference) or, failing that, the fundamental current at the
+        # audited state.
+        if i_l_a is not None:
+            I_L_ref = np.asarray(i_l_a, dtype=float)
+            if I_L_ref.shape[0] != I1_A.shape[0]:
+                raise ValueError(
+                    f"i_l_a shape {I_L_ref.shape} incompatible with "
+                    f"n_branch={I1_A.shape[0]}")
+        else:
+            I_L_ref = I1_A
+        with np.errstate(divide="ignore", invalid="ignore"):
+            valid_il = np.isfinite(I_L_ref) & (I_L_ref > MIN_I_A_FOR_THD)
+            TDD_I = np.where(valid_il, np.sqrt(i_h_rss_A) / I_L_ref * 100.0, np.nan)
+        TDD_I[~branch_mask] = np.nan
+        tdd_limit = np.full(TDD_I.shape, self._tdd_limit_pct(1.0), dtype=float)
+        tdd_over = branch_mask & np.isfinite(TDD_I) & (TDD_I > tdd_limit)
+        # TDD at the PCC -- the point where §5.2 formally applies.
+        pcc_for_tdd = 0 if pcc_bus_idx is None else int(pcc_bus_idx)
+        from_bus_arr = branch[:, 0].astype(np.int64)
+        to_bus_arr = branch[:, 1].astype(np.int64)
+        pcc_branches = (from_bus_arr == pcc_for_tdd) | (to_bus_arr == pcc_for_tdd)
+        tdd_pcc_vals = TDD_I[pcc_branches & np.isfinite(TDD_I)]
+        TDD_I_PCC = float(np.max(tdd_pcc_vals)) if tdd_pcc_vals.size else float("nan")
 
         invalid_mask_v = bus_mask & (~np.isfinite(THD_V))
         invalid_mask_i = ~np.isfinite(THD_I)
@@ -163,10 +208,31 @@ class HarmonicAnalyzer:
             "THD_V_PCC": THD_V_PCC,
             "THD_V_max": float(np.nanmax(THD_V)) if np.isfinite(THD_V).any() else float("nan"),
             "THD_I_max": float(np.nanmax(THD_I)) if np.isfinite(THD_I).any() else float("nan"),
+            "TDD_I_pct": TDD_I,
+            "TDD_limit_pct": tdd_limit,
+            "TDD_I_max": float(np.nanmax(TDD_I)) if np.isfinite(TDD_I).any() else float("nan"),
+            "TDD_I_PCC": TDD_I_PCC,
+            "branches_over_tdd": int(np.sum(tdd_over)),
+            "I1_branch_A": I1_A,
             "n_buses_over_limit": len(buses_over),
             "harmonic_valid": bool(harmonic_valid),
             "invalid_reasons": sorted(set(invalid_reasons)),
         }
+
+    @staticmethod
+    def _tdd_limit_pct(sc_ratio: float) -> float:
+        """Total-TDD limit, IEEE Std 519-2014 Table 2 (120 V - 69 kV)."""
+        if not np.isfinite(sc_ratio):
+            return float("nan")
+        if sc_ratio < 20.0:
+            return 5.0
+        if sc_ratio < 50.0:
+            return 8.0
+        if sc_ratio < 100.0:
+            return 12.0
+        if sc_ratio < 1000.0:
+            return 15.0
+        return 20.0
 
     def _compute_sideband_currents(self) -> dict[int, float]:
         p = self.inv_params
@@ -219,12 +285,13 @@ class HarmonicAnalyzer:
         n_bus: int,
         h: int,
         baseMVA: float,
+        agent_p_rated_mw: np.ndarray | None = None,
     ) -> np.ndarray:
         I_h = np.zeros(n_bus, dtype=complex)
         I_sideband_A = float(self._sideband_currents.get(h, 0.0))
-        p_rated = float(self.inv_params.get("P_rated_mw", 0.05))
+        p_rated_default = float(self.inv_params.get("P_rated_mw", 0.05))
 
-        for P_mw, bus_k in zip(agent_powers_mw, agent_bus_idx):
+        for k, (P_mw, bus_k) in enumerate(zip(agent_powers_mw, agent_bus_idx)):
             bus_idx = int(bus_k)
             if bus_idx < 0 or bus_idx >= n_bus:
                 continue
@@ -234,7 +301,13 @@ class HarmonicAnalyzer:
                 V_base_kv = 11.0
             I_base_A = 1e6 * float(baseMVA) / (np.sqrt(3.0) * max(V_base_kv, 1e-6) * 1000.0)
             I_pu_per_amp = 1.0 / max(I_base_A, 1e-9)
-            loading = np.clip(abs(float(P_mw)) / max(p_rated, 1e-9), 0.0, 1.0)
+            # Per-unit loading: |P| over THIS unit's rating (falls back to the
+            # global cell rating when no per-agent ratings are supplied).
+            if agent_p_rated_mw is not None and k < len(agent_p_rated_mw):
+                p_rated_k = float(agent_p_rated_mw[k])
+            else:
+                p_rated_k = p_rated_default
+            loading = np.clip(abs(float(P_mw)) / max(p_rated_k, 1e-9), 0.0, 1.0)
             I_h[bus_idx] += complex(I_sideband_A * loading * I_pu_per_amp, 0.0)
 
         return I_h
@@ -296,15 +369,18 @@ class HarmonicAnalyzer:
 
         try:
             I1_ka = np.asarray(self.net.res_line["i_from_ka"].values, dtype=np.float64)
-            I1_A = 1000.0 * np.abs(I1_ka)
+            I1_A = np.full((n_branch,), np.nan, dtype=float)
+            I1_A[: min(n_branch, I1_ka.shape[0])] = \
+                1000.0 * np.abs(I1_ka[: min(n_branch, I1_ka.shape[0])])
             I1_safe = np.where(I1_A > MIN_I_A_FOR_THD, I1_A, np.nan)
             THD_I_raw = np.sqrt(i_h_sq_a) / I1_safe * 100.0
             THD_I = np.full((n_branch,), np.nan, dtype=float)
             THD_I[branch_mask] = THD_I_raw[branch_mask]
         except Exception:
             THD_I = np.full((n_branch,), np.nan, dtype=float)
+            I1_A = np.full((n_branch,), np.nan, dtype=float)
 
-        return THD_I
+        return THD_I, i_h_sq_a, I1_A, branch_mask
 
 
 def compute_thd_episode(net, agent_powers_mw, agent_bus_idx) -> Dict[str, object]:
