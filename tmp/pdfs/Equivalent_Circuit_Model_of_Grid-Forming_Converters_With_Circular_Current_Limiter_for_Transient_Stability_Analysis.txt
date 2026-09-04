@@ -1,0 +1,347 @@
+
+===== PAGE 1 =====
+IEEE TRANSACTIONS ON POWER SYSTEMS, VOL. 37, NO. 4, JUL Y 2022 3141
+Equivalent Circuit Model of Grid-Forming Converters With Circular Current
+Limiter for Transient Stability Analysis
+Bo Fan , Member , IEEE, and Xiongfei Wang , Senior Member , IEEE
+Abstract—This letter develops an equivalent circuit model of a
+grid-forming (GFM) converter with a circular current limiter and
+analyzes its transient stability. It is revealed that the inner control
+loop can be simpliﬁed as a voltage source behind an equivalent
+resistor . Based on the developed model, theoretical analysis and
+experimental tests demonstrate that the transient stability of a
+P − f droop-controlled GFM converter with the circular current
+limiter can be assured whenever there exist stable equilibrium
+points.
+Index Terms—Equivalent circuit model, circular current limiter,
+grid-forming converter, transient stability.
+I. I NTRODUCTION
+I
+N RECENT years, grid-forming (GFM) converters are
+treated as an effective solution for power grids with high
+penetration of converter-interfaced generators. By directly reg-
+ulating the voltage and frequency based on the output power, the
+GFM converters can provide the grid operators with enhanced
+system stability and resilience [1].
+Since the GFM converters behave as voltage sources behind
+impedance, their output currents are highly dependent on the
+electrical network conditions [1]. Further, the semiconductor-
+based converter can only handle tens of percent of over-
+current [2]. Current limiting strategies are hence required to pro-
+tect the converters against large disturbances. Without changing
+the operating mode of the GFM converter, two typical current
+limiting methods are usually applied. The ﬁrst one modiﬁes the
+voltage reference based on the virtual impedance [3]. The second
+one directly restricts the current reference by using the current
+limiters [4].
+With these methods, the transient stability of GFM converters,
+i.e., their ability to maintain synchronism with the power grid [5],
+needs to be evaluated. This problem is recently investigated
+in [3], [4]. In these studies, the voltage control loop is ignored
+with the assumption of its limited impact on transient stability.
+However, such a hypothesis does not hold for the circular current
+limiters [6] since the angle of the saturated current reference is
+Manuscript received August 18, 2021; revised November 9, 2021 and March
+30, 2022; accepted April 30, 2022. Date of publication May 6, 2022; date
+of current version June 20, 2022. This work was supported by the European
+Union’s Horizon 2020 Research and Innovation Programme under the Marie
+Skłodowska-Curie Grant 101031512 (FRESLING). Paper no. PESL-00208-
+2021. (Corresponding author: Xiongfei Wang.)
+The authors are with the Department of Energy (AAU Energy), Aalborg
+University, 9220 Aalborg, Denmark (e-mail: bof@et.aau.dk; xwa@et.aau.dk).
+Color versions of one or more ﬁgures in this article are available at
+https://doi.org/10.1109/TPWRS.2022.3173160.
+Digital Object Identiﬁer 10.1109/TPWRS.2022.3173160
+Fig. 1. Overall system diagram of a grid-connected GFM converter with the
+circular current limiter.
+determined by the voltage control loop. Therefore, the previous
+transient stability results [3], [4] are not applicable for GFM
+converters with circular current limiters. Moreover, although
+numerical-simulation-based methods, such as the phase plane
+analysis [7], may be applied to analyze the transient stability of
+GFM converters, they lack the physical insights into the control
+loops.
+To this end, this letter attempts to investigate the physical
+insights into the circular current limiter with the following
+contributions:
+1) An equivalent circuit model is established for the transient
+stability analysis of the GFM converter with a power-based
+synchronization mechanism. It is revealed that the inner control
+loop with the circular current limiter can be modeled as an
+equivalent resistor.
+2) Based on the developed equivalent circuit model, the tran-
+sient stability of P −f droop control is analyzed. It is found
+that the GFM converter with the circular current limiter can
+synchronize with the power grid whenever there exist stable
+equilibrium points (SEPs).
+Finally, these ﬁndings are validated by experimental tests.
+II. G RID-CONNECTED GFM CONVERTER
+Fig. 1 illustrates the system diagram of a GFM converter with
+the circular current limiter. The converter is connected to the
+grid through an LC-ﬁlter with Lf and Cf being its inductance
+and capacitance. Lg and Rg represent the grid impedance. The
+P −f droop control is used to synchronize the converter with
+the grid. The voltage reference is achieved by the inner dual-loop
+0885-8950 © 2022 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:24:56 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 2 =====
+3142 IEEE TRANSACTIONS ON POWER SYSTEMS, VOL. 37, NO. 4, JUL Y 2022
+proportional-integral (PI) control. The circular current limiter is
+implemented to protect the converter against over-current. vabc
+and vgabc are the capacitor and grid voltages, respectively. iabc
+and if abc are the grid-side and converter-side currents, respec-
+tively. (·)dq denotes a complex variable in the dq-frame.
+The expression of the circular current limiter is given by
+¯iref
+f dq = σiref
+f dq,σ =m i n
+{
+1,IM/∥iref
+f dq∥
+}
+(1)
+where iref
+f dq is the original current reference generated by the
+voltage control loop as shown in Fig. 1; ¯iref
+f dq is the saturated
+current reference; and IM is the maximum allowable converter-
+side current magnitude. σis a real-valued coefﬁcient, i.e., only
+the magnitudeiref
+f dq is decreased when the circular current limiter
+is triggered, while its angle is kept unchanged.
+The P −f droop control is expressed as ωref = ωg +
+KP (P ref −P ), whereωref is the angular frequency reference;ωg
+is the nominal angular frequency;KP is the constant power con-
+trol gain;P ref is the active power reference;P =1 .5Re{vdqi∗
+dq}
+is the active power output of the converter with (·)∗being the
+conjugate of a complex variable.
+III. P ROPOSED EQUIV ALENTCIRCUIT MODEL
+This section introduces an equivalent circuit model of the
+GFM converter shown in Fig. 1.
+For the ease of the transient stability mechanism explanation
+of the GFM converter with the circular current limiter, the
+dynamics of the capacitor and inductor is ignored [2]–[4]. Since
+the inner control loop is usually designed to be much faster
+than the power one [1], [5], the current control loop dynamics is
+ignored for simplicity, i.e.,if dq = ¯iref
+f dq. Since the voltage integral
+controller is used to remove the steady-state impact of modeling
+errors [8], its dynamics can be ignored when the circular current
+limiter is not triggered [5], [9], i.e.,vdq = vref
+dq withvref
+dq being the
+capacitor voltage reference. These assumptions are later justiﬁed
+by the experimental results presented in Section V.
+When the circular current limiter is triggered, the voltage
+control loop is unable to regulate the capacitor voltage to its
+reference vref
+dq . To avoid the integrator windup, the voltage inte-
+gral controller is kept at zero during the current limiting period.
+Afterward, according to Fig. 1, the current reference iref
+f dq can be
+expressed as
+iref
+f dq = KV
+P
+(
+vref
+dq −vdq
+)
++idq + jωgCfvdq (2)
+where KV
+P is the voltage control proportional gain. Notice that
+if dq = idq + jωgCfvdq since the dynamics of the capacitor is
+ignored. Further, with if dq = ¯iref
+f dq and (1), (2) is rewritten as
+if dq = σKV
+P
+(
+vref
+dq −vdq
+)
++σif dq ⇒ Reif dq = vref
+dq −vdq (3)
+whereRe ≜ 1−σ
+σKV
+P
+is a positive real variable.
+When the circular current limiter is not triggered, i.e., σ=1 ,
+then one has vdq = vref
+dq , which can also be represented by (3)
+withRe =0 . Therefore, the inner control loop with the circular
+current limiter can be represented as a voltage source behind
+equivalent resistanceRe as shown in Fig. 2.
+Fig. 2. Equivalent circuit of a grid-connected GFM converter. The blue part
+denotes the inner control loop with the circular current limiter.
+IV . APPLICA TION FOR TRANSIENT ST ABILITYANAL YSIS
+A. Closed-Loop System Dynamics
+In this section, the closed-loop system dynamics is derived to
+allow for the transient stability analysis of the converter. Deﬁne
+δas the angle between the d-axis and vgdq, whose dynamics can
+be expressed as
+˙δ= ωref −ωg = KP
+(
+P ref −P
+)
+. (4)
+In order to derive the closed-loop system dynamics, it requires
+the relationship between P and δ. Since the capacitor is used
+to ﬁlter out the high-frequency component of the converter-side
+current, it has a limited impact on transient stability and is hence
+ignored [4]. The capacitor voltage reference is aligned with the
+d-axis, i.e., vref
+dq = V refej0 with V ref being the voltage reference
+magnitude. Based on the Kirchhoff circuit law of the equivalent
+circuit in Fig. 2 and the given voltage sources vref
+dq = V ref and
+vgdq = Vg e−jδwithVg being the grid voltage magnitude, P can
+be expressed as a nonlinear function of δ
+P = 3
+2
+[ (Re +Rg )((V ref)2 −V refVg cosδ)
+(Re +Rg )2 +ω2gL2g
+−ReI2
+M
++ ωgLgV refVg sinδ
+(Re +Rg )2 +ω2gL2g
+]
+(5)
+whereRe =m a x{0, Re{ ¯Re}} with
+¯Re =
+√
+(V ref)2 −2 V refVg cosδ+V 2g
+I2
+M
+−ω2gL2g −Rg (6)
+being a state-dependent function. Therefore, the ﬁrst-order
+closed-loop system dynamics can be represented by (4) and (5).
+B. Transient Stability Analysis
+The stability of the ﬁrst-order nonlinear system in (4) and (5)
+can be evaluated similarly to the analysis in [9], which is ensured
+if and only if there exist SEPs.
+Two examples of grid voltage drops are given to better
+illustrate the transient stability of the system. Based on the
+parameters listed in Table I, the P −δcurves with Vg =1 p.u.
+and Vg =0 .5 p.u. can be calculated based on (4) and (5). As
+s h o w ni nF i g .3 ,w h e nVg =1 p.u., there are two intersection
+points between the P −δcurve and the active power reference
+P ref for δ∈[0, 2π), where the solid green dot denotes the
+SEP and the hollow one denotes the unstable equilibrium point
+(UEP). ForVg =0 .5 p.u., no SEP or UEP exists. The green lines
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:24:56 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 3 =====
+IEEE TRANSACTIONS ON POWER SYSTEMS, VOL. 37, NO. 4, JUL Y 2022 3143
+Fig. 3. Examples of transient stability analysis when grid voltage drops from 1 p.u. to 0.5 p.u. (SEP–Solid dot; UEP–Hollow dot).
+TABLE I
+SYSTEM AND CONTROL PARAMETERS
+demonstrate the theoretically calculated trajectories of the active
+power outputs under two different conditions.
+The ﬁrst example is shown in the left picture in Fig. 3 with a
+relatively short period of the grid voltage drop, i.e., the angle δ
+is smaller than the UEP when the fault is clear. At the beginning,
+the system is working normally at the SEP . Then the grid voltage
+drops from 1 p.u. to 0.5 p.u. and the active power outputP jumps
+from the purple line to the pink one. SinceP<P ref, the angleδ
+increases according to (4). Afterward, the grid voltage restores
+t o1p . u .a n dP jumps back to the purple line. From the zoomed
+picture, one can observe that δis smaller than the UEP and
+P>P ref after the disturbance. Thus,δkeeps decreasing until it
+returns to its original operating point.
+The second example is shown in the right picture in Fig. 3.
+Compared with the previous example, the grid voltage drops for
+a longer time, and the angle δis larger than the UEP when the
+fault is clear. Consequently, when the grid voltage restores to
+1 p.u., δis larger than the UEP and P<P ref from the zoomed
+picture. Hence, δkeeps increasing along with the purple line
+until it stabilizes at the new SEP .
+V. E XPERIMENTAL TESTS
+The detailed experimental setup can be found in [10] with the
+system and control parameters listed in Table I. The experimental
+results are delivered in Figs. 4–6.
+Fig. 4. Experimental results when the grid voltage drops to 0.5 p.u.
+The evaluation results of the proposed equivalent circuit
+model are illustrated in Fig. 4. One can notice that during the
+pre-fault period, the capacitor voltage can track its reference
+accurately since the circular current limiter is not triggered. The
+active power output is kept at its reference value of 0.8 p.u.
+Afterward, the grid voltage drops to 0.5 p.u. The converter-side
+current reaches its maximum allowable magnitude of 1.2 p.u.,
+which triggers the circular current limiter. Hence, the capacitor
+voltage cannot track its reference accurately. During the failure
+process, the voltage difference vref
+a −va has the same phase as
+the converter-side current if a, which means that an equivalent
+resistor is introduced between the capacitor voltage and its refer-
+ence to limit the converter-side current. Therefore, the equivalent
+circuit model developed in Section III is valid.
+Fig. 5 presents the results when the grid voltage drops from
+1 p.u. to 0.5 p.u. for 450 ms. During the fault period, the
+converter-side current magnitude is restricted by 1.2 p.u. When
+the fault is clear, although the circular current limiter is still
+triggered for about 50 ms, the active power output, the angle
+δ, and the capacitor voltage can ﬁnally return to their normal
+operating points.
+As shown in Fig. 6, the fault time is increased to 650 ms.
+Again, the converter-side current magnitude is well restricted.
+As illustrated in Section IV, since the fault time becomes longer,
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:24:56 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 4 =====
+3144 IEEE TRANSACTIONS ON POWER SYSTEMS, VOL. 37, NO. 4, JUL Y 2022
+Fig. 5. Experimental results when the grid voltage drops from 1 p.u. to 0.5 p.u.
+for 450 ms.
+Fig. 6. Experimental results when the grid voltage drops from 1 p.u. to 0.5 p.u.
+for 650 ms.
+the angel δkeeps increasing until it stabilizes at a new SEP .
+Although transient stability is ensured, large ﬂuctuations are
+observed in the active power output.
+VI. C ONCLUSION
+This letter reveals the physical insights into the control loops
+of a GFM converter using a circular current limiter. It is found
+that the inner control loop with the circular current limiter can
+be represented by a voltage source behind an equivalent resistor.
+Based on the developed model, transient stability with theP −f
+droop control is further investigated. The results reveal that the
+GFM converter can synchronize with the power grid as long as
+there exist SEPs. Finally, experimental tests are performed to
+verify the theoretical analysis. Further studies including appli-
+cations of the proposed model for the transient stability analysis
+of multiple GFM converters will be investigated.
+REFERENCES
+[1] R. Rosso, X. Wang, M. Liserre, X. Lu, and S. Engelken, “Grid-forming
+converters: Control approaches, grid-synchronization, and future trends—
+Ar e v i e w , ”IEEE Open J. Ind. Appl. , vol. 2, pp. 93–109, 2021.
+[2] T. Qoria, F. Gruson, F. Colas, X. Kestelyn, and X. Guillaud, “Current
+limiting algorithms and transient stability analysis of grid-forming VSCs,”
+Elect. Power Syst. Res., vol. 189, 2020, Art. no. 106726.
+[3] T. Qoria, F. Gruson, F. Colas, G. Denis, T. Prevost, and X. Guillaud,
+“Critical clearing time determination and enhancement of grid-forming
+converters embedding virtual impedance as current limitation algorithm,”
+IEEE J. Emerg. Sel. Topics Power Electron., vol. 8, no. 2, pp. 1050–1061,
+Jun. 2020.
+[4] L. Huang, H. Xin, Z. Wang, L. Zhang, K. Wu, and J. Hu, “Transient stability
+analysis and control design of droop-controlled voltage source converters
+considering current limitation,” IEEE Trans. Smart Grid , vol. 10, no. 1,
+pp. 578–591, Jan. 2019.
+[5] X. Wang, M. G. Taul, H. Wu, Y . Liao, F. Blaabjerg, and L. Harnefors, “Grid-
+synchronization stability of converter-based resources—An overview,”
+IEEE Open J. Ind. Appl. , vol. 1, pp. 115–134, 2020.
+[6] M. G. Taul, X. Wang, P . Davari, and F. Blaabjerg, “Current limiting
+control with enhanced dynamics of grid-forming converters during fault
+conditions,” IEEE J. Emerg. Sel. Topics Power Electron. , vol. 8, no. 2,
+pp. 1062–1073, Jun. 2020.
+[7] M. Awal and I. Husain, “Transient stability assessment for current con-
+strained and unconstrained fault ride-through in virtual oscillator con-
+trolled converters,” IEEE J. Emerg. Sel. Topics Power Electron. ,v o l .9 ,
+no. 6, pp. 6935–6946, Dec. 2021.
+[8] L. Harnefors, M. Bongiorno, and S. Lundberg, “Input-admittance calcu-
+lation and shaping for controlled voltage-source converters,” IEEE Trans.
+Ind. Electron., vol. 54, no. 6, pp. 3323–3334, Dec. 2007.
+[9] H. Wu and X. Wang, “Design-oriented transient stability analysis of grid-
+connected converters with power synchronization control,” IEEE Trans.
+Ind. Electron., vol. 66, no. 8, pp. 6473–6482, Aug. 2019.
+[10] B. Fan and X. Wang, “A Lyapunov-based nonlinear power control algo-
+rithm for grid-connected VSCs,”IEEE Trans. Ind. Electron., vol. 69, no. 3,
+pp. 2916–2926, Mar. 2022.
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:24:56 UTC from IEEE Xplore.  Restrictions apply. 

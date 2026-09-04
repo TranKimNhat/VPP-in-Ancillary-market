@@ -1,0 +1,22 @@
+# T1 inputs -- mirrors the constants in experiments/t01_agfm.py
+v_base_kv: 4.16
+s_base_mva: 1.0
+z_base_ohm: 17.305600000000002
+eps_floor_ohm: 1e-06
+eps_primary: eps_x010
+p_head_primary: bess_mw
+eps_cases:
+  eps_numerical: 0.0
+  eps_x005: 0.05
+  eps_x010: 0.1
+  eps_x015: 0.15
+deployments:
+  2gfm: [G1, G2]
+  5gfm: [G1, G2, G3, G4, G5]
+  6gfm: [G1, G2, G3, G4, G5, G6]
+network:
+  mode: feeder123
+  balanced: true
+  convert_switches: true
+  islanded_override_slack_to_g1: true
+  topology: G0

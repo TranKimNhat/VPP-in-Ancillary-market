@@ -458,17 +458,20 @@ def _components_from_placement(payload: object) -> list[dict[str, object]]:
     components: list[dict[str, object]] = []
 
     gfm = payload.get("gfm", {})
-    if isinstance(gfm, dict) and "G1" in gfm:
-        g1 = gfm["G1"]
-        components.append(
-            {
-                "component": "g1",
-                "bus": g1.get("bus"),
-                "category": "bess",
-                "p_mw": g1.get("bess_mw"),
-                "e_mwh": g1.get("bess_mwh"),
-            }
-        )
+    if isinstance(gfm, dict):
+        for gfm_id, gfm_data in gfm.items():
+            if not isinstance(gfm_data, dict):
+                continue
+            components.append(
+                {
+                    "component": gfm_id.lower(),
+                    "bus": gfm_data.get("bus"),
+                    "category": "gfm",
+                    "p_mw": gfm_data.get("bess_mw"),
+                    "e_mwh": gfm_data.get("bess_mwh"),
+                    "pv_mw": gfm_data.get("pv_mw"),
+                }
+            )
 
     wind = payload.get("wind", [])
     if isinstance(wind, list):
@@ -538,6 +541,9 @@ def _apply_slack_policy(
     if source_mode == "research":
         return
 
+    if len(net.ext_grid) > 1:
+        return
+
     bus_map = _build_bus_name_to_index(net)
     target_bus_name = _normalize_bus_label(g1_bus_name if islanded_override_slack_to_g1 else "114")
     target_bus_idx = bus_map.get(target_bus_name)
@@ -587,7 +593,8 @@ def _inject_assets_from_mapping(net: pp.pandapowerNet, mapping_path: Path) -> No
             return 0.0, values[0]
         return values[0], 0.0
 
-    stats = {"pv": 0, "wind": 0, "evcs": 0, "bess": 0, "g1": 0}
+    stats = {"pv": 0, "wind": 0, "evcs": 0, "bess": 0, "gfm": 0}
+    gfm_buses: list[int] = []
 
     for item in records:
         if not isinstance(item, dict):
@@ -609,7 +616,7 @@ def _inject_assets_from_mapping(net: pp.pandapowerNet, mapping_path: Path) -> No
         if e_mwh <= 0.0:
             e_mwh = float(item.get("e_mwh") or 0.0)
 
-        if component == "g1":
+        if category == "gfm" or component in ("g1", "g2", "g3", "g4", "g5", "g6"):
             pp.create_storage(
                 net,
                 bus=bus_idx,
@@ -621,7 +628,12 @@ def _inject_assets_from_mapping(net: pp.pandapowerNet, mapping_path: Path) -> No
                 min_p_mw=-max(p_mw, 0.1),
             )
             stats["bess"] += 1
-            stats["g1"] += 1
+            stats["gfm"] += 1
+            gfm_buses.append(bus_idx)
+            pv_mw = float(item.get("pv_mw") or 0.0)
+            if pv_mw > 0:
+                pp.create_sgen(net, bus=bus_idx, p_mw=pv_mw, q_mvar=0.0, name=f"{component_name}_pv", type="pv")
+                stats["pv"] += 1
             continue
 
         if "evcs" in component or component.startswith("e"):
@@ -668,12 +680,17 @@ def _inject_assets_from_mapping(net: pp.pandapowerNet, mapping_path: Path) -> No
             )
             stats["bess"] += 1
 
+    existing_ext_grid_buses = set(net.ext_grid["bus"].astype(int).tolist()) if not net.ext_grid.empty else set()
+    for gfm_bus in gfm_buses:
+        if gfm_bus not in existing_ext_grid_buses:
+            pp.create_ext_grid(net, bus=gfm_bus, vm_pu=1.0, name=f"gfm_{gfm_bus}")
+
     if (
         stats["pv"] <= 0
         or stats["wind"] <= 0
         or stats["bess"] <= 0
         or stats["evcs"] <= 0
-        or stats["g1"] != 1
+        or stats["gfm"] < 1
     ):
         raise ValueError(f"Incomplete renewable injection from mapping: {stats}")
 

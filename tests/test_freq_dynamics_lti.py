@@ -269,3 +269,133 @@ class TestGFMMapping:
         far_bus = 999
         mapped = lti_freq_dyn.get_gfm_bus_idx(far_bus)
         assert 0 <= mapped < lti_freq_dyn.n_gfm
+
+
+class TestVirtualInertia:
+    """Test VSG virtual-inertia behaviour (swing dynamics)."""
+
+    def _build(self, net, bus_map, placement, h_virt_floor):
+        lti = LTITopologyFreqDynamics(
+            placement=placement, base_net=net, bus_map=bus_map,
+            f0=50.0, dt_fast=0.1, h_virt_floor=h_virt_floor,
+        )
+        lti.bind_operating_point(net, topology_id=0)
+        return lti
+
+    def test_h_sys_rating_weighted(self, lti_freq_dyn):
+        """h_sys = Σ(H_i·S_i)/S_BASE over connected GFMs."""
+        expected = float(
+            np.sum(lti_freq_dyn._H_virt * lti_freq_dyn._gfm_ratings) / lti_freq_dyn.s_base_mva
+        )
+        assert lti_freq_dyn.h_sys == pytest.approx(expected, rel=1e-9)
+        assert lti_freq_dyn.h_sys > 0.0
+
+    def test_h_sys_drops_when_gfm_disconnected(self, lti_freq_dyn):
+        """Disconnecting GFMs reduces aggregate inertia; None restores it."""
+        full = lti_freq_dyn.h_sys
+        one_id = lti_freq_dyn._gfm_params[0].gfm_id
+        lti_freq_dyn.update_topology({one_id})
+        assert lti_freq_dyn.h_sys < full
+        lti_freq_dyn.update_topology(None)
+        assert lti_freq_dyn.h_sys == pytest.approx(full, rel=1e-9)
+
+    def test_rocof_scales_inversely_with_inertia(self, simple_net_with_pf, gfm_placement):
+        """Defining VSG signature: doubling H halves the post-disturbance RoCoF."""
+        net, bus_map = simple_net_with_pf
+        lo = self._build(net, bus_map, gfm_placement, h_virt_floor=0.5)
+        hi = self._build(net, bus_map, gfm_placement, h_virt_floor=1.0)
+        if not (np.isfinite(lo._J_r).all() and np.isfinite(hi._J_r).all()):
+            pytest.skip("J_r has NaN/Inf (test network power flow issue)")
+
+        K = np.ones(lo.n_gfm)
+        kw = dict(dt=0.1, delta_P_ref=np.zeros(lo.n_gfm), delta_P_L=0.2, K_droop=K, topology_id=0)
+        lo.reset(); hi.reset()
+        r_lo = abs(lo.step(**kw).rocof_hz_s)
+        r_hi = abs(hi.step(**kw).rocof_hz_s)
+
+        assert r_lo > 1e-6 and r_hi > 1e-6
+        assert 0.4 < (r_hi / r_lo) < 0.6, f"RoCoF ratio {r_hi / r_lo:.3f} not ~0.5 (1/H scaling)"
+
+
+class TestLocatedDisturbance:
+    """J_L per-passive-bus injection: the event LOCATION drives the worst GFM
+    (Path B core mechanism). GFMs are at pp buses 0,3,4,9 (gfm order [0,3,4,9]);
+    passive load buses are pp 1,2,5,6,7,8.
+    """
+
+    def _step(self, lti, event_location_pp, mag=0.2):
+        lti.reset()
+        K = np.ones(lti.n_gfm)
+        return lti.step(
+            dt=0.1, delta_P_ref=np.zeros(lti.n_gfm), delta_P_L=mag,
+            K_droop=K, topology_id=0, event_location_pp=event_location_pp,
+        )
+
+    def test_passive_bus_map_built(self, lti_freq_dyn):
+        """bind_operating_point should expose pp-bus -> J_L-column for passive buses."""
+        assert len(lti_freq_dyn._ppidx_to_Jcol) > 0
+        assert 1 in lti_freq_dyn._ppidx_to_Jcol  # pp bus 1 is a passive load bus
+
+    def test_jl_columns_sum_near_unit_magnitude(self, lti_freq_dyn):
+        """Kron sensitivity columns ~unit magnitude (full injection reaches GFMs).
+
+        Sign is the Jacobian convention (columns sum to ≈ −1); B_net flips it so a
+        deficit pushes frequency down. Generous tolerance for high-R/X + pinv.
+        """
+        if lti_freq_dyn._J_L is None or not np.isfinite(lti_freq_dyn._J_L).all():
+            pytest.skip("J_L has NaN/Inf (test network power flow issue)")
+        col_sums = np.abs(np.asarray(lti_freq_dyn._J_L).sum(axis=0))
+        assert np.allclose(col_sums, 1.0, atol=0.5), f"J_L column |sums| far from 1: {col_sums}"
+
+    def test_event_location_changes_worst_gfm(self, lti_freq_dyn):
+        """THE headline assertion: different event buses -> different worst GFM.
+
+        Bus pp1 is adjacent to the GFM at pp0; bus pp8 is adjacent to the GFM at pp9.
+        """
+        if lti_freq_dyn._J_L is None or not np.isfinite(lti_freq_dyn._J_L).all():
+            pytest.skip("J_L has NaN/Inf (test network power flow issue)")
+        st_a = self._step(lti_freq_dyn, event_location_pp=1)
+        st_b = self._step(lti_freq_dyn, event_location_pp=8)
+        # Per-GFM response profiles must differ by location.
+        assert not np.allclose(st_a.delta_f_per_bus, st_b.delta_f_per_bus)
+        # And the most-deviated (worst) GFM identity should change.
+        wa = int(np.argmax(np.abs(st_a.delta_f_per_bus)))
+        wb = int(np.argmax(np.abs(st_b.delta_f_per_bus)))
+        assert wa != wb, f"worst GFM did not change with location (both {wa})"
+
+    def test_located_differs_from_scalar_fallback(self, lti_freq_dyn):
+        """Located injection (via J_L) differs from the legacy rating-share scalar."""
+        if lti_freq_dyn._J_L is None or not np.isfinite(lti_freq_dyn._J_L).all():
+            pytest.skip("J_L has NaN/Inf (test network power flow issue)")
+        st_loc = self._step(lti_freq_dyn, event_location_pp=1)
+        st_scalar = self._step(lti_freq_dyn, event_location_pp=None)
+        assert not np.allclose(st_loc.delta_f_per_bus, st_scalar.delta_f_per_bus)
+
+    def test_event_at_gfm_bus_injects_that_gfm(self, lti_freq_dyn):
+        """Edge case: event at a GFM bus forces ONLY that GFM's swing (bypass J_L).
+
+        Tested on the forcing vector directly (post-step worst is muddied by the
+        coupled ZOH integration, which is expected).
+        """
+        gfm_pp = int(lti_freq_dyn._gfm_pp_idx[0])  # pp0 -> gfm index 0
+        f = lti_freq_dyn._disturbance_omega_forcing(0.2, event_location_pp=gfm_pp)
+        assert f.shape == (lti_freq_dyn.n_gfm,)
+        assert abs(f[0]) > 1e-9                       # targeted GFM is forced
+        assert np.allclose(np.delete(f, 0), 0.0)      # others untouched
+        assert f[0] < 0                               # deficit -> that GFM's Δω down
+
+    def test_located_forcing_pushes_coi_down(self, lti_freq_dyn):
+        """Sign check: a deficit at a passive bus yields a net (COI) downward push."""
+        if lti_freq_dyn._J_L is None or not np.isfinite(lti_freq_dyn._J_L).all():
+            pytest.skip("J_L has NaN/Inf (test network power flow issue)")
+        f = lti_freq_dyn._disturbance_omega_forcing(0.2, event_location_pp=1)
+        w = lti_freq_dyn._gfm_ratings / float(lti_freq_dyn._gfm_ratings.sum())
+        assert float(w @ f) < 0.0, "deficit should push COI frequency down"
+
+    def test_scalar_backcompat_unchanged(self, lti_freq_dyn):
+        """Scalar delta_P_L with no location uses the rating-share path (back-compat)."""
+        if lti_freq_dyn._J_L is None or not np.isfinite(lti_freq_dyn._J_L).all():
+            pytest.skip("J_L has NaN/Inf (test network power flow issue)")
+        st = self._step(lti_freq_dyn, event_location_pp=None, mag=0.2)
+        assert np.isfinite(st.delta_f_hz)
+        assert st.delta_f_worst > 0.0  # disturbance produced a response

@@ -864,6 +864,63 @@ def run_reconfiguration_detailed(
                 slack_component = comp_set
             island_summaries.append({"id": idx, "bus_count": len(comp_set), "has_slack": has_slack})
         buses_outside_slack = sorted(set(data.buses) - slack_component) if slack_component else sorted(data.buses)
+        current_utilization_top: list[dict[str, object]] = []
+        current_over_limit_count = 0
+        try:
+            net_pf = copy.deepcopy(net)
+            pp.runpp(net_pf, algorithm="nr", init="auto", calculate_voltage_angles=False)
+            utilization_rows: list[dict[str, object]] = []
+            line_pos = 0
+            trafo_pos = 0
+            for edge in data.edges:
+                if edge.is_switch:
+                    continue
+                if edge.element_type == "line":
+                    if line_pos < len(net_pf.res_line):
+                        line_res = net_pf.res_line.iloc[line_pos]
+                        i_ka = float(line_res.get("i_ka", float("nan")))
+                        ratio = float("nan")
+                        if edge.max_i_ka > 0.0 and np.isfinite(i_ka):
+                            ratio = abs(i_ka) / edge.max_i_ka
+                        utilization_rows.append(
+                            {
+                                "edge_id": edge.edge_id,
+                                "type": "line",
+                                "from_bus": edge.from_bus,
+                                "to_bus": edge.to_bus,
+                                "max_i_ka": edge.max_i_ka,
+                                "i_ka": i_ka,
+                                "ratio": ratio,
+                            }
+                        )
+                    line_pos += 1
+                    continue
+                if edge.element_type == "trafo":
+                    if trafo_pos < len(net_pf.res_trafo):
+                        trafo_res = net_pf.res_trafo.iloc[trafo_pos]
+                        loading_pct = float(trafo_res.get("loading_percent", float("nan")))
+                        ratio = loading_pct / 100.0 if np.isfinite(loading_pct) else float("nan")
+                        utilization_rows.append(
+                            {
+                                "edge_id": edge.edge_id,
+                                "type": "trafo",
+                                "from_bus": edge.from_bus,
+                                "to_bus": edge.to_bus,
+                                "loading_percent": loading_pct,
+                                "ratio": ratio,
+                            }
+                        )
+                    trafo_pos += 1
+            finite_rows = [row for row in utilization_rows if np.isfinite(float(row.get("ratio", float("nan"))))]
+            current_over_limit_count = sum(1 for row in finite_rows if float(row["ratio"]) > 1.0 + 1e-6)
+            current_utilization_top = sorted(
+                finite_rows,
+                key=lambda row: float(row["ratio"]),
+                reverse=True,
+            )[:10]
+        except Exception as exc:
+            current_utilization_top = [{"error": str(exc)}]
+
         debug_context = {
             "bus_count": len(data.buses),
             "edge_count": len(data.edges),
@@ -879,6 +936,8 @@ def run_reconfiguration_detailed(
             "isolated_load_buses": isolated_load_buses,
             "switch_edges": switch_edges,
             "switch_status": switch_status,
+            "current_over_limit_count": current_over_limit_count,
+            "current_utilization_top": current_utilization_top,
             "voltage_bounds": voltage_bounds,
             "base_kv": data.base_kv,
         }

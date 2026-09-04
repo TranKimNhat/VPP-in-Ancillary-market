@@ -1,0 +1,1067 @@
+
+===== PAGE 1 =====
+1736 IEEE TRANSACTIONS ON POWER DELIVERY , VOL. 39, NO. 3, JUNE 2024
+Positive-Sequence Modeling of Droop-Controlled
+Grid-Forming Inverters for Transient Stability
+Simulation of Transmission Systems
+Wei Du , Senior Member , IEEE, Quan H. Nguyen , Member , IEEE, Song Wang , Senior Member , IEEE,
+Jinho Kim , Member , IEEE,Y u a nL i u , Member , IEEE, Songzhe Zhu , Senior Member , IEEE,
+Francis K. Tuffner , Senior Member , IEEE, and Zhenyu Huang
+Abstract—This article describes a positive-sequence model to
+represent two widely reported droop-controlled grid-forming in-
+verters for transmission system transient stability simulation stud-
+ies. Methods of how to develop the equivalent voltage source behind
+impedance to represent inverters with and without inner control
+loops, modeling of P-f and Q-V droop controls, active and reactive
+power limiting modeling, and modeling of fault current limiting
+controls have been described in detail. The model was implemented
+in commercially available positive-sequence simulation tools and
+compared with detailed electromagnetic transient models in both
+a single-grid-forming-inverter inﬁnite-bus system and a modiﬁed
+IEEE 39-bus system. Finally, the model was tested on the U.S.
+Western Interconnection system. The study results showed that the
+model has a good level of accuracy compared to the detailed EMT
+models, and at the same time also achieves a high computational
+efﬁciency, making it suitable for large-scale transmission system
+simulation studies.
+Index Terms—Droop control, grid-forming inverter, modeling,
+positive-sequence, transmission system, simulation.
+I. I NTRODUCTION
+T
+HE grid-forming inverter (GFM) is considered a critical as-
+set for power grids with a high penetration of inverter-based
+resources [1]. This technology was ﬁrst used at low-voltage
+levels such as microgrids [2], but has drawn a lot of attention at
+Manuscript received 6 September 2023; revised 27 December 2023 and
+16 February 2024; accepted 5 March 2024. Date of publication 18 March
+2024; date of current version 23 May 2024. This work supported by the U.S.
+Department of Energy’s Ofﬁce of Energy Efﬁciency and Renewable Energy
+(EERE) through Solar Energy Technologies Ofﬁce (SETO) under Grant 38637.
+The Paciﬁc Northwest National Laboratory (PNNL) is operated by Battelle for
+the U.S. Department of Energy under Contract DE-AC05-76RL01830. Paper
+no. TPWRD-01225-2023. (Corresponding author: Wei Du.)
+Wei Du, Quan H. Nguyen, Jinho Kim, Y uan Liu, Francis K. Tuffner, and
+Zhenyu Huang are with the Paciﬁc Northwest National Laboratory, Rich-
+land, W A 99354 USA (e-mail: wei.du@pnnl.gov; quan.nguyen@pnnl.gov;
+jinho.kim@pnnl.gov; yuan.liu@pnnl.gov; francis.tuffner@pnnl.gov; zhenyu.
+huang@pnnl.gov).
+Song Wang is with Portland General Electric, Portland, OR 97204 USA (e-
+mail: song.wang@pgn.com).
+Songzhe Zhu is with GridBright, Alamo, CA 94507 USA (e-mail:
+songzhe.zhu@gridbright.com).
+Color versions of one or more ﬁgures in this article are available at
+https://doi.org/10.1109/TPWRD.2024.3376245.
+Digital Object Identiﬁer 10.1109/TPWRD.2024.3376245
+transmission levels in recent years because of the rapid integra-
+tion of renewables to the grid around the world [3].
+Because a grid-forming inverter approximately behaves as a
+voltage source behind impedance during normal operations, its
+dynamic characteristic is fundamentally different from the con-
+ventional current-controlled grid-following inverters. Numerous
+research and ﬁeld demonstration projects have shown that such
+voltage source characteristic of grid-forming inverters can bring
+signiﬁcant beneﬁts to power systems at both the transmission
+and distribution levels, which include improving the system
+frequency response [4], [5], [6], increasing the system damping
+[7], [8], being able to operate in very weak systems[9], providing
+the black-start capability [9], [10], and enabling the system to
+operate in the islanded mode [11], [12], [13].
+Current research work primarily focuses on developing in-
+novative controls to further improve the dynamic performance
+of grid-forming inverters under various fault events and an-
+alyzing the transient stability of power grids dominated by
+grid-forming inverters. The work in [14] analyzed the transient
+stability of droop-controlled grid-forming inverters when the
+output currents are saturated and proposed a simple feedback
+loop to improve the system transient stability by modifying the
+inverter output frequency. The work in [15] and [16] investi-
+gated the transient stability and critical clearing time of droop-
+controlled grid-forming inverters using the virtual impedance
+and current reference saturation as the current limiting algo-
+rithms, respectively. The work in [17] outlined a stationary-
+frame control architecture for grid-forming inverters to better
+handle unbalanced faults. Reference [18] proposed a DQ-frame
+asymmetrical virtual impedance control to enhance the transient
+stability of droop-controlled grid-forming inverters. The work
+in [19] proposed a system-level supervisory control that uses
+low-bandwidth communication to pre-emptively assign a set of
+local ride-through control parameters to individual grid-forming
+inverters to guarantee the system transient stability.
+Although many innovative controls are currently being pro-
+posed for grid-forming inverters, less attention is paid to the
+modeling of grid-forming inverters for the bulk power system
+simulation studies. Electromagnetic transient (EMT) model-
+ing and positive-sequence modeling are the two most popu-
+lar methods to simulate the power system dynamic behaviors.
+0885-8977 © 2024 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 2 =====
+DU et al.: POSITIVE-SEQUENCE MODELING OF DROOP-CONTROLLED GRID-FORMING INVERTERS FOR TRANSIENT STABILITY SIMULA TION 1737
+Theoretically, the EMT model can capture all the dynamics of
+an inverter, but it may not be suitable to simulate large-scale
+power systems because of the high computational burden. In
+contrast, the positive-sequence model is based on the phasor
+assumption and can signiﬁcantly improve the computational
+efﬁciency. In today’s utility industry, power system engineers
+still heavily rely on the positive-sequence simulation tools
+to study the dynamic behaviors of transmission systems due
+to the scale of practical systems. Therefore, it is important to
+develop the positive-sequence model of grid-forming inverters
+and investigate how accurately the model can reﬂect the dynamic
+behaviors of grid-forming inverters in the time frame of interest.
+The work in [20] proposed to use the Thevenin voltage source
+instead of an ideal current source to represent grid-following
+inverters in the positive-sequence simulation tool, which im-
+proved the convergence of the network solution. Reference [21]
+performed a comprehensive comparative study of the EMT
+and positive-sequence models of grid-following inverters and
+provided simulation guidelines of grid-following inverters for
+grid-integration studies. The work in [6] developed three-phase
+phasor models of grid-forming and grid-following inverters to
+study the dynamic behaviors of large-scale distribution sys-
+tems, but the fault response of grid-forming inverters was not
+modeled. References [22] and [23] developed positive-sequence
+models of grid-forming inverters with and without considering
+the dynamics of the dc bus respectively, but the comparison
+with detailed EMT models was not presented. Reference [24]
+modeled the virtual impedance control of a grid-forming inverter
+in the phasor domain. Reference [25] developed reduced-order
+models for grid-forming and grid-following inverters to study
+the small signal stability and compared the results with the
+full-order models. The work in[26] developed positive-sequence
+and negative-sequence models of grid-forming inverters that
+were mainly used for the power system protection scheme design
+instead of dynamic simulation. Literature review revealed that
+signiﬁcant work in the domain of positive-sequence modeling of
+grid-forming inverters for transmission system transient stability
+simulation studies is needed.
+It is worth mentioning that although numerous recent studies
+reported detailed EMT simulations [14], [15], [16], [19] to
+examine the system transient stability, the analytical approaches
+reported in those studies were still based on the phasor as-
+sumption, which ignored the dynamics of the inverter fast inner
+control loops and the dynamics of the network. This indicates
+that it might be feasible to use the positive-sequence models
+to accurately simulate the transient stability of power systems
+dominated by grid-forming inverters.
+This paper describes a positive-sequence model to represent
+two widely reported droop-controlled grid-forming inverters for
+the transmission system transient stability simulation studies.
+Methods of how to develop the equivalent voltage source behind
+impedance to represent inverters with and without inner control
+loops, modeling of P-f and Q-V droop controls, active and
+reactive power limiting modeling, and modeling of fault current
+limiting controls are described in detail. The positive-sequence
+model was validated against detailed EMT models in both a
+single-GFM inﬁnite-bus system and a modiﬁed IEEE 39-bus
+Fig. 1. Basic model of a grid-forming inverter.
+system. Finally, the model was tested on the U.S. Western
+Interconnection system. Study results showed that the model
+has a good level of accuracy compared to the detailed EMT
+models, and at the same time also achieves a high computational
+efﬁciency, making it suitable for large-scale transmission system
+simulation studies. Most parts of the model described in the
+paper have been included in a generic library positive-sequence
+grid-forming inverter model, REGFM_A1 [27], which was
+recently adopted by the US Western Electricity Coordinating
+Council (WECC) and included in the model libraries of major
+commercial positive-sequence simulation tools, including PTI-
+PSSE [28], GE-PSLF [29], PowerWorld Simulator [30], and
+TSA T[31], marking the ﬁrst publicly available grid-forming
+inverter model that is included in all major commercial transient
+stability simulation tools used in North America.
+The rest of the paper is organized as follows. Sec-
+tion II introduces the basic concept of grid-forming inverters.
+Section III presents detailed EMT models of two widely reported
+grid-forming droop controls. Section IV introduces the devel-
+oped positive-sequence model and the interface to the network
+solver. Sections V and VI present the comparison between the
+positive-sequence model and the two detailed EMT models in
+a single-GFM inﬁnite-bus system and a modiﬁed IEEE 39-bus
+system, respectively. Section VII presents the case study on the
+U.S. Western Interconnection system, and Section VIII draws
+the conclusion of this paper.
+II. G RID-FORMING CONCEPT
+Unlike a grid-following inverter, which approximately be-
+haves as a controllable current source, a grid-forming inverter
+operates as a controllable voltage source behind impedance
+during normal operations, as shown in Fig. 1.
+If the coupling reactance XL is well designed, for example
+between 0.05 pu and 0.2 pu on an inverter rating base, the inverter
+output active power P is approximately linear with the phase
+angle δP, and the inverter output reactive power Q is approx-
+imately linear with the inverter internal voltage magnitude E,
+according to (1)–(3). This decoupling characteristic simpliﬁes
+the controller design.
+δp = δE −δg (1)
+P = EVg
+XL
+sinδp ≈EVg
+XL
+δp (2)
+Q = E2 −EVg cosδp
+XL
+≈E(E −Vg )
+XL
+(3)
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 3 =====
+1738 IEEE TRANSACTIONS ON POWER DELIVERY, VOL. 39, NO. 3, JUNE 2024
+Fig. 2. Dierct and multi-loop droop GFM controls. (a) Direct droop control. (b) Multi-loop droop control. (c) Equivalent circuit of the direct droop c ontrol in the
+fundamental frequency. (d) Equivalent circuit of the multi-loop droop control in the fundamental frequency.
+III. EMT M ODELS OF TWO WIDEL YUSED DROOP CONTROLS
+Droop control is one of the most popular approaches to realize
+the parallel operation of multiple grid-forming inverters [32].A
+grid-forming inverter does not require the use of a phase-locked
+loop (PLL) in comparison to its counterpart, the grid-following
+inverter. This section introduces the detailed EMT models of two
+widely reported grid-forming droop controls. A detailed descrip-
+tion of the EMT models in this section makes it more convenient
+for readers to understand how the positive-sequence model is
+developed in Section IV by making appropriate assumptions. In
+addition, as shown in Fig. 2(a) and (b), this paper assumes the
+DC bus voltage is constant and ignores the dynamics at the DC
+side.
+A. Two Widely Used Grid-F orming Droop Controls
+Historically, two types of grid-forming droop controls are
+widely reported in the literature [33], which are deﬁned as the
+direct droop control and the multi-loop droop control in this
+paper, as shown in Fig. 2(a) and (b), respectively. As shown in
+Fig. 2(a), the direct droop control directly regulates the angular
+frequency ω and magnitude E of the modulation waveform
+according to the P-f droop control and Q-V droop control,
+respectively, where Pf and Qf are the active power and reactive
+power ﬁltered by a ﬁrst-order low-pass ﬁlter as shown in (4).I n
+contrast, for the multi-loop droop control, there are additional
+cascaded inner voltage and current loops other than the P-f and
+Q-V droop controls, as shown in Fig. 2(b). The purpose of the
+cascaded inner voltage and current loops is to achieve fast control
+of the waveform of the ﬁlter capacitor voltage vo. To achieve the
+fast control ofvo, the bandwidths of the inner voltage and current
+loops are typically designed to be very high. For example, the
+bandwidths of the voltage and current loops used in [34] are
+400 Hz and 1.6 kHz, respectively. With the waveform of vo
+well controlled by the inner voltage and current loops, the P-f
+and Q-V droop controls then regulate the angular frequency and
+magnitude of vo in a relatively slow manner. The explanations
+of all the variables and parameters are listed in Table I in this
+section, and Table II in Section V, respectively.
+Pf = 1
+1+ Ts P, Q f = 1
+1+ Ts Q (4)
+Fig. 2(c) and (d) show the equivalent circuits of the two
+controls in the fundamental frequency. For the direct droop
+control, because it directly regulates the magnitude and angular
+frequency of the modulation waveform, the equivalent circuit
+can be represented by a voltage source behind impedances XL1
+and XL2, as shown in Fig. 2(c). The pulse width modulation
+(PWM) control can be ignored in the fundamental frequency. In
+addition, the ﬁlter capacitor C can be ignored because of its neg-
+ligible value in the fundamental frequency. For the multi-loop
+droop control, because it regulates the magnitude and angular
+frequency of the ﬁlter capacitor voltagevo, the equivalent circuit
+in the fundamental frequency can be represented by a voltage
+source behind impedance XL2. The cascaded inner voltage and
+current loops, the inverter side inductor L1 and ﬁlter capacitor
+C, and the PWM control can be ignored in the fundamental
+frequency. The work in [33] pointed out the above difference
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 4 =====
+DU et al.: POSITIVE-SEQUENCE MODELING OF DROOP-CONTROLLED GRID-FORMING INVERTERS FOR TRANSIENT STABILITY SIMULA TION 1739
+TABLE I
+ELECTRICAL AND CONTROL VARIABLES OF GRID-FORMING INVERTERS
+TABLE II
+CONTROLLER PARAMETERS OF THE TWO GFM DROOP CONTROLS
+Fig. 3. Power Limiting. (a) Active power limiting. (b) Reactive power limiting.
+between the two controls and compared their small signal per-
+formances using detailed EMT models.
+B. Active and Reactive Power Limiting
+When connecting a GFM to the bulk power system, power
+limiting controls are needed to prevent the output P and Q from
+exceeding the limits under disturbances like loss of generation
+units and the step change in voltage. Fig. 3 shows the active and
+reactive power limiting control blocks.
+A ss h o w ni nF i g .3(a), when Pf exceeds Pmax or drops below
+Pmin, the anti-windup proportional-integral (PI) controller is
+activated to limit Pf by changing the inverter output angular
+frequencyω. This control was proposed by the Consortium for
+Electric Reliability Technology Solutions (CERTS) Microgrid
+project and tested in the ﬁeld [2], [11]. Similarly, as shown
+in Fig. 3(b), once Qf exceeds Qmax or drops below Qmin,t h e
+reactive power limiting is activated to limit Qf by changing the
+inverter output voltage[35]. The active power and reactive power
+limiting controls can be added either on the direct droop control
+or on the multi-loop droop control.
+C. Current Limiting During Faults
+Because a GFM approximately behaves as a voltage source
+behind impedance during normal operations, during a severe
+short-circuit fault it can generate high currents with the pos-
+sibility of damaging the inverter hardware. Therefore, current
+limiting controls are needed to prevent GFMs from overcurrent
+during faults. Considering the characteristic of insulated-gate
+bipolar transistors (IGBTs), the overcurrent needs to be limited
+rapidly, typically within 1 ms as reported by the inverter man-
+ufacturer [36]. This subsection introduces two current limiting
+controls that are typically used by the direct droop and multi-loop
+droop controls.
+For the direct droop control, since it does not have an inner
+current loop, the current limiting is implemented at the PWM
+control layer. The typical approach is to block the associated
+IGBTs once detecting the overcurrent, and then release the
+blocking signal once the current drops below the threshold Imax
+using a hysteresis loop. Fig. 4 shows the current limiting control
+block for phase A. Once the output current ila exceeds Imax,
+the hysteresis loop sends the blocking signal blka to IGBT 1
+and IGBT 4 of the phase A bridge, where g1 and g4 are the
+original gate signals generated by the PWM control, and g’1
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 5 =====
+1740 IEEE TRANSACTIONS ON POWER DELIVERY, VOL. 39, NO. 3, JUNE 2024
+Fig. 4. Current limiting used by the direct droop control.
+Fig. 5. Inner voltage and current loops of the multi-loop droop control.
+and g’4 are the new gate signals modulated by the blocking
+signal blka. The currents on phase B and C can be limited in the
+same manner. This approach was brieﬂy mentioned in [36], and
+explained in detail in [37]. The advantage of this approach is
+that it can limit the overcurrent very quickly, for example within
+1–2 PWM cycles. However, this approach results in a ﬂat-topped
+current waveform during faults, which is shown in Section V.
+For the multi-loop droop control, since it has an inner current
+loop, the overcurrent can be limited by saturating the current
+references. Fig. 5 shows the cascaded inner voltage and current
+loops together with the current limiting block.
+The current limiting algorithm used in this paper is shown
+in (5). If the magnitude of the current reference exceeds Imax,
+both current referencesi∗lds andi∗lqs are reduced proportionally
+according to (5). This assures that the magnitude of the current
+is limited at Imax during the fault. Such method is called circular
+current limiting control according to[38]. It should be noted that
+when using this approach, the saturation limits of the voltage
+loop need to be carefully designed to avoid windup when the
+output current is saturated [10].
+⎧
+⎪⎨
+⎪⎩
+i∗
+lds = i∗
+ld,i∗
+lqs = i∗
+lq if
+√
+i∗
+ld
+2 +i∗
+lq
+2 ≤Imax
+i∗
+lds = i∗
+ld Imax√
+i∗
+ld
+2 +i∗
+lq
+2 ,i∗
+lqs =
+i∗
+lq Imax
+√
+i∗
+ld
+2 +i∗
+lq
+2 if
+√
+i∗
+ld
+2 +i∗
+lq
+2>I max
+(5)
+Compared to the current limiting method used by the direct
+droop control, this approach does not result in the distortion of
+current waveforms under balanced faults. However, its response
+speed is constrained by the bandwidth of the current loop, so
+it is not as fast as the approach shown in Fig. 4. In addition,
+this approach also results in distorted current waveforms under
+unbalanced faults.
+It is important to note that although the two current limiting
+controls described earlier can effectively limit the overcurrent
+during faults, they only work for short-term faults that are
+quickly cleared by the power system protection devices (e.g.,
+a 0.1 s fault). If the fault lasts too long, these two methods can
+result in the loss of synchronism to the grid after the fault, as
+reported in [14], [16].
+Fig. 6. GFM representation. (a) V oltage phasor behind impedance represen-
+tation. (b) Norton equivalent circuit.
+IV . POSITIVE-SEQUENCE MODELING
+After describing detailed EMT models of the two types of
+GFM droop controls, this section introduces how to develop
+the equivalent positive-sequence model to represent them in
+the phasor domain. The positive-sequence modeling is based
+on the phasor assumption and ignores the network dynamics.
+In addition, the positive-sequence simulation typically runs at a
+time step of a quarter of a cycle (e.g., 4.1667 ms for a 60 Hz
+power system), which is much larger than the time step used by
+EMT simulations. Therefore, appropriate simpliﬁcations must
+be made to model GFMs in the positive-sequence tool.
+A. V oltage Phasor Behind Impedance Representation
+According to the explanation in Section III-A,aG F M
+can be represented by a voltage phasor EGFM/2220δGFM be-
+hind impedance XL in the positive-sequence tool, as shown in
+Fig. 6(a), and the GFM controller changes the voltage magnitude
+and phase angle of the voltage phasor. The dynamic of ﬁlter
+inductance is ignored and is represented by an algebraic term
+“jXL” instead of a differential term. This is signiﬁcantly different
+from how a traditional grid-following inverter is modeled in
+positive-sequence tools. As a grid-following inverter is typically
+modeled as a controllable current phasor, and the controller
+changes the active and reactive current references [39].
+It is important to note that the value of XL is different when
+representing the two different GFM droop controls described
+in Section III. When representing the direct droop control, the
+voltage phasor EGFM/2220δGFM refers to the inverter bridge side
+voltage E/2220δE, and the reactance XL is the summation of the
+inverter bridge side ﬁlter reactance XL1 and grid side ﬁlter
+reactance XL2, as expressed in (6) and (7). The ﬁlter capacitor C
+can be ignored because its value in the fundamental frequency
+is typically very small.
+EGF M ∠δGF M = E∠δE (6)
+XL = XL1 +XL2 (7)
+When representing the multi-loop droop control, the volt-
+age phasor EGFM/2220δGFM refers to the ﬁlter capacitor voltage
+Vo/2220δo, and XL refers to the inverter grid side ﬁlter reactance
+XL2 only, as expressed in(8) and (9). The cascaded inner voltage
+and current loops together with the inverter bridge side inductor
+L1 and ﬁlter capacitor C are ignored in the phasor domain. As
+explained in Section III-A, the bandwidths of the inner voltage
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 6 =====
+DU et al.: POSITIVE-SEQUENCE MODELING OF DROOP-CONTROLLED GRID-FORMING INVERTERS FOR TRANSIENT STABILITY SIMULA TION 1741
+Fig. 7. Overall control scheme. (a) P-f droop and active power limiting.
+(b) Q-V droop and reactive power limiting.
+and current loops are at least in the order of a few hundred Hz,
+so it is reasonable to assume those inner loops track ideally in
+the positive-sequence tool and ignore their dynamics.
+EGF M ∠δGF M = Vo∠δo (8)
+XL = XL2 (9)
+B. Droop Control and Power Limiting Modeling
+In the positive sequence tool, the low-pass ﬁlter, P-f and
+Q-V droop control, and active and reactive power limiting of
+GFMs can be modeled as the same as modeled in the EMT
+simulation tool. This is because the bandwidths of those control
+loops are relatively low, so that they can be modeled in the
+phasor domain without causing numerical stability issues. Fig.7
+shows the overall control scheme. Detailed control blocks were
+shown in Figs. 2 and 3, and explained in Section III.I nF i g .7(a)
+and (b),δdroop and Edroop are the static phase angle and voltage
+magnitude obtained from the control blocks. Note that in the
+positive-sequence tool, the static phase angle δdroop should be
+used by the network solver instead of the rotating phase angle
+θ. By comparing Figs. 2(b) and 7(a), it can be seen that θ=
+δdroop+ω0t. Assuming the GFM output frequency is 60 Hz, then
+δdroop is a ﬁxed value whileθchanges from 0 to 2πperiodically.
+C. Fault Current Limiting Modeling
+Neither the PWM blocking method, nor the circular current
+limiting method described in Section III-C can be directly
+modeled in the positive-sequence tool because of their high
+bandwidths. Therefore, an equivalent modeling method must
+be developed to accurately represent their control effect and
+at the same time allows a larger simulation time step for the
+positive-sequence simulation. Since the current limiting control
+typically responds very fast, it is reasonable ignore its dynamics
+and model it algebraically in the positive-sequence tool. The
+work in [38] pointed out that the circular current limiting control
+used by the multi-loop droop-controlled GFMs as described in
+(5) is equivalent to a virtual resistor. Similarly, simulation studies
+Fig. 8. Equivalent circuit of the GFM in the current limiting mode.
+Fig. 9. Flow chart of the current limiting algorithm developed for positive-
+sequence simulation tools.
+show that the control effect of PWM blocking method used
+by the direct-droop-controlled GFMs as described in Fig. 4 is
+also like a virtual resistor. Therefore, those two current limiting
+controls described in Section III-C can be equivalently modeled
+as a virtual resistor Re in the positive-sequence tool, as shown
+in Fig. 8.
+The function of the virtual resistorRe is to limit the magnitude
+of output current at Imax during a fault as described in (10), and
+its value can be calculated using (11).
+⏐⏐⏐⏐
+Edroop ∠δdroop −Vt∠δt
+Re +jXL
+⏐⏐⏐⏐ = Imax (10)
+Re =
+√
+E2droop +V 2t −2EdroopVt cos(δdroop −δt)
+I2max
+−XL
+2
+(11)
+The ﬂow chart in Fig. 9 describes the virtual-resistor-based
+current limiting algorithm developed for the positive-sequence
+model. Equations (12) and (13) are used as a criterion to de-
+termine if the GFM will go into the current limiting or not. At
+each simulation time step, the GFM output current phasor I/2220ϕ
+is calculated using (12). If the current magnitude I is smaller
+than Imax, then the GFM will not go into the current limiting
+mode, and EGFM and δGFM are governed by the P-f and Q-V
+droop controls, as shown in (13-a). Once I exceed Imax caused
+by a fault, for exampleVt drops to 0 pu, the GFM will go into the
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 7 =====
+1742 IEEE TRANSACTIONS ON POWER DELIVERY, VOL. 39, NO. 3, JUNE 2024
+Fig. 10. Flow chart describing the interaction between the grid-forming in-
+verter model and the network solver.
+current limiting mode and the voltage phasor EGFM/2220δGFM is
+calculated using (13-b). In the current limiting mode, the GFM
+output current phasor Imax/2220ϕLim is dependent on the virtual
+resistor Re, as shown in Fig. 9. Equation (13-b) assures that the
+magnitude of the GFM output current is limited at Imax in the
+current limiting mode.
+I∠ϕ= Edroop ∠δdroop −Vt∠δt
+jXL
+(12)
+⎧
+⎨
+⎩
+EGF M ∠δGF M =Edroop ∠δdroop,if I<I max (13-a)
+EGF M ∠δGF M =Vt∠δt +jXLImax∠ϕLim,
+if I ≥Imax (13-b)
+D. Interface With the Network Solver
+The ﬂow chart in Fig. 10 describes how the developed
+positive-sequence GFM model interacts with the network solver.
+At each simulation time step, theP-f and Q-V droop controls as
+shown in Fig. 7 ﬁrst generate the voltage phasor Edroop/2220δdroop
+based on the P and Q returned by the network solver, and
+then the current limiting algorithm shown in Fig. 9 checks
+if the inverter output current exceeds Imax or not and deter-
+mines the actual inverter internal voltage phasor EGFM/2220δGFM.
+Because most positive-sequence tools used in the United States
+use the current-injection-based methods to solve the network
+equations, the voltage phasor EGFM/2220δGFM behind impedance
+XL shown in Fig. 6(a) is converted to its Norton equivalent
+circuit, as shown in Fig. 6(b),u s i n g(14) and (15). Once the
+current phasor IN/2220ϕN and admittance YL are obtained, they
+are sent to the network solver to solve the network algebraic
+equations for the next simulation time step.
+IN ∠ϕN = EGF M ∠δGF M
+jXL
+(14)
+Fig. 11. Single-GFM inﬁnite-bus system.
+TABLE III
+VALUES OF L1, L2, AND EQUIV ALENTXL
+YL = 1
+XL
+(15)
+V. C OMPARISON IN A SINGLE-GFM INFINITE-BUS SYSTEM
+To investigate how accurately the developed positive-
+sequence model can represent the two GFM droop controls,
+a rigorous comparison between EMT and positive-sequence
+simulations was performed on a single-GFM inﬁnite bus system
+as shown in Fig. 11. The EMT models of the two GFM con-
+trols were developed in the PSCAD simulation tool [40].T h e
+IGBT-based model was used to represent the inverter in PSCAD,
+and the PWM switching frequency was set at 10 kHz. The
+positive-sequence model was developed in the commercially
+available positive-sequence simulation tool PSS/E. The time
+step for the PSCAD simulation was 5 μs, and the time step
+for the PSS/E simulation was 4.167 ms.
+Table II shows the controller parameters of the direct droop
+control and the multi-loop droop control. The parameters of the
+low-pass ﬁlter, P-f and Q-V droop, and power limiting are the
+same for both GFM controls. The line impedance is Rg + jXg =
+0.02 + j0.15 pu. According to Fig. 2(c) and (d), if the values
+of L1 and L2 remain the same when using two GFM droop
+controls, they will have different values ofXL in the fundamental
+frequency, resulting in different simulation results. Therefore,
+to achieve a reasonable comparison, the values of L1 and L2
+were designed to assure that the two GFM controls have the
+same value of XL in the fundamental frequency, as listed in
+Table III. The ﬁlter capacitor C was designed to have a cutoff
+frequency of 600 Hz. With the values of XL and other major
+parameters remaining the same, it is expected that the direct
+droop control and the multi-loop droop control will have similar
+dynamic performances.
+A. Step Change in V oltage Magnitude
+In this scenario, the magnitude of grid voltage Vg dropped to
+0.8 pu at 1.2 s, resulting in the GFM terminal voltage Vt to drop
+to 0.86 pu.
+Because the internal voltage magnitude Edroop still held ap-
+proximately constant, the voltage difference betweenEdroop and
+Vt resulted in a sudden increase in Q. Once Q reached the limit
+Qmax, the reactive power limiting control shown in Fig.3(b) was
+activated to limit Q at 0.44 pu by reducing Edroop. The system
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 8 =====
+DU et al.: POSITIVE-SEQUENCE MODELING OF DROOP-CONTROLLED GRID-FORMING INVERTERS FOR TRANSIENT STABILITY SIMULA TION 1743
+Fig. 12. GFM response to a step change in the grid voltage magnitude.
+(a) EMT simulations of two GFM controls. (b) Positive-sequence simulation.
+reached a steady state after about 0.1 s. The output frequency of
+the GFM deviated from 60 Hz during the transient because of
+the slight change in P, and it returned to 60 Hz in the steady state
+because the grid frequency was ﬁxed at 60 Hz. Fig.12(a) and (b)
+show the EMT and positive-sequence simulation results. Note
+that in the EMT simulation, there were some fast oscillations in
+the output P, Q, and f of the GFM in the ﬁrst 0.06 s after the
+disturbance. Because the positive-sequence simulation approach
+ignores the dynamics of the network and inverter ﬁlter inductor,
+it cannot capture those fast oscillations as the EMT simulation
+does. However, the positive-sequence simulation results overall
+aligned well with the EMT simulation results in the studied 0.5 s
+time frame.
+B. Typical Fault
+In this scenario, a 0.1 s bolted fault was applied at the terminal
+of the GFM. As shown in Fig.13, because the terminal voltageVt
+dropped to 0, the GFM outputP and Q became 0 during the fault.
+After the fault was cleared, the system remained stable. Fig. 14
+shows the GFM output current Io and the phase angle from the
+P-f droop control δdroop. During the fault, the output current
+was immediately limited at 2 pu. For the EMT simulations, this
+is because the inner current limiting controls respond very fast,
+so the dynamics are invisible in the selected time frame. For the
+positive-sequence simulation, this is because the current limiting
+is implemented algebraically, so its dynamics are ignored. The
+inverter output currents from the EMT simulations were slightly
+higher than 2 pu. This is because the output current in Fig. 14
+refers to the grid side current so that the ﬁlter capacitor has a
+contribution to it. Fig. 15 shows the inverter bridge side current
+waveforms obtained from the EMT simulations. For the direct
+droop control, the inverter output currents were limited at 2 pu,
+but the waveforms were distorted due to the current limiting
+control algorithm. This distortion also resulted in a slightly
+Fig. 13. GFM response to a 0.1 s bolted fault. (a) EMT simulations of two
+GFM controls. (b) Positive-sequence simulation.
+Fig. 14. GFM output current and phase angle during the 0.1 s bolted fault.
+(a) EMT simulations of two GFM controls. (b) Positive-sequence simulation.
+Fig. 15. EMT simulations of the GFM bridge side current waveform during
+the 0.1 s bolted fault. (a) Direct droop control. (b) Multi-loop droop control.
+higher root-mean square value of the current, as shown in Fig.14.
+For the multi-loop droop control, the currents were limited at 2
+pu without distortions, but there was a slight overshoot in the
+ﬁrst cycle during the fault. The phase angle δdroop increased
+during the fault according to the P-f droop control and returned
+to the pre-fault value after the fault was cleared. Both the EMT
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 9 =====
+1744 IEEE TRANSACTIONS ON POWER DELIVERY, VOL. 39, NO. 3, JUNE 2024
+Fig. 16. GFM response to a delayed clearing fault. (a) EMT simulations of
+two GFM controls. (b) Positive-sequence simulation.
+Fig. 17. GFM output current and phase angle during the delayed clearing fault.
+(a) EMT simulations of two GFM controls. (b) Positive-sequence simulation.
+simulations and the positive-sequence simulation reﬂected the
+change of the phase angle.
+Note that for the positive-sequence simulation, the P, Q, and
+Vt shown in the simulation results were returned by the network
+solver. They were not the outputs of the low-pass ﬁlters. There-
+fore, they had a “step change” response during the disturbance.
+In contrast, for the EMT simulations, the P, Q, and Vt shown
+in the simulation results were passed through low-pass ﬁlters to
+ﬁlter out high-frequency noises. Therefore, they did not have the
+“step change” response during the disturbance.
+C. Delayed Clearing Fault
+Figs. 16 and 17 show the responses of the GFM to a 0.45 s
+delayed clearing fault. Because the fault lasted a longer duration,
+the phase angle δdroop lost synchronism to the grid and could
+not return to the pre-fault value. Although δdroop stabilized at
+another value after the fault was cleared, as shown in Fig.17,t h e
+system experienced large transients onP, Q, Vt, and f during and
+Fig. 18. Modiﬁed IEEE 39-bus system with 5 GFMs.
+after the fault as shown in Fig. 16. Such large transients can trig-
+ger the inverter internal protections in a real system. Therefore,
+the current limiting controls described in this paper cannot help
+the GFM survive such severe faults. The loss of synchronism
+phenomenon caused by similar current limiting algorithms has
+been explained previously in references [14], [16].F i g s .16(b)
+and 17(b) show that such phenomenon can also be captured
+by the positive-sequence model. Note that many innovative
+controls are currently being proposed to help GFMs survive such
+large disturbances. However, developing new fault ride-through
+controls of GFMs is not the focus of this paper. After the fault was
+cleared, the output current Io experienced some transients in the
+EMT simulations but not in the positive-sequence simulation.
+Again, this is because the ﬁlter capacitor exists in the EMT
+models but not in the positive-sequence model.
+VI. C OMPARISON IN A MODIFIED IEEE 39-BUS SYSTEM
+To further validate the positive-sequence model in a bulk
+power system environment, a rigorous comparison between
+EMT and positive-sequence simulations was performed on a
+modiﬁed IEEE 39-Bus System.
+As shown in Fig. 18, ﬁve out of ten synchronous machines
+were replaced with GFMs, out of which three of them used the
+direct droop control and the other two used the multi-loop droop
+control. The parameters of the GFMs were the same as those
+described in Section V, except for that Pmax was changed to
+1 pu and Qmax and Qmin were changed to 0.6 pu and -0.6 pu for
+each GFM to ensure a ﬂat initialization of the positive-sequence
+simulation. The time steps used in the simulations are the same
+as used in Section V.
+A. Fault-Induced Loss of Generation Event
+In this scenario, a three-phase bolted fault was applied at Bus
+19 which is close to Synchronous Machine 33, and the fault
+was cleared after 0.1 s. Because of the substantial voltage drop,
+Synchronous Machine 33 tripped off after the fault. Fig. 19(a)
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 10 =====
+DU et al.: POSITIVE-SEQUENCE MODELING OF DROOP-CONTROLLED GRID-FORMING INVERTERS FOR TRANSIENT STABILITY SIMULA TION 1745
+Fig. 19. Comparision of EMT and positive-sequence simulation results for
+the modiﬁed IEEE 39-bus system. (a) Responses of GFM 34. (b) Responses of
+GFM 30.
+TABLE IV
+COMPUTA TIONALTIME (SIMULA TIONRUNTIME:2 0 S)
+and (b) show the comparison of EMT and positive-sequence
+simulation results for GFM 34 and GFM 30, respectively. The
+GFM 34 uses the direct droop control and GFM 30 uses the
+multi-loop droop control. Because GFM 34 was close to the
+fault location, its terminal voltage V dropped to 0.37 pu during
+the fault, resulting in the output current Io reaching the limit
+Imax = 2 pu, as shown in Fig. 19(a). The GFM 34 quickly
+exited the current limiting mode after the fault was cleared. As
+for GFM 30, because it was far away from the fault location,
+its terminal voltage V only dropped to 0.8 pu and the output
+current Io did not reach the limit Imax during the fault. Despite
+that some fast electromagnetic transients were not captured by
+the positive-sequence models, the positive-sequence simulation
+results aligned very well with the EMT simulation results, as
+shown in Fig. 19(a) and (b).
+The EMT and positive-sequence simulations for each GFM
+and synchronous machine were compared, and all comparisons
+achieved the same level of alignment as shown in Fig. 19 .
+B. Computational Time Summary
+TableIV summarizes the computational times. The simulation
+runtime was 20 s. Because ﬁve IGBT-based GFM models were
+Fig. 20. Simulation results of the Western Interconnection system.
+(a) Case 1: The original case. (b) Case 2: All synchronous machines repalced
+by GFMs.
+used and simulated at a time step of 5 μs, it took 18634 s to
+complete the EMT simulation. In contrast, it only took 0.2 s
+to complete the positive-sequence simulation, which shows the
+advantage of using positive-sequence simulations to study the
+transient stability of transmission systems. Note that this paper
+aims to achieve a very rigorous comparison between EMT and
+positive-sequence simulations so that the IGBT-based EMT
+models were used. The computational time of EMT simulations
+is expected to be signiﬁcantly reduced by using simpliﬁed mod-
+els such as switching function models. However, such studies
+are out of the scope of this paper.
+VII. S TUDY IN THE WESTERN INTERCONNECTION SYSTEM
+With rigorous model validations performed in Sections V
+and VI, the positive-sequence GFM model was ﬁnally studied
+in the U.S. Western Interconnection system in this section.
+The system model includes 22,000 + buses, 5,000 + syn-
+chronous machines, and 1000 + grid-following inverters. The
+2021 Heavy Summer case was selected, and the total load was
+around 150000 MW. Because of its size, it would be extremely
+difﬁcult to conduct an EMT simulation for such a large system.
+Therefore, only positive-sequence simulations were performed.
+A Paciﬁc DC Intertie (PDCI) bi-pole outage was selected as
+the contingency to examine the system transient stability. Two
+cases were simulated. The ﬁrst case simulated the original
+system, where synchronous machines dominated the grid. For
+the second case, all the synchronous machines were replaced by
+GFMs, creating a 100% inverter case with high penetrations of
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 11 =====
+1746 IEEE TRANSACTIONS ON POWER DELIVERY, VOL. 39, NO. 3, JUNE 2024
+GFMs. Simulations were performed in PSS/E with a time step
+of 4.167 ms, and the simulation runtime was 35 s. 25 generation
+units across the system were monitored. It took around 12.3
+minutes to complete Case 1, and around 18.3 minutes to com-
+plete Case 2. Fig. 20(a) and (b) present the simulation results of
+the 25 generations units for the two cases. By comparing these
+results, it becomes evident that replacing all synchronous ma-
+chines with GFMs signiﬁcantly improves the system damping.
+This case study shows that a) the developed positive-sequence
+GFM model is numerically stable in a practical bulk power
+system environment, and b) the high penetration of GFMs can
+signiﬁcantly enhance the system damping compared to tradi-
+tional synchronous machine-dominated systems. Future work
+will explore additional scenarios with varying levels of GFM
+penetration based on the developed the GFM model.
+VIII. C ONCLUSION
+As GFMs are being rapidly connected to the power grids
+around the world, it is important to understand how GFMs should
+be modeled in conventional positive-sequence simulation tools
+for studying their impacts on the transient stability of large-scale
+transmission systems. This paper describes a positive-sequence
+model to represent to two widely reported droop-controlled
+GFMs. Methods of how to develop the equivalent voltage source
+behind impedance to represent inverters with and without inner
+control loops, modeling of P-f and Q-V droop controls, active
+and reactive power limiting modeling, and modeling of fault
+current limiting controls have been described in detail. The
+positive-sequence model was compared against detailed EMT
+models in both a single-GFM inﬁnite-bus system and a modiﬁed
+IEEE 39-bus system. Finally, the model has been tested on the
+U.S. Western Interconnection system. The study results show
+that the model has a good level of accuracy compared to the
+detailed EMT models, and at the same time also achieves a
+high computational efﬁciency, making it suitable for large-scale
+transmission system simulation studies. Most parts of the model
+described in the paper have been included in a generic library
+positive-sequence grid-forming inverter model, REGFM_A1,
+which was recently adopted by the US WECC and included
+in the model libraries of major commercial positive-sequence
+simulation tools, including PTI-PSSE, GE-PSLF, PowerWorld
+Simulator, and TSA T, marking the ﬁrst publicly available grid-
+forming inverter model that is included in all major commercial
+transient stability simulation tools used in North America.
+ACKNOWLEDGMENT
+The views expressed herein do not necessarily represent the
+views of the U.S. Department of Energy or the United States
+Government.
+REFERENCES
+[1] R. H. Lasseter, Z. Chen, and D. Pattabiraman, “Grid-forming inverters:
+A critical asset for the power grid,” IEEE J. Emerg. Sel. Topics Power
+Electron., vol. 8, no. 2, pp. 925–935, Jun. 2020.
+[2] R. H. Lasseter et al., “CERTS microgrid laboratory test bed,” IEEE Trans.
+Power Del., vol. 26, no. 1, pp. 325–332, Jan. 2011.
+[3] J. Matevosyan et al., “Grid-forming inverters: Are they the key for high re-
+newable penetration?,”IEEE Power Energy Mag., vol. 17, no. 6, pp. 89–98,
+Nov./Dec. 2019.
+[4] M. E. Elkhatib, W. Du, and R. H. Lasseter, “Evaluation of inverter-
+based grid frequency support using frequency-watt and grid-forming
+PV inverters,” in Proc. IEEE Power Energy Soc. Gen. Meeting , 2018,
+pp. 1–5.
+[5] A. Crivellaro et al., “Beyond low-inertia systems: Massive integration of
+grid-forming power converters in transmission grids,” inProc. IEEE Power
+Energy Soc. Gen. Meeting , 2020, pp. 1–5.
+[6] W. Du et al., “Modeling of grid-forming and grid-following inverters
+for dynamic simulation of large-scale distribution systems,” IEEE Trans.
+Power Del., vol. 36, no. 4, pp. 2035–2045, Aug. 2021.
+[7] P . F. Mayer, M. Gordon, W. C. Huang, and C. Hardt, “Improving grid
+strength in a wide-area transmission system with grid forming inverters,”
+Inst. Eng. Technol. Gener ., Transmiss. Distrib., vol. 17, no. 2, pp. 399–410,
+2023.
+[8] D. Pattabiraman, R. H. Lasseter, and T. M. Jahns, “Comparison of
+grid following and grid forming control for a high inverter penetration
+power system,” in Proc. IEEE Power Energy Soc. Gen. Meeting , 2018,
+pp. 1–5.
+[9] P . Brogan, T. Knueppel, D. Elliott, and N. Goldenbaum, “Experience of
+grid forming power converter control,” in Proc. 17th Wind Integration
+Workshop, 2018.
+[10] H. N. V . Pico and V . Gevorgian, “Blackstart capability and survivability of
+wind turbines with fully rated converters,” IEEE Trans. Energy Convers.,
+vol. 37, no. 4, pp. 2482–2497, Dec. 2022.
+[11] W. Du, R. H. Lasseter, and A. S. Khalsa, “Survivability of autonomous
+microgrid during overload events,”IEEE Trans. Smart Grid, vol. 10, no. 4,
+pp. 3515–3524, Jul. 2019.
+[12] O. Schomann, “Experiences with large grid-forming inverters on various
+island and microgrid projects,” in Proc. Hybrid Power Syst. Workshop ,
+2019.
+[13] A. Roscoe et al., “Practical experience of providing enhanced grid forming
+services from an onshore wind park,” in Proc. 19th Wind Integration
+Workshop, 2020, pp. 1–4.
+[14] L. Huang, H. Xin, Z. Wang, L. Zhang, K. Wu, and J. Hu, “Transient stability
+analysis and control design of droop-controlled voltage source converters
+considering current limitation,” IEEE Trans. Smart Grid , vol. 10, no. 1,
+pp. 578–591, Jan. 2019.
+[15] T. Qoria, F. Gruson, F. Colas, G. Denis, T. Prevost, and X. Guillaud,
+“Critical clearing time determination and enhancement of grid-forming
+converters embedding virtual impedance as current limitation algorithm,”
+IEEE J. Emerg. Sel. Topics Power Electron., vol. 8, no. 2, pp. 1050–1061,
+Jun. 2020.
+[16] E. Rokrok, T. Qoria, A. Bruyere, B. Francois, and X. Guillaud, “Transient
+stability assessment and enhancement of grid-forming converters embed-
+ding current reference saturation as current limiting strategy,”IEEE Trans.
+Power Syst., vol. 37, no. 2, pp. 1519–1531, Mar. 2022.
+[17] N. Baeckeland, D. V enkatramanan, M. Kleemann, and S. Dhople,
+“Stationary-frame grid-forming inverter control architectures for unbal-
+anced fault-current limiting,” IEEE Trans. Energy Convers., vol. 37, no. 4,
+pp. 2813–2825, Dec. 2022.
+[18] Z. Jin and X. Wang, “A DQ-frame asymmetrical virtual impedance control
+for enhancing transient stability of grid-forming inverters,” IEEE Trans.
+Power Electron., vol. 37, no. 4, pp. 4535–4544, Apr. 2022.
+[19] P . J. Hart, M. Gong, H. Liu, Z. Chen, Y . Zhang, and Y . Wang, “Provably-
+stable overload ride-through control for grid-forming inverters using
+system-wide Lyapunov function analysis,” IEEE Trans. Energy Convers.,
+vol. 37, no. 4, pp. 2761–2776, Dec. 2022.
+[20] D. Ramasubramanian, Z. Y u, R. Ayyanar, V . Vittal, and J. Undrill, “Con-
+verter model for representing converter interfaced generation in large scale
+grid simulations,” IEEE Trans. Power Syst. , vol. 32, no. 1, pp. 765–773,
+Jan. 2017.
+[21] V . A. Lacerda, E. P . Araujo, M. Cheah-Mañe, and O. Gomis-Bellmunt,
+“Phasor modeling approaches and simulation guidelines of voltage-
+source converters in grid-integration studies,” IEEE Access , vol. 10,
+pp. 51826–51838, 2022.
+[22] W. Du, Y . Liu, R. Huang, F. K. Tuffner, J. Xie, and Z. Huang, “Positive-
+sequence phasor modeling of droop-controlled, grid-forming inverters
+with fault current limiting function,” in Proc. IEEE Power Energy Soc.
+Innov. Smart Grid Technol. Conf., 2022, pp. 1–5.
+[23] S. Roy and H. N. V . Pico, “Transient stability and active protection of
+power systems with grid-forming PV power plants,” IEEE Trans. Power
+Syst., vol. 38, no. 1, pp. 897–911, Jan. 2023.
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 12 =====
+DU et al.: POSITIVE-SEQUENCE MODELING OF DROOP-CONTROLLED GRID-FORMING INVERTERS FOR TRANSIENT STABILITY SIMULA TION 1747
+[24] D. Pattabiraman, R. H. Lasseter, and T. M. Jahns, “Transient stability
+modeling of droop-controlled grid-forming inverters with fault current
+limiting,” in Proc. IEEE Power Energy Soc. Gen. Meeting, 2020, pp. 1–5,
+doi: 10.1109/PESGM41954.2020.9281712.
+[25] Y . Gu, N. Bottrell, and T. C. Green, “Reduced-order models for represent-
+ing converters in power system studies,” IEEE Trans. Power Electron. ,
+vol. 33, no. 4, pp. 3644–3654, Apr. 2018.
+[26] B. Mahamedi and J. E. Fletcher, “The equivalent models of grid-forming
+inverters in the sequence domain for the steady-state analysis of power sys-
+tems,” IEEE Trans. Power Syst., vol. 35, no. 4, pp. 2876–2887, Jul. 2020.
+[27] W. Du, “Model speciﬁcation of droop-controlled, grid-forming invert-
+ers (REGFM_A1),” Paciﬁc Northwest Nat. Lab., Richland, W A, USA,
+Tech. Rep. PNNL-35110, 2023.
+[28] Siemens, PSS/E Software, 2022. [Online]. Available: https://new.
+siemens.com/global/en/products/energy/energy-automation-and-smart-
+grid/pss-software/pss-e.html
+[29] GE Energy Consulting, PSLF Software, 2022. [Online]. Available: https:
+//www.geenergyconsulting.com/practice-area/software-products/pslf
+[30] PowerWorld Corporation, “PowerWorld software,” 2022. [Online]. Avail-
+able: https://www.powerworld.com/
+[31] Powertech Labs Inc., TSA T Software, 2022. [Online]. Available: https:
+//www.dsatools.com/tsat/
+[32] M. C. Chandorkar, D. M. Divan, and R. Adapa, “Control of parallel
+connected inverters in stand-alone AC supply systems,” in Proc. IEEE
+Ind. Appl. Soc. Annu. Meeting , 1991, pp. 1003–1009.
+[33] W. Du et al., “A comparative study of two widely used grid-forming droop
+controls on microgrid small-signal stability,” IEEE J. Emerg. Sel. Topics
+Power Electron., vol. 8, no. 2, pp. 963–975, Jun. 2020.
+[34] N. Pogaku, M. Prodanovic, and T. C. Green, “Modeling, analysis and
+testing of autonomous operation of an inverter-based microgrid,” IEEE
+Trans. Power Electron., vol. 22, no. 2, pp. 613–625, Mar. 2007.
+[35] A. Knobloch et al., “Synchronous energy storage system with inertia
+capabilities for angle, voltage and frequency stabilization in power grids,”
+in Proc. 11th Sol. Storage Power Syst. Integration Workshop , 2021,
+pp. 71–78.
+[36] D. Duckwitz, A. Knobloch, F. Welck, T. Becker, C. Gloeckler, and T.
+Buelo, “Experimental short-circuit testing of grid-forming inverters in
+microgrid and interconnected mode,” in Proc. IEEE NEIS Conf. Sustain.
+Energy Supply Energy Storage Syst., 2018, pp. 1–6.
+[37] W. Du, Q. Nguyen, Y . Liu, and S. M. Mohiuddin, “A current limiting
+control strategy for single-loop droop-controlled grid-forming inverters
+under balanced and unbalanced faults,” in Proc. IEEE Energy Convers.
+Congr . Expo., 2022, pp. 1–7.
+[38] B. Fan and X. Wang, “Equivalent circuit model of grid-forming converters
+with circular current limiter for transient stability analysis,” IEEE Trans.
+Power Syst., vol. 37, no. 4, pp. 3141–3144, Jul. 2022, doi: 10.1109/TP-
+WRS.2022.3173160.
+[39] P . Pourbeik et al., “Generic dynamic models for modeling wind power
+plants and other renewable technologies in large-scale power system
+studies,” IEEE Trans. Energy Convers. , vol. 32, no. 3, pp. 1108–1116,
+Sep. 2017, doi: 10.1109/TEC.2016.2639050.
+[40] Manitoba HVDC Research Centre, PSCAD Software, 2019. [Online].
+Available: https://hvdc.ca/pscad/
+Wei Du (Senior Member, IEEE) received the Ph.D.
+degree in electrical engineering from Tsinghua Uni-
+versity, Beijing, China, in 2014. He is currently a Staff
+Research Engineer with Paciﬁc Northwest National
+Laboratory, Richland, W A, USA. He was a Visiting
+Student with the University of Wisconsin-Madison,
+Madison, WI, USA, from 2012 to 2013, where he was
+also a Postdoctoral Researcher from 2016 to 2018.
+From 2014 to 2016, he was a Research Engineer
+with the Key Real Time Digital Simulation Lab of
+Power System, China Southern Power Grid Company,
+Guangzhou, China. His main research interests include control design, modeling,
+and simulation of power systems with high penetration of power electronics. He
+is the Principal Investigator of multiple projects funded by the U.S. Department
+of Energy that investigate the impacts of inverter-based resources on the stability
+of power systems. He is the Co-lead of the Modeling and Simulation Area of
+the Universal Interoperability for Grid-Forming Inverters Consortium. He is the
+Lead Developer of the ﬁrst generation of the US WECC generic grid-forming
+inverter model, REGFM_A1. The REGFM_A1 model has been integrated
+into major commercial transient stability simulation tools including Siemens
+PTI-PSSE, GE-PSLF, PowerWorld Simulator, and TSA T for industry use.
+Quan H. Nguyen (Member, IEEE) received the B.E.
+degree in electrical engineering from the Hanoi Uni-
+versity of Science and Technology, Hanoi, Vietnam,
+in 2012, and the M.S. and Ph.D. degrees in electrical
+engineering from The University of Texas at Austin,
+Austin, TX, USA, in 2016 and 2019, respectively.
+Since 2019, he has been a Power System Engineer
+with The Paciﬁc Northwest National Laboratory,
+Richland, W A, USA. His research interests include
+production cost modeling, control, optimization, and
+simulation of power systems with high penetrations
+of inverter-based resources, and ﬂexible HVDC and low-frequency transmission.
+Song Wang (Senior Member, IEEE) received the
+master’s degree in electrical engineering from the
+Shenyang University of Technology, Shenyang,
+China. He has more than 30 years of experience in
+transmission system planning, design, modeling, and
+compliance. Since 2016, he has also been Chairman
+with US Western Electricity Coordinating Council’s
+Modeling and V alidation Subcommittee. He is cur-
+rently the Senior Principal Engineer with Portland
+General Electric, USA. He is also a Transmission
+Planning Expert and provides consultation and rec-
+ommendations to the Senior Management. He is an Adjunct Professor of power
+system stability and power system I classes with Portland State University. He
+also Leads the Review, Recommendation, Development, and V alidation of power
+system models to support reliability assessments to advance the industry. He was
+a Point of Contact for multiple DOE projects. He is the Principal Investigator
+with US DOE Grid Services Demonstration Project, which aims to demonstrate
+that grid-forming technologies enhance grid stability and promote the utility
+adoption of grid-forming technologies.
+Jinho Kim (Member, IEEE) received the Ph.D. de-
+gree from Electrical Engineering Department, Jeon-
+buk National University, Jeonju, South Korea, in
+2018. During his Ph.D., he was an Assistant Re-
+searcher with the Wind Energy Grid-Adaptive Tech-
+nologies Research Center, Jeonju, supported by the
+Ministry of Science, ICT, and Future Planning, South
+Korea. From 2018 to 2022, he was a Research Fellow
+with Electrical and Computer Engineering Depart-
+ment, Auburn University, Auburn, AL, USA. He is
+currently a power system research Engineer with
+Paciﬁc Northwest National Laboratory, Richland, W A, USA. His main research
+interests include control coordination, modeling, and multi-time scale simulation
+for power systems with high penetration levels of inverter-based resources. He
+is currently engaged in multiple DOE-funded projects.
+Yuan Liu (Member, IEEE) received the M.S. and
+Ph.D. degrees in electrical engineering from Arizona
+State University, Tempe, AZ, USA, in 2012 and 2016,
+respectively. He is currently a Staff Engineer with Pa-
+ciﬁc Northwest National Laboratory, Richland, W A,
+USA. His research interests include renewable energy
+integration, load modeling, and power system simu-
+lation and control.
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 13 =====
+1748 IEEE TRANSACTIONS ON POWER DELIVERY, VOL. 39, NO. 3, JUNE 2024
+Songzhe Zhu (Senior Member, IEEE) received the
+Ph.D. degree in electrical engineering from Iowa
+State University, Ames, IA, USA, in 2000. She is
+currently a Senior Principal Consultant with Grid-
+Bright, a Qualus Company, Alamo, CA, USA. She
+was previously a Senior Advisor with California
+ISO, Folsom, CA. She worked extensively in the
+areas of generation interconnection and transmission
+planning with California ISO. She has been actively
+involved in NERC and WECC workgroups to develop
+and enhance modeling of inverter-based resources.
+Francis K. Tuffner(Senior Member, IEEE) received
+the Ph.D. degree in electrical engineering from the
+University of Wyoming, Laramie, WY , USA, in 2008.
+He is currently a Research Engineer with the Pa-
+ciﬁc Northwest National Laboratory, Richland, W A,
+USA. His research interests include signal process-
+ing applied to power systems, EV -Grid integration,
+embedded control devices, microgrids for resilience,
+and distribution level modeling.
+Zhenyu Huang received the B.Eng. degree in elec-
+trical engineering from the Huazhong University of
+Science and Technology, Wuhan, China, in 1994,
+and the Ph.D. degree in electrical engineering from
+Tsinghua University, Beijing, China, in 1999. He is
+currently a Laboratory Fellow with Paciﬁc North-
+west National Laboratory, Richland, W A, USA, and
+holds a joint appointment of Research Professor with
+Washington State University, Pullman, W A. He is also
+a Policy Advisor on grid modernization for the US
+Department of Energy (DOE)’s Undersecretary for
+Science and Innovation. He was a Technical Advisor with the DOE EERE
+Solar Energy Technologies Ofﬁce during 2019–2020. At PNNL, He is leading
+the power electronics and renewable integration portfolios. He has more than
+200 peer-reviewed publications. Prior to joining PNNL in 2003, he conducted
+extensive research on power system stability and harmonics with the University
+of Alberta, Edmonton, AB, Canada, McGill University, Montreal, QC, Canada,
+and The University of Hong Kong, Hong Kong. His research interests include
+high performance computing, data analytics, and optimization and control for
+inverter- and renewable-dominant power and energy systems.
+Authorized licensed use limited to: Viet Nam National University Ho Chi Minh City. Downloaded on September 03,2026 at 09:22:38 UTC from IEEE Xplore.  Restrictions apply. 

@@ -1,0 +1,21 @@
+{
+  "seed": 42,
+  "n_episodes": 500,
+  "final_reward": 80.03717019790204,
+  "mean_reward": 71.8445654210649,
+  "mean_delta_f": 0.05958956216252956,
+  "max_abs_delta_f": 0.4922016701832048,
+  "mean_rocof": 0.05141913956116168,
+  "violation_fraction": 0.008539999999999999,
+  "mean_nadir": 49.57292334425967,
+  "mean_entropy": 0.8123079131904402,
+  "mean_actor_log_std": -1.0002180218696595,
+  "final_actor_log_std": -1.0002055168151855,
+  "mean_actor_std": 0.3632030984759331,
+  "final_actor_std": 0.3632064163684845,
+  "mean_abs_action": 0.34347034530222414,
+  "final_abs_action": 0.3889200348655383,
+  "mean_action_saturation_fraction": 0.02833349593495935,
+  "final_action_saturation_fraction": 0.048130081300813005,
+  "checkpoint_dir": "artifacts\\checkpoints_vsg_500ep"
+}

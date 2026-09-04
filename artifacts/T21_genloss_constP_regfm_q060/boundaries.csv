@@ -1,0 +1,2 @@
+quantity,event,dP_mw,P_dg_pre_mw,bracket_lo,bracket_hi,found,value,x_secure,x_insecure,tol,n_eval,monotone,note,kappa
+dP_max_mw,gen_loss,,0.0,0.05,3.0,True,1.18505859375,1.179296875,1.1908203125,0.02,14,True,"bracketed on [0.05, 3]",

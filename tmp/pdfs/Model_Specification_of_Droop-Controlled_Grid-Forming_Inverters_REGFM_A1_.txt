@@ -1,0 +1,455 @@
+
+===== PAGE 1 =====
+ 
+ 
+PNNL-35110  
+ 
+ 
+Model Specification of 
+Droop-Controlled, Grid-
+Forming Inverters 
+(REGFM_A1) 
+September 2023 
+ 
+ 
+ 
+ 
+Prepared for the U.S. Department of Energy  
+under Contract DE-AC05-76RL01830 
+ 
+ 
+ 
+  
+
+===== PAGE 2 =====
+ 
+DISCLAIMER 
+This report was prepared as an account of work sponsored by an agency of the 
+United States Government. Neither the United States Government nor any agency 
+thereof, nor Battelle Memorial Institute, nor any of their employees, makes any 
+warranty, express or implied, or assumes any legal liability or responsibility 
+for the accuracy, completeness, or usefulness of any information, apparatus, 
+product, or process disclosed, or represents that its use would not infringe 
+privately owned rights . Reference herein to any specific commercial product, 
+process, or service by trade name, trademark, manufacturer, or otherwise does not 
+necessarily constitute or imply its endorsement, recommendation, or favoring by 
+the United States Government or any agency thereof, or Battel le Memorial 
+Institute. The views and opinions of authors expressed herein do not necessarily 
+state or reflect those of the United States Government or any agency thereof.  
+ 
+PACIFIC NORTHWEST NATIONAL LABORATORY 
+operated by 
+BATTELLE 
+for the 
+UNITED STATES DEPARTMENT OF ENERGY 
+under Contract DE-AC05-76RL01830 
+ 
+Printed in the United States of America 
+Available to DOE and DOE contractors from the 
+Office of Scientific and Technical Information, 
+P.O. Box 62, Oak Ridge, TN 37831-0062; 
+ph: (865) 576-8401 
+fax: (865) 576-5728 
+email: reports@adonis.osti.gov   
+Available to the public from the National Technical Information Service 
+5301 Shawnee Rd., Alexandria, VA 22312 
+ph: (800) 553-NTIS (6847) 
+email: orders@ntis.gov <https://www.ntis.gov/about> 
+Online ordering: http://www.ntis.gov 
+ 
+ 
+ 
+ 
+===== PAGE 3 =====
+Contributors 
+ 
+Name Organization 
+Wei Du Pacific Northwest National Laboratory 
+Robert H. Lasseter University of Wisconsin-Madison 
+Christian Hardt SMA Solar Technology AG 
+Song Wang Portland General Electric 
+Songzhe Zhu GridBright 
+Yuan Liu Pacific Northwest National Laboratory 
+Quan Nguyen Pacific Northwest National Laboratory 
+Jinho Kim Pacific Northwest National Laboratory 
+Hongtao Ma North American Electric Reliability Corporation 
+Pouyan Pourbeik Power and Energy, Analysis, Consulting and 
+Education (PEACE) PLLC 
+Deepak Ramasubramanian Electric Power Research Institute 
+Juan Sanchez General Electric 
+Jayapalan Senthil Siemens PTI 
+James Weber PowerWorld 
+Jeff Bloemink PowerTech Labs 
+Doug Tucker Western Electricity Coordinating Council 
+Sophie Xu Pacific Gas and Electric 
+Zhenyu Huang Pacific Northwest National Laboratory 
+Francis K. Tuffner Pacific Northwest National Laboratory 
+Renke Huang Pacific Northwest National Laboratory 
+ 
+ 
+===== PAGE 4 =====
+Acknowledgement 
+ 
+This material is based upon work supported by PNNL’s Laboratory Directed Research and 
+Development (LDRD) program, and the Universal Interoperability for Grid-Forming Inverters 
+(UNIFI) consortium. UNIFI consortium is supported by the U.S. Department of Energy’s Office of 
+Energy Efficiency and Renewable Energy (EERE) under Solar Energy Technologies Office 
+(SETO) Award Number 38637. 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+===== PAGE 5 =====
+ 
+1 
+1.0 Objective 
+This document describes a positive-sequence model of droop-controlled, grid-forming (GFM) 
+inverter-based resources (IBRs). It can be considered as an initial model for evaluating the 
+impacts of GFM IBRs on the transients and dynamics of transmission systems. 
+2.0 Grid-Forming Inverter Concept 
+A grid-forming inverter behaves as a controllable voltage source behind a coupling reactance as 
+shown in Fig. 1. The internal voltage magnitude E and angular frequency ω are controlled by 
+the droop controller. 
+AC
+Grid
+XL
+E δE  V δV  
+P, Q, I φ
+E
+ω 
+ 
+Fig. 1  Basic model of grid-forming inverter. 
+The coupling reactance, XL, is important for the droop controller design. By properly sizing XL, 
+for example, between 0.05 and 0.15 pu on an inverter rating base, the inverter output active 
+power, P, and reactive power, Q, can be approximately decoupled. As shown by (1) to (3), P is 
+approximately linear with the phase angle difference δP, and Q is approximately linear with E. 
+The well-developed droop control is based on this decoupling characteristic. 
+p E V  =−
+ (1) 
+sin pp
+LL
+EV EVP XX =
+ (2) 
+2 cos ()p
+LL
+E EV E E VQ XX
+− −=
+ (3) 
+3.0 Positive-Sequence Model of Droop-Controlled, Grid-
+Forming Inverters 
+This section introduces the positive-sequence model of droop-controlled, grid-forming inverters, 
+including the inverter main circuit representation, the droop control, and the fault current limiting 
+function. 
+3.1 Inverter Main Circuit Representation 
+The inverter main circuit is modeled as a voltage source behind the coupling reactance XL, as 
+shown in Fig. 2 (a). The grid-forming controller will adjust the internal voltage magnitude E and 
+phase angle δE. When interfacing with the network solver, the voltage source will be converted 
+to its Norton equivalent current source, as shown in Fig. 2 (b). 
+===== PAGE 6 =====
+ 
+2 
+XL
+E δE  IN φN   YL
+(a) (b)
+P, Q, I φ
+V δV
+P, Q, I φ
+V δV
+ 
+Fig. 2 Inverter equivalent circuits. (a) Inverter internal voltage source and the coupling 
+reactance. (b) Norton equivalent current source. 
+3.2 Grid-Forming Droop Control Model 
+Fig. 3 (a) and (b) show the P-f droop control and Q-V droop control, which regulate the inverter 
+internal voltage magnitude and phase angle during normal operations. Table 1 shows the 
+inverter and controller parameters. 
+Table 1 Parameters of the Droop-Controlled, Grid-Forming Inverters on the Inverter Rating Base 
+Symbol Description Example Value Normal Range 
+XL Inverter coupling reactance 0.15 pu 0.05 pu–0.25 pu 
+mq Q-V droop gain 0.05 pu 0 pu–0.20 pu 
+Vref Voltage set point Initialized by power flow NA 
+Qref Reactive power set point Initialized by power flow NA 
+kpv Proportional gain of the voltage controller 0 pu 0 pu–0.01pu 
+kiv Integral gain of the voltage controller 5.86 pu/s 3 pu/s–15 pu/s 
+Emax Upper limit of the output of the voltage loop 1.15 pu 1 pu–1.25 pu 
+Emin Lower limit of the output of the voltage loop 0 pu 0 pu 
+mp P-f droop gain 0.01 pu 0.005 pu–0.05 pu 
+Pref Power set point Initialized by power flow NA 
+Pmax Upper limit of the inverter active power output 0.9 pu 0.1 pu – 1 pu 
+Pmin Lower limit of the inverter active power output 0 pu 
+Should be negative 
+when representing 
+energy storage 
+systems 
+kppmax Proportional gain of the overload mitigation controller 0.01 pu 0.005 pu–0.05 pu 
+kipmax Integral gain of the overload mitigation controller 0.1 pu/s 0.05 pu/s–0.2 pu/s 
+ω0 Rated angular frequency 376.99 rad/s NA 
+TPf Time constant of the low-pass filter for P 
+measurement 0.01 s 0.01 s–0.1 s 
+TQf Time constant of the low-pass filter for Q 
+measurement 0.01 s 0.01 s–0.1 s 
+TVf Time constant of the low-pass filter for V 
+measurement 0.01 s 0.01 s–0.1 s 
+Qmax Upper limit of the inverter reactive power output 0.44 pu 0.44 pu–1 pu 
+Qmin Lower limit of the inverter reactive power output -0.44 pu -0.44 pu– -1 pu 
+VFlag 
+Voltage control mode selection. The controller can 
+either regulate the point of interconnection (POI) 
+voltage V or the inverter internal voltage E 
+1 0 or 1 
+QVFlag Decides whether Qref or Vref should be used to 
+interact with the plant controller 1 0 or 1 
+kpqmax Proportional gain of the Qmax and Qmin controller VFlag=1 3 pu 1 pu – 5 pu 
+VFlag=0 0.1 pu 0 pu – 0.5 pu 
+Kiqmax Integral gain of the Qmax and Qmin controller VFlag=1 20 pu/s 3 pu/s – 30 pu/s 
+VFlag=0 10 pu/s 3 pu/s – 30 pu/s 
+ImaxF Inverter maximum transient output current 2 pu 1.5 pu–3 pu 
+===== PAGE 7 =====
+ 
+3 
+The P-f droop control ensures that the phase angles of multiple grid-forming inverters are 
+synchronized during normal operations. When two grid-forming inverters operate in parallel 
+under P-f droop control, any disturbance causes an increase in the output power of one inverter. 
+This, causes its P-f droop control to reduce the angular frequency ω of the internal voltage so 
+that the phase angle, δdroop, is reduced, preventing the inverter from further increasing its output 
+power. This negative-feedback control mechanism guarantees the synchronization when 
+multiple grid-forming inverters work in parallel. In addition, the controller shown in Fig. 3 (a) also 
+prevents the output power of the inverter from exceeding Pmax or dropping below Pmin. The P-f 
+droop control also achieves load sharing between grid-forming inverters. 
+The Q-V droop control prevents large circulating reactive power between grid-forming inverters. 
+As shown in Fig. 3 (b), the Q-V droop control can either directly regulate the inverter internal 
+voltage Edroop, or regulate the point of interconnection (POI) voltage V by regulating Edroop 
+through a proportional-integral controller. The VFlag will determine which control mode will be 
+selected. The QVFlag decides whether Qref or Vref should be used to interact with the plant 
+controller. In addition, there is a Qmax and Qmin controller to prevent the inverter reactive power 
+output from exceeding Qmax or dropping below Qmin. 
+-+
+mp
+Pref
+Pinv
+ω
++
+ω0
++
+kppmax
+++
+-
+-+
++
+Pmin
+0
+0
+Pmax
+Pinv
+ ω
+kipmax/s
+++
+0
+kppmax
+kipmax/s
+0
++
++
++
++
+1/s δdroop
+ω0
+Plant controller changes Pref
+ 
+(a) 
+===== PAGE 8 =====
+ 
+4 
+- +mq
+Qinv
+Vinv
+Vref
+kpv
+kiv/s
+Edroop
+Emax
+Emin
+Emax
+Emin
++
+++kpqmax
+++
+-
+-+
++
+Qmin
+0
+0
+Qmax
+Qinv
+kiqmax/s
+++
+kpqmax
+kiqmax/s
+0
++
++
+0 +
+-
+Vcmd
+Edroop
+Emax
+Emin
+0
+1
+VFlag
++
++
+Qref
+QVFlag=1: Plant controller changes Vref and the initialization sets Qref=0
+QVFlag=0: Plant controller changes Qref and the initialization set Qref=Qinv
+ 
+(b) 
+Fig. 3 Droop control. (a) P-f droop control and overload mitigation control. (b) Q-V droop control.  
+When interacting with the transmission network solver, the per unit values of P, Q, V on the 
+system rating base returned by the network solver need to be converted to the per unit values 
+on the inverter rating base and pass through a low-pass filter as shown by (4) to (6), where Sbase 
+is the base value of the system rating, Mbase is the base value of the inverter rating, and Pinv, 
+Qinv, and Vinv are the per unit values of inverter output active power, reactive power, and voltage 
+magnitude on the inverter rating base. The outputs of the controller, Edroop and δdroop, are used to 
+determine the inverter internal voltage EδE. 
+1
+1
+base
+inv
+Pf base
+SPP T s M= +
+ (4) 
+1
+1
+base
+inv
+Qf base
+SQQ T s M= +
+ (5) 
+1
+1
+inv
+Vf
+VV Ts= +
+ (6) 
+ 
+3.3 Fault Current Limiting Function 
+During normal operations, the droop control will control the inverter voltage magnitude and 
+phase angle. However, during short circuit faults, the fault current limiting function will be 
+activated to limit the output current of the inverter. Fig. 4 shows the fault current limiting function. 
+The inverter works in the droop control mode during normal operations and keeps monitoring its 
+output current Iφ. The output current Iφ is calculated using (7) in each simulation step. When 
+the magnitude of the output current I is smaller than the inverter maximum transient current limit 
+ImaxF, the inverter internal voltage is governed by the droop control so that EδE = Edroopδdroop. 
+However, once I exceeds ImaxF because of severe faults, the inverter internal voltage EδE will 
+be calculated based on the inverter terminal voltage VδV, the coupling reactance XL, and the 
+===== PAGE 9 =====
+ 
+5 
+new current phasor ImaxFφ as shown by Fig. 4. By doing so the magnitude of the inverter 
+output current I will be limited at ImaxF during faults, but its phase angle φ will remain unchanged 
+compared to the case without the fault current limiting function. Once the fault is cleared, the 
+inverter output current will drop below ImaxF so that the operation mode will autonomously switch 
+back to the droop control mode. 
+droop droop V
+L
+EVI jX
+  − =
+ (7) 
+ 
+E δE  Edroop δdroop  
+V δV+jXLImaxF φ    
+I < ImaxF  
+I   ImaxF  
+ 
+Fig. 4 Fault current limiting function. 
+4.0 Interface with the Transmission Network Solver 
+When interfacing with the transmission network solver, the inverter internal voltage source 
+needs to be converted to its Norton equivalent circuit for the network solution, as shown in Fig. 2 
+(a) and (b). Equation (8) and (9) are used for the conversion. 
+E
+NN
+L
+EI jX
+ =
+ (8) 
+1
+L
+L
+Y X=
+ (9) 
+ 
+The flowchart in Fig. 5 shows the process of how the developed positive-sequence phasor 
+model interacts with the transmission network solver.  
+ 
+ 
+===== PAGE 10 =====
+ 
+6 
+Droop Control
+(Fig. 3)
+Edroop δdroop 
+Inverter Internal 
+Voltage Source
+Norton Equivalent 
+Circuit (Fig. 2)
+IN φN, YL
+Network Solver
+Converged ? No
+Yes
+P, Q, V δV, I φ 
+Fault Current Limiting
+(Fig. 4)
+E δE
+V δV, I
+Eq. (7)-(8)
+ 
+Fig. 5 Interaction between the grid-forming inverter model and the transmission network solver. 
+5.0 Applicability and Limitation of REGFM_A1 Model 
+The REGFM_A1 model includes a voltage source behind impedance representation, P-f and Q-
+V droop controls, active and reactive power limiting controls, and a transient fault current limiting 
+function. Therefore, this model can be used to study events such as the frequency response, 
+islanding and islanded operation, and typical faults with a normal clearing time, etc. The 
+REGFM_A1 model does not include the steady state current limiting control and advanced 
+voltage ride-through control that might have already been implemented by some original 
+equipment manufacturers. The steady state current limiting control and advanced voltage ride-
+through control will be included in the future version of generic GFM IBR model. 
+References 
+ 
+[1] Y. Lin  et al. , "Research roadmap on grid -forming inverters," National Renewable Energy Lab.(NREL), 
+Golden, CO (United States), 2020.  
+[2] R. Lasseter, Z. Chen, and D. Pattabiraman, "Grid -Forming Inverters: A Critical Asset for the Power Grid," 
+IEEE Journal of Emerging and Selected Topics in Power Electronics, pp. 1 -1, 2019, doi: 
+10.1109/JESTPE.2019.2959271. 
+[3] R. H. Lasseter et al., "CERTS Microgrid Laboratory Test Bed," IEEE Transactions on Power Delivery, vol. 
+26, no. 1, pp. 325-332, 2011 
+[4] M. C. Chandorkar, D. M. Divan, and R. Adapa, "Control of parallel connected inverters in stand -alone AC 
+supply systems," in Industry Applications Society Annual Meeting, 1991.  
+===== PAGE 11 =====
+ 
+7 
+[5] B. J. Pierre et al., "Bulk Power System Dynamics with Varying Levels of Synchronous Generators and Grid-
+Forming Power Inverters," in the 46th IEEE Photovoltaic Specialists Conference, Chicago, Illinois, USA, 
+2019. 
+[6] M. E. Elkhatib, W. Du, and R. H. Lasseter, "Evaluation of Inverter -based Grid Frequency Support using 
+Frequency-Watt and Grid-Forming PV Inverters," in 2018 IEEE Power & Energy Society General Meeting 
+(PESGM) 
+[7] W. Du, Y. Liu, R. Huang, K. F. Tuffner, J. Xie, and Z. Huang, "Positive -Sequence Phasor Modeling of 
+Droop-Controlled, Grid -Forming Inverters with Fault Curr ent Limiting Function," IEEE PES Innovative 
+Smart Grid Technologies (ISGT) North America (NA) Meeting, 2022. 
+ 
+ 
+===== PAGE 12 =====
+ 
+ 
+ 
+Pacific Northwest  
+National Laboratory 
+902 Battelle Boulevard 
+P.O. Box 999 
+Richland, WA 99354 
+1-888-375-PNNL (7665) 
+www.pnnl.gov 

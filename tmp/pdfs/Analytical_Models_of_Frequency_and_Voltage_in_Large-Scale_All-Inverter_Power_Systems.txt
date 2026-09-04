@@ -1,0 +1,1260 @@
+
+===== PAGE 1 =====
+IEEE TRANSACTIONS ON POWER SYSTEMS, VOL. 41, NO. 4, JUL Y 2026 2547
+Analytical Models of Frequency and V oltage in
+Large-Scale All-Inverter Power Systems
+Marena Trujillo , Graduate Student Member , IEEE,A m i rS a j a d i, Senior Member , IEEE, Jonathan Shaw ,
+and Bri-Mathias Hodge , Senior Member , IEEE
+Abstract—Low-order frequency response models for power sys-
+tems have a decades-long history in optimization and control prob-
+lems such as unit commitment, economic dispatch, and wide-area
+control. With a few exceptions, these models are built upon the
+Newtonian mechanics of synchronous generators, assuming that
+the frequency dynamics across a system are approximately ho-
+mogeneous, and assume the dynamics of nodal voltages for most
+operating conditions are negligible, and thus are not directly com-
+puted at all buses. As a result, the use of system frequency models
+results in the systematic underestimation of frequency minimum
+nadir and maximum RoCoF, and provides no insight into the
+reactive power-voltage dynamics. This paper proposes a low-order
+model of both frequency and voltage response in grid-forming
+inverter-dominated power systems. The proposed model accounts
+for spatial-temporal variations in frequency and voltage behavior
+across a system and as a result, demonstrates the heterogeneity
+of frequency response in future renewable power systems. Elec-
+tromagnetic transient (EMT) simulations are used to validate the
+utility, accuracy, and computational efﬁciency of these models,
+setting the basis for them to serve as fast, scalable alternatives
+to EMT simulation, especially when dealing with very large-scale
+systems, for both planning and operational studies.
+Received 17 January 2025; revised 6 June 2025 and 1 October 2025; ac-
+cepted 20 December 2025. Date of publication 5 January 2026; date of current
+version 22 June 2026. This work was supported in part by the National Science
+Foundation Graduate Research Fellowship under Grant DGE 2040434, in part
+by the National Science Foundation’s Advancing Sustainability through Power
+Infrastructure for Roadway Electriﬁcation (ASPIRE) Engineering Research
+Center and National Science Foundation, United States, under Award 1941524,
+and in part by the National Renewable Energy Laboratory through the Alliance
+for Sustainable Energy, LLC, for the U.S. Department of Energy (DOE), under
+Contract DE-AC36-08GO28308. Paper no. TPWRS-00106-2025.(Correspond-
+ing author: Marena Trujillo.)
+Marena Trujillo is with the Department of Electrical, Computer, and Energy
+Engineering, University of Colorado Boulder, Boulder, CO 80309 USA, also
+with the Renewable and Sustainable Energy Institute, University of Colorado
+Boulder, Boulder, CO 80309 USA, and also with National Renewable Energy
+Laboratory, Golden, CO 80401 USA (e-mail: marena.trujillo@colorado.edu).
+Amir Sajadi is with the Renewable and Sustainable Energy Institute, Uni-
+versity of Colorado Boulder, Boulder, CO 80309 USA, and also with the
+National Renewable Energy Laboratory, Golden, CO 80401 USA (e-mail:
+amir.sajadi@colorado.edu).
+Jonathan Shaw is with the Department of Applied Mathematics,
+University of Colorado Boulder, Boulder, CO 80309 USA (e-mail:
+jonathan.shaw@colorado.edu).
+Bri-Mathias Hodge is with the Department of Electrical, Computer, and
+Energy Engineering, University of Colorado Boulder, Boulder, CO 80309
+USA, also with the Renewable and Sustainable Energy Institute, University of
+Colorado Boulder, Boulder, CO 80309 USA, also with the National Renewable
+Energy Laboratory, Golden, CO 80401 USA, and also with the Department
+of Applied Mathematics, University of Colorado Boulder, Boulder, CO 80309
+USA (e-mail: brimathias.hodge@colorado.edu).
+This article has supplementary material provided by the au-
+thors and color versions of one or more ﬁgures available at
+https://doi.org/10.1109/TPWRS.2025.3650698.
+Digital Object Identiﬁer 10.1109/TPWRS.2025.3650698
+Index Terms —Frequency response, all-inverter systems, low-
+inertia systems, grid-forming inverters, voltage dynamics.
+A
+S THE climate crisis drives extreme temperature changes,
+intensifying storms, and habitat destruction, the need for
+decarbonization is more urgent than ever. As a result, the
+adoption of wind, solar, and battery storage devices, which are
+power electronics-interfaced resources, continues to increase
+worldwide [1]. However, the physical principals determining
+the behavior of inverter-based resources (IBRs) are fundamen-
+tally different from that of conventional, synchronous machine-
+interfaced resources. As IBRs supplant synchronous generators
+(SGs), the dominant system dynamics shift from electromechan-
+ical modes to electromagnetic modes [2]. Thus, this transition
+from SGs to IBRs warrants new analytical models to best explain
+the underlying physical phenomena consistent with the nature
+of emerging power systems.
+Analytical models are the building blocks of algorithms and
+the core engines behind all existing scientiﬁc and commercial
+simulation tools used in research and industry to predict the
+system behavior. However, there is always a trade-off between
+the granularity of results vs. the scale of system that can be
+simulated with reasonable computational effort. A review of
+the literature suggests that two general directions have emerged
+in modeling the dynamics of power systems. The ﬁrst direction
+focuses on different formulations, such as sinusoid waveform vs.
+phasor models. Sinusoid waveform models provide high-ﬁdelity
+simulations of power systems by explicitly modeling all three
+phases and controllers, supporting the use of high-order, highly
+detailed device models, and having time step capabilities in the
+microsecond range [2]. However, solving waveform models,
+which is the engine in software packages such as Power System
+Computer Aided Design (PSCAD), remains impractical for use
+in large-scale systems due to their computational burden [2].
+Alternatively, the use of phasor models, which are reduced-
+order models, utilize simpliﬁed device and network models and
+consequently their computational tractability is far superior to
+waveform models. However, while phasor models are attractive
+due to their computational tractability, they are less accurate
+than full-order models [2]. Positive sequence RMS (Root Mean
+Square) simulation tools, such as Power Systems Simulator for
+Engineers (PSSE) and PowerWorld, are examples of reduced-
+order models in the sense that they reduce a three-phase explicit
+model to a positive sequence model. However, these tools, which
+were developed based on the slow electromechanical dynamics
+of SGs are ill suited for modeling IBRs due to their large time
+0885-8950 © 2026 IEEE. All rights reserved, including rights for text and data mining, and training of artiﬁcial intelligence and similar technologi es.
+Personal use is permitted, but republication/redistribution requires IEEE permission. See https://www.ieee.org/publications/rights/index. html for more information.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 2 =====
+2548 IEEE TRANSACTIONS ON POWER SYSTEMS, VOL. 41, NO. 4, JUL Y 2026
+steps (about 4 ms), and inability to model internal controllers[3].
+While both the full-order models in EMT tools and the reduced-
+order models in positive sequence tools have clear shortcomings,
+there are also other methods of model reduction.
+Order reduction can be achieved by eliminating non-dominant
+modes in the dynamics of variables of interest, and can be
+performed through various techniques, e.g., perturbation the-
+ory [4], integral manifolds [5], or simply through simpliﬁed
+physics-based reduction methods [6]. Almost universally, ex-
+isting analytically reduced models for power systems are fo-
+cused on system frequency (SFR) models, while developing
+such models for nodal voltage dynamics has not been a focus
+of the literature [6], [7], [8], [9], [10], [11], [12], [13], [14].
+SFR models that aggregate the primary frequency response of
+a system take the order-reduction process to an extreme by
+omitting network effects and neglecting all variance in frequency
+response across a system [7]. SFR models have been widely
+used as a less computationally burdensome alternative to time
+domain simulation for the estimation of the frequency response
+of a system after a disturbance [6], [7], [8], [9], [10], [11], [12],
+[13], [14]. They yield reasonable approximations of RoCoF and
+nadir frequency for SGs, which can then be formulated into con-
+straints on frequency stability or under-frequency load-shedding
+in power systems optimization problems [8], [9].I n [6] and [7],
+lower-order SFR models are presented, but the SGs exhibit
+little heterogeneity in terms of governor and prime mover type.
+These models were intended to provide general information
+about a system’s frequency response post-disturbance [7], and
+to formulate margins that would ensure the minimum frequency
+following a disturbance would not be less than the load-shedding
+frequency threshold [6]. An open-loop model to calculate the
+maximum frequency deviation in a small isolated power system
+is proposed in [10]. This model allows for SGs with different
+governor, prime mover, and turbine characteristics, unlike the
+SFR model of [7].I n [11], a parabolic frequency deviation
+serves as the input to an open-loop SFR model to better predict
+system nadir. However, all of these models presume a SG-
+dominated system and most neglect the network dynamics and
+the spatial-temporal characteristics of frequency response. In all
+cases, reactive-power/voltage (Q-V) dynamics are completely
+disregarded.
+IBR-rich systems typically feature power electronic devices
+with two prominent inverter control paradigms: grid-following
+inverters (GFLs) or grid-forming inverters (GFMs). Both de-
+vices provide power, but only GFMs construct frequency and
+regulate voltage independently. GFLs with grid support func-
+tionality, i.e. volt-var and volt-watt functions, can also manip-
+ulate frequency and voltage response through the regulation
+of active and reactive power, but they required a well-deﬁned
+voltage waveform at their point of interconnection and they
+cannot independently form frequency [15]. For these reasons,
+we focus on GFMs in this work. With regards to the frequency
+response of inverters, the SFR model of[12] is intended to model
+systems with some amount of renewable generation, though all
+renewable generators are modeled as doubly fed induction gen-
+erators with droop control. In [13], a nadir prediction model is
+proposed that accounts for three different types of fast frequency
+response provided by IBRs. However, the authors neglect the
+fast dynamics of IBRs and do not distinguish between GFL and
+GFM. The model in [14] omits inverter dynamics but makes
+the unique contribution of providing a closed-form solution
+of frequency response for a three SG system. In this work, a
+simpliﬁed network model is used to account for inter-machine
+frequency oscillations. However, application of [14] to large,
+multi-generator systems requires the aggregation of generators
+into three equivalent SGs. Importantly, the model presumes
+a ﬂat voltage proﬁle of 1 pu across the system. The review
+of the literature on voltage models also reveals that existing
+reduced order models of GFM networks that account for voltage
+dynamics require the division of a network into an aggregated
+“external area” and a “study area” [16] and require the inclusion
+of currents as state variables[17]. Additionally, to the best of our
+knowledge, no low-order model exists to speciﬁcally compute
+nodal voltage and frequency for all GFM nodes in large-scale
+power systems.
+This work advances the ﬁeld by using physics-based reduction
+methods to develop low-order, accurate models for frequency
+and voltage dynamics in all-inverter systems. GFM devices are
+modeled explicitly, while GFL inverters are modeled as negative
+load. The models are accurate and scalable, effectively eliminat-
+ing the need for EMT simulations for a variety of applications.
+To this end, we ﬁrst demonstrate the critical role of reactive
+power losses post-disturbance and its effect on voltage response
+and present novel methods for calculating post-disturbance re-
+active power participation factors for each GFM in a system.
+We then derive our proposed analytical models for frequency
+and voltage response for all-inverter systems. We utilize matrix
+exponentials to dramatically accelerate computation time. Using
+EMT simulation, we demonstrate the signiﬁcant advantages
+that our models present with regards to solution speed and
+scalability, while preserving high accuracy. For these reasons,
+the models lend themselves well to direct application within
+industry and research environments. The ability to accurately
+and efﬁciently simulate transients in all-inverter systems sets
+the basis for probabilistic analysis of frequency and voltage
+stability as well as security-constrained economic dispatch and
+real-time dynamic security assessment, among other potential
+future applications.
+I. T
+HE NEED FOR NEW ANALYTICAL MODELS
+In this section, we argue that the need for new analytical
+models of system dynamics is threefold. First, existing frequency
+response models are for 100% SG systems, or systems that are
+dominated by SGs, and are therefore intrinsically inappropriate
+for modeling all-inverter systems. Secondly, existing system
+frequency models neglect the heterogeneity of frequency re-
+sponse and the impacts of the transmission network, which
+we will demonstrate is particularly unsuitable for low-inertia,
+all-inverter systems. Finally, while existing models capture P-
+δdynamics reasonably well, they assume Q- δdynamics are
+insigniﬁcant, and as a result, voltage proﬁles are assumed to
+be 1 pu, which is only realistic for a network with large SGs.
+Hence, there is need for an analytical model that reﬂect this
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 3 =====
+TRUJILLO et al.: ANAL YTICAL MODELS OF FREQUENCY AND VOLTAGE IN LARGE-SCALE ALL-INVERTER POWER SYSTEMS 2549
+Fig. 1. Frequency response block diagram and response shape for: 1) SGs
+(left) and 2) GFMs (right) [23].
+non-negligible coupling between active power and voltage, es-
+pecially in all-inverter systems where these dynamics are even
+more critical [18]. In what follows, we discuss each of the
+above-mentioned issues in detail and present evidence in support
+of our arguments.
+A. Frequency Response: SG Vs. GFM
+The frequency response of all inverter systems is markedly
+different from that of conventional systems, where SGs provide
+frequency response. This difference arises from the fundamen-
+tally different way power and frequency are generated by GFMs
+vs. SGs. The frequency dynamics in SGs are initially governed
+by the mechanical momentum of the turbine, which determines
+the rate at which frequency deviates. This “inertial phase” is
+followed by primary frequency control, where the action of the
+turbine governor changes the generator’s active power output to
+arrest the frequency deviation [19]. The rate of change of fre-
+quency is entirely dependent on the generator momentum [18],
+commonly expressed in seconds and referred to as the inertia
+constant. In primary frequency control, active power output
+changes as a function of the speed-droop coefﬁcient, which is
+typically 5% [19]. Accordingly, the amount of momentum in
+the system and the governor response of the online generators
+collectively determine the frequency nadir, which is the point on
+the frequency response curve where frequency is lowest [11].
+The frequency response mechanism of a generic SG is shown in
+Fig. 1.
+While Newtonian physics guides frequency deviations in
+SGs, forming a second-order dynamical system, the frequency
+response of inverters is purely a function of their control algo-
+rithms; thus, as shown in [20], it presents a ﬁrst-order dynam-
+ical system on the same timescales. There are three prominent
+control regimes for GFMs including linear droop, virtual syn-
+chronous machines, and virtual oscillator control [20].I nt h i s
+paper, we focus on multi-loop droop-control GFM (Fig. 1), due
+to their popularity and markedly different response shape as
+compared to SGs. In a droop control GFM, frequency is adjusted
+according to the device’s droop gain constant, which can be
+changed and is not intrinsic to the device [20]. Due to their very
+small inertia constant, lower nadirs are often observed in power
+systems with high shares of inverters [15], which is undesirable
+due to the legacy protection systems [21]. High RoCoF and low
+nadir values could unintentionally activate protection mecha-
+nisms, resulting in load-shedding. This was exactly the case in
+Fig. 2. PowerWorld simulation results of the WECC system following the
+outage of the Palo V erde Nuclear Generating Station, the system dimensioning
+contingency.
+Britain on August 9th, 2019, when the Low Frequency Demand
+Disconnection (LFDD) protection mechanism was activated,
+tripping off massive amounts of distributed generation [22].
+Therefore, it is important to develop computationally efﬁcient
+analytical models that adequately capture frequency response in
+large systems with high shares of GFMs.
+B. Network Frequency Heterogeneity
+Many system frequency models are founded upon the op-
+erating principles of SGs and on the assumption of frequency
+being homogeneous across the network. Under this assumption,
+a system frequency model can be formulated by conveniently
+aggregating the parameters of SGs and modeling them as a
+single representative generator [6]. In such a model, there is
+no need to model how the generators in the system synchro-
+nize with each other and the impact of network topology is
+neglected. In reality, frequency is not homogeneous across a
+power network. Rather, disturbance propagation – and therefore
+frequency response – is closely related to network topology.
+More speciﬁcally, disturbances are more severe in areas sup-
+porting the Fiedler eigenvalue of the network Laplacian [24].
+Therefore, by aggregating generator parameters to approximate
+a “system frequency response,” one is ignoring the impact of
+network connectivity and systematically underestimating the
+maximum RoCoF and frequency deviation. To illustrate this
+effect, we simulate the outage of the Palo V erde Nuclear Gener-
+ating Station in the WECC system, and the results are provided in
+Fig. 2.
+In Fig.2, it is evident that even in this primarily SG network the
+frequency dynamics are not homogeneous, with varying values
+of RoCoF and nadir in each region. This suggests that neglecting
+the spatial-temporal characteristics of frequency response in a
+system yields inaccurate estimations of key metrics, particularly
+for large systems. Heterogeneity in frequency response could
+be exacerbated by higher shares of IBRs and a lack of inertia,
+leading to the simultaneous occurrence of frequency, voltage,
+and network dynamics [18]. Additionally, there is clearly a
+time delay between when signiﬁcant deviation from nominal
+frequency begins to occur in the southern region versus in the
+northern region. Time delays between frequency response trajec-
+tories is another example of detail that is lost when representing
+the frequency response of a system with a single trajectory.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 4 =====
+2550 IEEE TRANSACTIONS ON POWER SYSTEMS, VOL. 41, NO. 4, JUL Y 2026
+C. V oltage Response and Reactive Power Flow
+While active power is the part of apparent power that does the
+work, reactive power is vitally important for preventing the de-
+magnetization of transmission lines and sustaining voltages dur-
+ing transients [18]. Without adequate reactive power provision,
+low voltages may occur and contribute to a blackout [25].T h e
+changing nature of frequency in IBR-dominated power systems
+also has ramiﬁcations in terms of voltage dynamics. While active
+and reactive power are closely related, frequency and voltage
+are treated independently in the conventional wisdom of power
+system analysis [19]. This is because in a conventional power
+system dominated by SGs, automatic voltage regulators (A VRs)
+locally control the terminal voltage of SGs by adjustment of their
+ﬁeld currents [19]. Because A VR dynamics are electromagnetic
+in nature, voltage regulation happens at a much faster timescale
+than frequency response, which is an electromechanical pro-
+cess in a SG dominated environment. Therefore, frequency and
+voltage dynamics are evaluated separately [18]. Due to the
+long-standing and ubiquitous treatment of voltage and frequency
+as decoupled, knowledge about the limits of the validity of the
+decoupling approach is lacking. At the same time, there is more
+need than ever to build upon our understanding of P-V and Q- δ
+dynamics due to new challenges posed by the introduction of
+IBRs. Unlike SGs, where frequency and voltage dynamics occur
+on different timescales, the frequency and voltage response of
+IBRs are both electromagnetic in nature [26]. The contempora-
+neousness of these dynamics may result in unexpected coupling
+dynamics and may lead to instabilities and low security [26].
+Also distinguishing IBR dynamics from SG dynamics are con-
+straints related to the silicon-based switches of power electron-
+ics. To avoid damaging these switches, IBRs limit their active
+and reactive power injections, whereas the power output of SGs
+is not bounded to the same degree; they can temporarily deviate
+from the excitation setpoint and supply a transient response
+which greatly exceeds the nominal rating of the machine[27].I n
+other words, while SGs are capable of providing generous active
+and reactive power during transients to support voltage and fre-
+quency, IBRs must more carefully provide power as to not violate
+current limits. As a result, the active and reactive power outputs
+of an IBR are closely related [18]. Here, we demonstrate the in-
+creased coupling in emergent power networks with all GFMs and
+the need to include both active and reactive power distribution
+factors.
+Estimating Q-V dynamics post-disturbance is difﬁcult due to
+the nonlinear nature of reactive power ﬂow [28]. Interestingly,
+active power participation factors can still be reasonably esti-
+mated while neglecting Q-V dynamics, and [6], [7], [8], [9],
+[10], [11], [12], [13], [14] leverage this fact. To demonstrate this
+point, we simulate two different load steps in the WSCC 9-bus
+system, depicted in Fig. 3, and calculate the active and reactive
+power participation factors of each generator. The system has 3
+GFM inverters and 3 constant power loads. Assuming generators
+have adequate headroom, we assert that the active and reactive
+participation factors of each generator can be estimated by
+solving the nonlinear power ﬂow equations following a distur-
+bance. The participation factors are equal to the change in power
+Fig. 3. One-line diagram of the WSCC 9-bus system.
+TABLE I
+PERCENT DIFFERENCE CHANGE IN ACTIVE POWER INJECTION AT GENERA TION
+BUSES, ΔPG,B ETWEEN:1 ) AN ACTIVE POWER LOAD STEP,2 ) AN ACTIVE
+AND REACTIVE POWER LOAD STEP
+TABLE II
+PERCENT DIFFERENCE IN REACTIVE POWER INJECTION AT GENERA TION
+BUSES,ΔQG,A FTER COMPLEX LOAD STEPS WITH INCREASING ACTIVE
+POWER DISTURBANCE MAGNITUDES
+injection pre- and post-disturbance at each generation node. The
+calculation differs from the standard AC power ﬂow because,
+instead of buses being categorized as Vθ(slack), PV , and PQ
+types, they are only Vθand PQ type. Buses with GFMs are
+treated as Vθbuses immediately after a disturbance and before
+the inverter controls have time to adjust their voltage angle and
+magnitude setpoints in response to changes in tie-in active and
+reactive power.
+First, an active power load step of 31.5 MW is applied to Bus
+6 and the active power participation factors are calculated. Then,
+a load step of 31.5 MW plus 9 MV ar was applied to Bus 6, and
+again the active power participation factors are calculated. Note
+that 31.5 MW is 10% of the active power load and 9 MV ar is
+10% of the reactive power load. The results, which are shown in
+Table I, indicate that even when a 10% reactive power load step
+is applied, the active power participation factors do not differ
+greatly.
+The picture is very different for changes in reactive power
+injection following a complex power disturbance. In Table II
+the results of participation factor calculations following seven
+disturbances are shown. In each of these simulations, a reactive
+power disturbance of 9 MV AR was applied to Bus 6. An active
+power step ranging from 0 MW to 30 MW was also applied
+in each simulation. The baseline ΔQ
+G values were calculated
+f o l l o w i n ga9M V A Rl o a ds t e p .E v e nthough the magnitude of the
+reactive power load step was the same for each simulation, the
+reactive power injection at each generation node increases with
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 5 =====
+TRUJILLO et al.: ANAL YTICAL MODELS OF FREQUENCY AND VOLTAGE IN LARGE-SCALE ALL-INVERTER POWER SYSTEMS 2551
+Fig. 4. Sending-end reactive power with respect to δSR and receiving-end
+voltage.VS =1 .0 andX =0 .05.
+the magnitude of the active power disturbance. For example,
+ΔQG at Bus 1 was 12.13% greater than the baseline value
+following the addition of a 5 MW load step. To explain this
+behavior, recall the equation for reactive power at the sending
+end of a transmission line (1) [19].
+QS = ℑ{VSI∗
+S}≈ VS
+X (VS −VR cosδSR) (1)
+Usually,δSR is assumed to be small and cosδSR ≈1.T h i s
+yields the trace corresponding toδ=0 ◦in Fig. 4(a) [19], which
+is shown as a dashed line. After a disturbance, however, the
+angle across a transmission line δSR may increase, impacting
+reactive power injections across the system. If we choose not to
+approximate cosδSR ≈1, we have a more complete picture of
+reactive power dynamics, as shown in Fig. 4. From this ﬁgure,
+we see there is signiﬁcant curvature along the δSR axis, which
+illustrates there is a non-negligible relationship between voltage
+angle and reactive power. While Q- δcoupling is ignored in
+some studies [29], other works have attempted to account for
+this behavior. In [30] and [31],Q -δdynamics are acknowl-
+edged but it is assumed that the slack bus alone changes its
+power injection to account for generation/load active power
+imbalances. In reality, all online generators will respond to
+the changes in states seen at their point of interconnection and
+therefore this assumption should not be made when attempting
+to estimate post-disturbance reactive power ﬂow. In this paper,
+we improve upon previous efforts to estimate post-disturbance
+reactive power injections by distributing increased active power
+imbalances more realistically.
+In summary, we established that the frequency transients
+across a power network could vary signiﬁcantly due to indi-
+vidual generator properties, the fast nature of IBR frequency
+response mechanisms, and the impact of the transmission net-
+work. This frequency heterogeneity is especially pronounced
+in power networks with high shares of inverters. Moreover, to
+the author’s knowledge, no low-order voltage response model
+has been developed for either SG-dominated or IBR-dominated
+systems. This constitutes a massive gap in our ability to estimate
+post-disturbance dynamics. There is an even greater need for
+models of Q-V dynamics post-disturbance seeing that the in-
+creased deployment of IBRs can give rise to weak grid conditions
+and compromise voltage stability[32]. These gaps in knowledge
+serve as the motivation to develop our frequency and voltage
+models for all-inverter systems, which will be discussed in the
+next section.
+II. P
+ROPOSED MODELS
+In Section I-C we demonstrate howQ-V dynamics have a lim-
+ited effect on active power participation factors and frequency.
+Conversely, changes in voltage angle have a non-negligible
+effect on the reactive power participation of each generator.
+Therefore, one can estimate frequency well without accounting
+for reactive power, but cannot estimate reactive power well
+without accounting for changes in phase angle. Given this infor-
+mation, we propose a frequency response model for all-inverter
+power systems that assumes decoupled dynamics, and a voltage
+response model that accounts for Q- δdynamics. These models
+can be solved independently.
+A. Frequency Response Model
+The reduced-order block diagram representing the frequency
+response of a multi-loop droop GFM is shown in Fig. 1.T h e
+power error is detected through a low pass ﬁlter, creating a power
+error signal. This error signal serves as the input to the droop
+controller [23].T
+c is the reciprocal of the cut-off frequency in Hz
+andR is the droop gain. The corresponding linearized dynamics
+for the ith machine are given by system (2):
+{
+Δ˙δi = ω0Δωi,
+Δ˙ωi = 1
+Tci
+(αiRiΔPei −Δωi), (2)
+whereδi is the voltage angle,ωi is the frequency, andω0 =2 πf0,
+where f0 is the nominal network frequency, e.g. 60 Hz in the
+United States. The parameter αi is equal to the system base
+divided by
+Real and reactive nodal power injections are nonlinear func-
+tions of voltage magnitude and angle. These functions are typ-
+ically linearized around a particular operating point [19].O u r
+frequency response model utilizes DC power ﬂow approxima-
+tions. In the DC formulation, reactive power ﬂow is disregarded
+because it is smaller than active power ﬂow. The resulting
+linearized equation for power is (3), which can be written in
+terms of power injections at generation and load nodes as seen in
+(4). Grid-following inverters without grid support functionality
+may be treated as load nodes.
+ΔP = BΔδ (3)
+[
+ΔP
+G
+ΔPL
+]
+=
+[
+BGG BGL
+BLG BLL
+][
+ΔδG
+ΔδL
+]
+(4)
+The network is topologically reduced through the elimination of
+non-generator nodes [19], as follows:
+ΔPG = BrΔδG  
+ΔPos
++ BLΔPL  
+ΔPd
+(5)
+where Br = BGG −BGLB−1
+LLBLG and BL = BGLB−1
+LL.
+From (5) we see that the change in power at a generation node
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 6 =====
+2552 IEEE TRANSACTIONS ON POWER SYSTEMS, VOL. 41, NO. 4, JUL Y 2026
+is a function of the differences in angles between generation
+nodes and the change in power injections at the non-generator
+nodes [14]. We refer to the ﬁrst term of (5) as the inter-machine
+oscillation of power. The second term, which is denoted asΔPd
+is interpreted as the change in power injections at generation
+nodes due to a disturbance. ΔPd is a vector with a number of
+elements equal to the number of generators. ΔPL is the vector
+of load changes. For instance, consider a system with three load
+buses and a load step at load bus 3. The third element of ΔPL
+is then Pstep ∗Kl, where Kl is the approximated marginal loss
+constant. Average transmission and distribution losses are about
+2-5%, and therefore we recommend choosing 1.05 as the value
+ofK
+l to avoid overestimating nadir and settling frequency [33].
+The approximation of a linear relationship between active power
+transfer and line losses is consistent with the concept of marginal
+loss factors [34]. The higher the value of K
+l, the more conser-
+vative the estimate of nadir and settling frequency. It should be
+noted that non-generator nodes are assumed to be static and,
+therefore, this model is limited in capturing load dynamics. The
+modeling of dynamic loads, including grid-following inverters
+with frequency support functionality, necessitates the preser-
+vation of the relevant nodes during Kron reduction which are
+not considered in this work. For a system with n droop control
+GFMs, we deﬁne
+Δδ≜ [Δδ
+1,n ... Δδn−1,n]T (6)
+Δω≜ [Δω1 ... Δωn]T (7)
+where Δδi,n denotes the relative voltage angle Δδi −Δδn.
+Relative voltage angles are used so that synchronizing dynamics
+may be represented [19]. Then, the system-wide dynamics are
+given by the (2n−1)-dimensional system of ODEs in (8).
+d
+dt
+[
+Δδ
+Δω
+]
+= Af
+[
+Δδ
+Δω
+]
++ BfΔPd, (8)
+where
+Af =
+[ 0 ω01−1
+˜B T
+]
+and Bf =
+[0
+γ
+]
+(9)
+with
+1−1 =
+⎡
+⎢⎢
+⎢⎢⎣
+10 ... 0 −1
+01 ... 0 −1
+..
+.
+..
+. . . . ..
+.
+..
+.
+00 ... 1 −1
+⎤
+⎥⎥
+⎥⎥⎦
+∈R
+(n−1)×n, (10)
+˜B = −diag
+(αiRi
+Tci
+)
+˜Br, T = −diag
+( 1
+Tci
+)
+, (11)
+and
+γ = diag
+(αiRi
+Tci
+)
+. (12)
+˜Br denotes the matrix Br with thenth column removed. We re-
+fer to the proposed frequency response model as the Low-Inertia
+Frequency Evolution (LIFE) model. The model is intended for
+modeling the dynamic behavior of a system following a small to
+Fig. 5. Low-order model of reactive droop.
+moderate power imbalance. Scenarios where very large voltage
+angle differences across transmission lines ( > 30
+◦) are seen or
+where large changes in voltage magnitude are observed, i.e.
+during faults and restoration processes, are not captured by the
+model.
+B. V oltage Response Model
+The LIFE model made the standard assumption of decoupled
+active and reactive power ﬂow. Here, we propose a model of
+voltage response that accounts for post-disturbance Q- δcou-
+pling and can be thought of as the counterpart of our frequency
+response model. The reduced-order block diagram representing
+the reactive power droop of a multi-loop GFM is given in Fig. 5.
+A detailed discussion on the validity of this model and on
+determining an appropriate time constant, Tq , is included in the
+companion Supplemental Note of this paper. Rq is the reactive
+power droop value.
+Given that reactive power cannot travel long distances and
+voltage magnitudes do not synchronize across a network, the
+open loop model of Fig. 5 is a reasonable method for estimating
+voltage response locally [19]. The model must be provided with
+a good approximation of the change in reactive power injection
+at the generator nodes, ΔQ
+G. The equation for instantaneous
+reactive power injection is (13).
+Qi = −
+n∑
+j=1
+BijViVj cosθij +
+n∑
+j=1
+GijViVj sinθij (13)
+Assuming the reactive power set points of all GFMs are known,
+the change in reactive power injection due to the disturbance can
+be described as (14).
+ΔQG = QG(Vpost,θpost)−QG0 (14)
+where Vpost and θpost are the post-disturbance angles and volt-
+ages, and QG0 is the inverter Q set point. We propose the
+following steps for estimating QG(Vpost,θpost) andΔQG.
+1) Estimate each new GFM active power injection using
+PGi(Vpost,θpost) ≈ΔPdi +PGi0 where ΔPdi is calcu-
+lated in (5).
+2) In the AC power ﬂow formulation, update the active power
+injections to reﬂect PGi(Vpost,θpost), ΔPL, and ΔQL.
+Then solve AC power ﬂow.
+3) The updated Q values are approximately equal to
+QG(Vpost,θpost).
+4) Approximate ΔQG using (14).
+The difference between solving for QG(Vpost,θpost) as de-
+scribed in Section I-C and in the process enumerated above
+boils down to the assumed known quantities at each generator
+bus. In a classic AC power ﬂow problem, P and V are the
+known quantities at the generation buses, while in the proposed
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 7 =====
+TRUJILLO et al.: ANAL YTICAL MODELS OF FREQUENCY AND VOLTAGE IN LARGE-SCALE ALL-INVERTER POWER SYSTEMS 2553
+TABLE III
+VALIDA TION OFPROPOSED REACTIVE POWER INJECTION
+APPROXIMA TIONMETHOD
+formulation of Section I-C, V and θare the known quantities.
+However, since P and θare closely related, these approaches
+yield nearly identical results, as shown in Table III. The beneﬁt
+of using the process enumerated above is that it allows for the
+leveraging of AC power ﬂow solvers, which are ubiquitous and
+effective for large systems.
+In a droop-controlled GFM, the quadrature-axis (q-axis) volt-
+age is adjusted according to the droop value R
+q and the change
+in reactive power injection ΔQG [35]. This adjusted q-axis
+voltage then passes through the voltage controller and current
+controller before the q-axis and direct-axis (d-axis) voltages
+are transformed into the phase voltages Va, Vb, and Vc via
+the inverse Park Transformation. These voltages serve as the
+inputs to the inverter LCL ﬁlter [35]. As a result, the change in
+voltage magnitude at the generator bus is actually several times
+larger thanΔV
+G as calculated in (16). Therefore, to calculate the
+exact change in voltage magnitude at the generator bus would
+require modeling these additional controls and including the
+q-axis and d-axis currents and voltages. This would increase the
+number of states in the system several times over, which would
+severely diminish the computational tractability of the voltage
+response model for large systems and precisely the bottleneck
+of the present day EMT simulation platforms, and thus deﬁes
+the original purpose of reduced-order models. This address this
+limitation, we propose the introduction of the voltage outer-
+loop-to-grid constant,K
+v , to maintain computational efﬁciency
+of the voltage response model. This constant accounts for the
+aggregation of all coefﬁcients involved, including the equivalent
+gain factor between the droop-adjusted V
+q and the post voltage
+and current controllerVq , and in effect maps the dominant modes
+that are excited in voltage transients. Depending on the speciﬁc
+GFM inverter model, this constant may vary and the precise
+value for a speciﬁc inverter should be determined by sensitivity
+testing, either hardware testing in the laboratory environment or
+system identiﬁcation analysis in the simulation environment, as
+described in the companion Supplemental Note of this paper. In
+our case, after extensive, computational experimentation with
+industry-grade models for a range of disturbances, we deter-
+mined values between 4 and 5 are most appropriate for the mod-
+els used in [35]. Further information on the calculation of K
+v
+parameter and a discussion sensitivity testing and mathematical
+analysis is offered in the Supplemental Note. The change in
+voltage magnitude at a generator bus is approximated by (15),
+where VG,grid is the voltage at the terminal of the GFM. We
+subsequently refer to this model of voltage response, which is
+given in state-space form in (16), as the Low-Inertia V oltage
+Evolution (LIVE) model. In this formulation, Bv encodes the
+settling voltage and Av encodes the pace at which the settling
+voltage is reached. We note that the proposed voltage model
+is not intended to simulate dynamics introduced by device
+Fig. 6. Workﬂow for the LIFE and LIVE models. The disturbance magnitude
+is embedded into ΔPd as indicated in (5).
+malfunctions, i.e. forced oscillations [36], super-synchronous
+events, or by AC faults.
+ΔVG,grid ≈Kv ·ΔVG (15)
+[
+Δ| ˙VG,grid|
+]
+= Av
+[
+Δ|VG,grid|
+]
++ Bv
+[
+ΔQG
+]
+(16)
+where
+Av = −diag
+( 1
+Tqi
+)
+, Bv = diag
+(αiRqiKv
+Tqi
+)
+(17)
+III. A NALYTIC SOLUTIONS AND WORKFLOW
+The proposed models give rise to initial value problems that
+have analytic solutions; namely, both system (8) and (16) are of
+the form
+˙x(t)= Ax(t)+ Bu(t),x 0 = x(t0),u 0 = u(t0),
+for constant matrices A and B and known forcing u(t).T h e
+solution to such a system is given by
+x(t)= eAtx0 +
+∫ t
+t0
+eA(t−τ)Bu(τ)d τ
+(see [37]). In both the LIFE and LIVE models, a zero initial
+condition and constant forcing are assumed, so the solutions
+simplify to
+[
+Δδ
+Δω
+]
+(t)=
+∫ t
+t0
+eAf(t−τ)BfΔPd dτ (LIFE model), (18)
+Δ|VG,grid|(t)=
+∫ t
+t0
+eAv(t−τ)BvΔQG dτ (LIVE model).
+(19)
+Moreover, the matrices Af and Av are diagonalizable, so the
+solutions (18) and (19) can be computed exceptionally quickly.
+The suggested workﬂow for the implementation of the LIFE
+and LIVE models is shown in Fig. 6. The susceptance matrix,
+B can be obtained from the MA TPOWER, PowerWorld, TSA T,
+PSSE, or PSLF ﬁle of the relevant system for ofﬂine applications
+(planning case) and directly exported from the state estimator
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 8 =====
+2554 IEEE TRANSACTIONS ON POWER SYSTEMS, VOL. 41, NO. 4, JUL Y 2026
+Fig. 7. LIFE vs. PSCAD simulations in the 9-bus system.
+TABLE IV
+SIMULA TIONRUNTIME COMPARISON OF THE WSCC 9 BUS NETWORK
+for online applications (operations case). The generator dis-
+patches are determined by power ﬂow calculations if conducting
+multi-scenario ofﬂine dynamics studies and directly by the state
+estimator if conducting online dynamic assessment. Next, for a
+given generator dispatch, A
+f , Bf , Av , and Bv are calculated.
+The exact analytical solution is computed using either (18) or
+(19). These computations are exceptionally fast, making them
+suitable to run on most commonly available computers for
+operational applications, real-time contingency screening, or for
+determining likely undesirable operating scenarios that may be
+investigated further with EMT simulation.
+IV . COMPUTER SIMULA TION AND VALIDA TION
+We used the WSCC 9-bus system and IEEE 39-bus system
+benchmarks to test and verify the accuracy of the frequency
+response model given in (8) against industry-grade standard
+EMT simulations. The WSCC 9-bus model was constructed in
+PSCAD and utilizes the inverter models from [35], which are
+quite complex and validated against real-world data from the
+Maui power systems. In this system, all GFMs have a rated
+capacity of 200 MV A, an active power droop constant of 5%,
+and a power measurement time constant of 0.0628 seconds.
+A 31.5 MW + 9 MV AR load step at Bus 6 was simulated. A
+marginal loss constant of 1.035 is assumed. Visual inspection
+of the results indicate that the data from PSCAD veriﬁes the
+accuracy of the LIFE model, as shown in Fig. 7. The runtimes to
+obtain ﬁve seconds of simulation data are given in Table IV.T o
+further demonstrate the computational advantage of our method,
+we also ran another version of the WSCC 9-bus system in Pow-
+erWorld and used the REGFM_A1 model [38]. The proposed
+model has the beneﬁt of signiﬁcantly accelerated solve time.
+While this is a small test case, computational accelerations of
+≈9,219x over EMT simulations and ≈3,384x over RMS sim-
+ulations create incredible opportunities for online operational
+applications.
+The LIFE model was also validated against the 39 Bus system
+following a 307.5 MW + 141 MV AR load step at Bus 15.
+We observe good agreement between the LIFE model and the
+Fig. 8. LIFE vs. PSCAD results in the 39-bus system. The HS metric is a
+proxy for kinetic energy.
+TABLE V
+|ERROR| OF KEY METRICS IN THE 39-BUS SYSTEM:L I F EVS. PSCAD
+TABLE VI
+SETTLING VOLT AGEERROR [PU] IN THE 9-BUS SYSTEM:L I V EMODEL VS.
+PSCAD SIMULA TIONS
+simulated trajectories, as shown in Fig. 8. In addition to nadir
+and RoCoF, we use the hertz-sec (HS) metric, which is a proxy
+for the kinetic energy resulting from a disturbance, to evaluate
+the accuracy of the LIFE model. The HS metric integrates the
+absolute value of frequency deviation over the transient period,
+as shown by the shaded area in Fig. 8(b). It is calculated using
+HS =
+∫
+ts
+t0
+|f0 −f(t)|dt, where t0 andts are the time transient
+behavior begins and the time settling frequency is reached,
+respectively [23]. The pre-disturbance frequency is f
+0 and the
+transient frequency is a function of time, f(t). In Table V,
+the error of nadir, RoCoF, and HS calculated using the LIFE
+model are given. While error of these key metrics was small, the
+required accuracy will be application-speciﬁc and as with any
+reduced-order model, there is a chance of estimations that are
+inconsistent with those of high-order models.
+Next, we validate the LIVE model against the same simulation
+scenarios (10% complex load step) used to generate the traces
+in Figs. 7 and 8.A K
+v value of 5 was used for both the 9
+and 39 bus system. The results, shown in Table VI,F i g .9, and
+TableVII point to the effectiveness of this approach. The PSCAD
+voltage traces in Fig. 9 indicate negligible voltage oscillations,
+and therefore voltage transients are well approximated by a
+ﬁrst order model without feedback. The lack of oscillation in
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 9 =====
+TRUJILLO et al.: ANAL YTICAL MODELS OF FREQUENCY AND VOLTAGE IN LARGE-SCALE ALL-INVERTER POWER SYSTEMS 2555
+Fig. 9. LIVE (dashed lines) vs. PSCAD simulations (solid lines) in the IEEE
+39 bus system.
+TABLE VII
+SETTLING VOLT AGEERROR [PU] IN THE 39-BUS SYSTEM:L I V EMODEL VS.
+PSCAD SIMULA TIONS
+the voltage magnitudes conﬁrms that local changes in voltage
+magnitude and reactive power do not propagate well, and have a
+negligible effect on voltage magnitude at surrounding generator
+buses. While the inner-loop controls and LCL ﬁlter have an effect
+on the change in voltage magnitude at the generator bus, reason-
+able estimates of ΔQ
+G and Kv provide good approximations
+of voltage response without the need for explicit modeling of
+inner-loop controls. The validity of this approach is supported
+by the exceedingly small average error of settling voltage, which
+was just 0.0019 pu in the 9 bus system and 0.0021 pu in the 39
+bus system. In the 39 bus system, the largest change in voltage
+magnitude was -0.011 pu, which occurred at Bus 35. However,
+like the proposed frequency response model, the LIVE model
+is a reduced-order model which carries some risk of inaccurate
+voltage estimations.
+V. S
+CALABILITY AND APPLICA TION: 25,000-BUS SYSTEM
+Having demonstrated the efﬁcacy of the proposed models
+in the previous section, we now focus on their scalability and
+provide a discussion on potential applications.
+A. Scalability
+The frequency response and voltage response models were
+applied to the open-source ACTIVSg25 k synthetic grid of the
+northeastern United States [39], which is shown in Fig. 10.T h i s
+is an extremely large system, comprising most of three inde-
+pendent system operators’ territories, with additional vertically
+Fig. 10. 25 k bus synthetic grid of the northeastern United States [39].Al o a d
+step was applied in New Y ork City, and frequency was observed in ﬁve regions
+across the network.
+integrated utility territory included. For every bus with multiple
+generators, we aggregated generators into one generator with
+an equivalent capacity. We then converted all the generators
+with capacities exceeding 100 MV AR to be droop-controlled
+GFMs. This resulted in 849 GFM buses. The remaining 24,151
+buses are modeled as load buses in (4). All generators below
+this capacity were considered GFLs and modeled as negative
+load. A very large system formed entirely by GFMs is an
+exaggerated version of potential future power systems. We
+utilize the frequency and voltage models on such a system to
+demonstrate their efﬁciency on systems where EMT simulation
+would be impossible and computational efﬁciency is paramount.
+A1 . 5 6G W+ 780 MV AR load step was applied to Bus 69665in
+New Y ork City. The active power disturbance magnitude is
+equal to the capacity of the largest online generator, and the
+reactive power disturbance magnitude is equal to half of the
+active power disturbance magnitude. The active-droop constant
+and power measurement time constant of each inverter were
+5% and 0.0628 seconds, respectively. The solution, given in
+(18), was solved in only 1.877 seconds to obtain 1 s worth
+of simulated frequency response, which is sufﬁcient given the
+faster response of GFMs compared to SGs. To illustrate the
+heterogeneity of frequency response, the predicted frequency
+response in ﬁve different areas across the system are shown
+in Fig. 11. The frequency trajectories for all GFM buses are
+also shown. The results indicate that while all frequencies in
+the system synchronize within a second, GFM buses closest to
+the disturbance experience dramatic frequency oscillations and
+more distant buses display much smoother trajectories. This be-
+havior is expected, seeing as GFM buses closest to a disturbance
+will be subjected to greater changes in active power injection,
+according to (5). Also noteworthy is the time delay between the
+onset of transients between areas close to the disturbance versus
+areas farther from the disturbance. This is perhaps most obvious
+when comparing the frequency trajectories in New Y ork City to
+those in South Carolina, where frequency deviation is delayed
+by about. 18 seconds. This heterogeneity in frequency response
+trajectories across the system would not have been seen if one
+were using a SFR model to represent the system with a single
+trajectory.
+Fig. 12 depicts the box plots of the LIFE nadir and RoCoF
+values in the ACTIVSg25 k network post-disturbance. The
+LIFE model captures the spatial and temporal differences in
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 10 =====
+2556 IEEE TRANSACTIONS ON POWER SYSTEMS, VOL. 41, NO. 4, JUL Y 2026
+Fig. 11. Predicted frequency response in ﬁve regions across the ACTIVSg25 k
+network. Frequency traces at all 849 GFM buses are shown in the bottom right
+corner. All frequencies reached a stable value of 59.98 ± 0.005 Hz after 0.589
+seconds.
+Fig. 12. Box plots of nadir, absolute value of RoCoF, change in voltage
+magnitude, and change in reactive power injection at each GFM bus in the
+ACTIVSg25 k test case.
+frequency response as these variations in frequency could mean
+the difference between protection mechanisms tripping or not.
+Therefore, the model’s ability to capture frequency response
+extrema is exceedingly important. In this scenario, the average
+frequency nadir was 59.96 Hz and the average RoCoF was
+1.30 Hz/sec. Of the 849 GFM buses, 143 buses experienced
+RoCoFs exceeding 1 Hz/sec and the maximum RoCoF was a
+staggering 113.6 Hz/sec. As expected, the largest RoCoF values
+were seen at buses closest to the disturbance and at buses with
+small GFM capacities. Even so, the nadir frequency at these
+buses is about 59.77 Hz, which does not violate the underfre-
+quency load shedding limit [40].
+The voltage response model solved in just 0.127 seconds due
+to the approximation of Q-V dynamics as an open-loop process.
+K
+v was set equal to 5. As seen in Fig. 12, most GFM buses
+experienced negligible changes in reactive power injection and
+voltage magnitude, with a few crucial exceptions. The average
+change in voltage magnitude was 0.0009 pu and the maximum
+was 0.19 pu. The predicted voltage trajectories at GFM buses
+whereΔV> 0.01 pu are shown in Fig.13. The greatest changes
+in reactive power injection and voltage variations are seen at
+the generators electrically closest to the load step location,
+which makes sense given the limited range of reactive power
+Fig. 13. V oltage trajectories at GFM buses where the change in voltage
+magnitude exceeded 0.01 pu.
+disturbances. There were four GFM buses at which reactive
+power deﬁciency caused the voltage magnitude to settle below
+0.95 pu.
+B. Applications
+The LIFE and LIVE models demonstrate promising utility for
+several applications to enhance the efﬁciency of power system
+studies; here we expand on three of them.
+At present, methods for screening risks to dynamic stability
+are largely limited to techniques based on the short-circuit ratio
+(SCR) concept [41]. These SCR-based methods are limited in
+that they do not yield post-disturbance frequency and voltage tra-
+jectories, rather they are simply values meant to indicate where in
+a system stability issues may arise. These methods also assume
+identical IBRs and do not distinguish between control system
+designs [41]. Seeing the need for screening methods that reveal
+more about the transient behavior of a system than SCR-based
+methods offer, the LIFE and LIVE models may be used prior
+to full-order EMT simulation in order to identify dynamically
+interesting operational scenarios and areas within a system most
+vulnerable to instability. In this application, the models would
+provide useful information regarding the predicted severity of
+a disturbance in terms of voltage and frequency stability for
+different dispatch and generation location scenarios.
+Another potential application of the proposed models is for
+parametric analysis. Conducting this type of analysis using
+EMT tools is difﬁcult because it requires many computation-
+ally expensive simulations. The signiﬁcant speed advantage
+of the LIFE and LIVE models over EMT simulation makes
+their application in parametric sensitivity analysis attractive, as
+does the ability to derive participation matrices using the LIFE
+and LIVE state-space representations. By using the proposed
+models, analyzing the transient behavior of a system under a
+wide range of parametric scenarios and mathematically drawing
+connections between states and the dominant modes of a system
+may be done rapidly.
+Finally, the proposed models may be integrated into a variety
+of long-range planning tools, including capacity expansion and
+resource adequacy studies. Rather than only conducting a limited
+number of stability studies with EMT simulation tools based on
+the results of an optimization problem, the LIFE and LIVE mod-
+els could be incorporated directly into an optimization frame-
+work, allowing systems planners to introduce both frequency
+and voltage stability as constraints. By integrating the proposed
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 11 =====
+TRUJILLO et al.: ANAL YTICAL MODELS OF FREQUENCY AND VOLTAGE IN LARGE-SCALE ALL-INVERTER POWER SYSTEMS 2557
+models into an optimization framework as described instead of
+relying solely on EMT simulation, power system operators can
+greatly reduce the number of required EMT simulations.
+VI. C ONCLUSION
+While frequency response models have a history spanning
+decades, many models disregard the heterogeneity of the fre-
+quency response and assume that the network is dominated by
+synchronous generators. All disregard reactive power-voltage
+dynamics. In this paper we present models of frequency and
+voltage response for 100% IBR networks. The models were
+validated on the WSCC 9 bus and IEEE 39 bus systems. The
+models were then utilized to predict frequency and voltage
+response in a 25,000 bus synthetic system. Our results indicate
+that the models provide reasonable estimations of frequency and
+voltage response at every GFM bus in the system while, crucially,
+maintaining computational tractability, setting the basis for their
+use in planning and operational applications.
+ACKNOWLEDGMENT
+We would like to thank Dr. Mostafa Sedighizadeh, Mr. Har-
+vey Scribner, and Mr. Nick Parker at Southwest Power Pool
+(SPP), Dr. Mohammadi Mohammadi of the Australian Energy
+Market Operator (AEMO), and Dr. Bruno Leonardi of the New
+Y ork Independent System Operator (NYISO) for their insightful
+feedback and constructive comments.
+The views expressed in the article do not necessarily represent
+the views of the DOE or the U.S. Government. The U.S. Gov-
+ernment retains and the publisher, by accepting the article for
+publication, acknowledges that the U.S. Government retains a
+nonexclusive, paid-up, irrevocable, worldwide license to publish
+or reproduce the published form of this work, or allow others to
+do so, for U.S. Government purposes.
+REFERENCES
+[1] Executive summary–Renewables 2023 – Analysis, “IEA,” 2024. [On-
+line]. Available: https://www.iea.org/reports/renewables-2023/executive-
+summary
+[2] R. W. Kenyon, B. Wang, A. Hoke, J. Tan, C. Antonio, and B.-M. Hodge,
+“V alidation of Maui PSCAD model: Motivation, methodology, and lessons
+learned,” in Proc. 52nd North Amer . Power Symp., 2021, pp. 1–6.
+[3] S. Zhu, D. Piper, D. Ramasubramanian, R. D. Quint, A. Isaacs, and R.
+Bauer, “Modeling inverter-based resources in stability studies,” in Proc.
+2018 IEEE Power Energy Soc. Gen. Meeting , 2018, pp. 1–5.
+[4] J. G. Simmonds and J. E. Mann, A First Look at Perturbation Theory, 2nd
+ed. New Y ork, NY , USA: Dover.
+[5] P . Kokotovic and P . Sauer, “Integral manifold as a tool for reduced-order
+modeling of nonlinear systems: A synchronous machine case study,”IEEE
+Trans. Circuits Syst., vol. 36, no. 3, pp. 403–410, Mar. 1989.
+[6] M. Chan, R. Dunlop, and F. Schweppe, “Dynamic equivalents for average
+system frequency behavior following major distribances,” IEEE Trans.
+Power App. Syst., vol. PAS-91, no. 4, pp. 1637–1642, Jul. 1972.
+[7] P . M. Anderson and M. Mirheydar, “A low-order system frequency re-
+sponse model,” IEEE Trans. Power Syst. , vol. 5, no. 3, pp. 720–729,
+Aug. 1990.
+[8] D. L. H. Aik, “A general-order system frequency response model incorpo-
+rating load shedding: Analytic modeling and applications,” IEEE Trans.
+Power Syst., vol. 21, no. 2, pp. 709–717, May 2006.
+[9] Y . Zhang, Q. Guo, Y . Zhou, and H. Sun, “Frequency-constrained unit
+commitment for power systems with high renewable energy penetration,”
+Int. J. Elect. Power Energy Syst. , vol. 153, 2023, Art. no. 109274.
+[10] I. Egido, F. Fernandez-Bernal, P . Centeno, and L. Rouco, “Maximum
+frequency deviation calculation in small isolated power systems,” IEEE
+Trans. Power Syst., vol. 24, no. 4, pp. 1731–1738, Nov. 2009.
+[11] L. Liu, W. Li, Y . Ba, J. Shen, C. Jin, and K. Wen, “An analytical model for
+frequency Nadir prediction following a major disturbance,” IEEE Trans.
+Power Syst., vol. 35, no. 4, pp. 2527–2536, Jul. 2020.
+[12] S. Y ang, Q. Meng, Y . Zhang, Z. Hao, and B. Zhang, “Simpliﬁed prediction
+model of frequency Nadir for power systems penetrated with renewable
+energy,” in Proc. 2022 IEEE Power Energy Soc. Gen. Meeting , 2022,
+pp. 1–5.
+[13] S. Dong, X. Fang, J. Tan, N. Gao, X. Cui, and A. Hoke, “A uniﬁed analytical
+method to quantify three types of fast frequency response from inverter-
+based resources,” in Proc. 22nd Wind Sol. Integration Workshop , 2023,
+pp. 669–674.
+[14] X. Wang, W. Li, J. Shen, S. Zhao, and Q. Zhang, “A three-machine
+equivalent system frequency response model and its closed-form solution,”
+Int. J. Elect. Power Energy Syst. , vol. 142, 2022, Art. no. 108344.
+[15] Y . Lin et al., “Research roadmap on grid-forming inverters,” 2020. [On-
+line]. Available: https://www.nrel.gov/docs/fy21osti/73476.pdf
+[16] Y . Du, X. Lu, and D. Zhao, “Model reduction for inverter-dominated
+networked microgrids with grid-forming inverters,” in Proc. 47th Annu.
+Conf. IEEE Ind. Electron. Soc. , 2021, pp. 1–6.
+[17] O. Ajala, N. Baeckeland, B. Johnson, S. Dhople, and A. Domı´ nguez-
+Garcıá, “Model reduction and dynamic aggregation of grid-forming in-
+verter networks,” IEEE Trans. Power Syst., vol. 38, no. 6, pp. 5475–5490,
+Nov. 2023.
+[18] A. Sajadi and B.-M. Hodge, “Plane wave dynamic model of electric
+power networks with high shares of inverter-based resources,” 2024,
+arXiv:2401.16703.
+[19] J. Machowski, Z. Lubosny, and J. W. Bialek, Power System Dynam-
+ics. Hoboken, NJ, USA: Wiley, 2020.
+[20] R. W. Kenyon, A. Sajadi, M. Bossart, A. Hoke, and B.-M. Hodge, “Inter-
+active power to frequency dynamics between grid-forming inverters and
+synchronous generators in power electronics-dominated power systems,”
+IEEE Syst. J., vol. 17, no. 3, pp. 3456–3467, Sep. 2023.
+[21] A. Sajedi et al., “Guest editorial: Special issue on recent advancements
+in electric power system planning with high-penetration of renewable
+energy resources and dynamic loads,” Int. J. Elect. Power Energy Syst. ,
+2021, vol. 129, Art. no. 106597. [Online]. Available: https://www.osti.
+gov/biblio/1769842
+[22] “GB power system disruption on 9 August 2019: Final report,” Jan. 2020.
+[Online]. Available: https://assets.publishing.service.gov.uk/media/
+5e0e1fa9e5274a0fa7b4d96a/e3c-gbpower-disruption-9-august-2019-
+ﬁnal-report.pdf
+[23] A. Sajadi, R. W. Kenyon, and B.-M. Hodge, “Synchronization in elec-
+tric power networks with inherent heterogeneity up to 100% inverter-
+based renewable generation,” Nature Commun. , vol. 13, no. 1, 2022,
+Art. no. 2490.
+[24] L. Pagnier and P . Jacquod, “Inertia location and slow network modes
+determine disturbance propagation in large-scale power grids,”PLoS One,
+vol. 14, no. 3, 2019, Art. no. e0213550.
+[25] N. A. E. R. Council, Technical analysis of the August 14, 2003 Blackout:
+What Happened, Why, and What did We Learn? . Atlanta, GA, USA:
+North Amer. Electric Rel. Council, 2004. [Online]. Available: https:
+//books.google.com/books?id=ZfJ7MwEACAAJ
+[26] F. Milano, F. Dörﬂer, G. Hug, D. J. Hill, and G. V erbiˇc, “Foundations and
+challenges of low-inertia systems (invited paper),” in Proc. 2018 Power
+Syst. Computation Conf., 2018, pp. 1–25.
+[27] R. W. Kenyon, A. Hoke, J. Tan, and B.-M. Hodge, “Grid-following
+inverters and synchronous condensers: A grid-forming pair,” inProc. 2020
+Clemson Univ. Power Syst. Conf., 2020, pp. 1–7.
+[28] B. Gentile, J. W. Simpson-Porco, F. Dörﬂer, S. Zampieri, and F. Bullo,
+“On reactive power ﬂow and voltage stability in microgrids,” in Proc.
+2014 Amer . Control Conf., 2014, pp. 759–764.
+[29] M. Ilic-Spong and A. Phadke, “Redistribution of reactive power ﬂow in
+contingency studies,” IEEE Trans. Power Syst. , vol. TPWRS-1, no. 3,
+pp. 266–274, Aug. 1986.
+[30] S. Singh and S. Srivastava, “Improved voltage and reactive power distri-
+bution factors for outage studies,” IEEE Trans. Power Syst., vol. 12, no. 3,
+pp. 1085–1093, Aug. 1997.
+[31] P . A. Ruiz and P . W. Sauer, “Post-contingency voltage and reactive power
+estimation and large error detection,” in Proc. 2007 39th North Amer .
+Power Symp., 2007, pp. 266–272.
+[32] M. G. Dozein, P . Mancarella, T. K. Saha, and R. Y an, “System strength
+and weak grids: Fundamentals, challenges, and mitigation strategies,” in
+Proc. 2018 Australas. Universities Power Eng. Conf. , 2018, pp. 1–7.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 12 =====
+2558 IEEE TRANSACTIONS ON POWER SYSTEMS, VOL. 41, NO. 4, JUL Y 2026
+[33] Frequently asked questions (FAQs) - U.S. Energy Information Adminis-
+tration (EIA), 2021. [Online]. Available: https://www.eia.gov/tools/faqs/
+faq.php
+[34] B. Eldridge, R. O’Neill, and A. Castillo, “Marginal loss calculations for the
+DCOPF,” 2016. [Online]. Available:https://www.osti.gov/biblio/1340633
+[35] R. W. Kenyon, A. Sajadi, A. Hoke, and B.-M. Hodge, “Open-source
+PSCAD grid-following and grid-forming inverters and a benchmark for
+zero-inertia power system simulations,” inProc. 2021 IEEE Kansas Power
+Energy Conf., 2021, pp. 1–6.
+[36] B. Lesieutre and S. Roy, “A system response persistence measure for use
+in ambient data monitoring,” in Proc. 2017 North Amer . Power Symp. ,
+2017, pp. 1–5.
+[37] H. L. Trentelman, A. A. Stoorvogel, and M. Hautus, Control Theory for
+Linear Systems. New Y ork, NY , USA: Springer, 2001.
+[38] W. Du et al., “Positive-sequence modeling of droop-controlled grid-
+forming inverters for transient stability simulation of transmission sys-
+tems,” IEEE Trans. Power Del., vol. 39, no. 3, pp. 1736–1748, Jun. 2024.
+[39] A. B. Birchﬁeld, T. Xu, K. M. Gegner, K. S. Shetye, and T. J. Overbye,
+“Grid structural characteristics as validation criteria for synthetic net-
+works,” IEEE Trans. Power Syst., vol. 32, no. 4, pp. 3258–3265, Jul. 2017.
+[40] “Manual 33 system protection manual,” New Y ork Independent System
+Operator, Nov. 2024. [Online]. Available: https://www.nyiso.com/
+documents/20142/2923301/System_Protection_Manual.pdf/e55deef5-
+ae32-8324-60b8-a70bbfb33c50
+[41] S. Grogan, M. Richwine, R. Quint, and J. Matevosyan, “Electromag-
+netic transient models: Applications, limitations, and enablers in power
+systems [feature],” IEEE Power Energy Mag. , vol. 23, no. 4, pp. 27–39,
+Jul./Aug. 2025.
+Marena Trujillo (Graduate Student Member) re-
+ceived the B.S.E. degree in electrical engineering
+from Loyola Marymount University, Los Angeles,
+CA, USA, in 2021. She is currently working toward
+the Ph.D. degree in electrical, computer & energy
+engineering with the University of Colorado Boulder,
+Boulder, CO, USA. She is also an NSF GRFP Fellow.
+Her main research interests include the dynamics and
+stability of low-inertia inverter-based power systems,
+and the use of numerical methods and model re-
+duction techniques to enable efﬁcient, high-ﬁdelity
+simulation of large systems.
+Amir Sajadi (Senior Member, IEEE) received the
+Ph.D. degree in systems and control engineering from
+Case Western Reserve University, Cleveland, OH,
+USA. He is currently an Associate Research Pro-
+fessor with the Renewable and Sustainable Energy
+Institute, University of Colorado Boulder, Boulder,
+CO, USA, and a Research Afﬁliate with National Re-
+newable Energy Laboratory, Golden, CO, USA. His
+main research interests include modeling, planning,
+dynamics, control, and management of large-scale
+power systems to enhance the stability, security, and
+resiliency of energy delivery.
+Jonathan Shaw received the B.S. degree in applied
+mathematics with a concentration in aerospace en-
+gineering in 2023 from the University of Colorado
+Boulder, Boulder, CO, USA, where he is currently
+working toward the Ph.D. degree with the Applied
+Mathematics Department. His research interests in-
+clude applied functional analysis, numerical analysis,
+and asymptotic methods in the ﬁeld of low-inertia
+power systems.
+Bri-Mathias Hodge (Senior Member, IEEE) re-
+ceived the B.S. degree from Carnegie Mellon Univer-
+sity, Pittsburgh, PA, USA, the M.S. degree from ˚Abo
+Akademi University, Turku, Finland, and the Ph.D.
+from Purdue University, West Lafayette, IN, USA.
+He was a Chief Scientist and Distinguished Mem-
+ber of Research Staff with Power Systems Engineer-
+ing Center, National Renewable Energy Laboratory.
+He is currently a Professor with the Department of
+Electrical, Computer and Energy Engineering and an
+Associate Director and a Fellow of the Renewable
+and Sustainable Energy Institute, University of Colorado Boulder, Boulder, CO,
+USA.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:48:21 UTC from IEEE Xplore.  Restrictions apply. 

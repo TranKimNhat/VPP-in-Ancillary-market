@@ -1,0 +1,55 @@
+﻿{
+    "mcpServers":  {
+                       "gitnexus":  {
+                                        "args":  [
+                                                     "mcp"
+                                                 ],
+                                        "command":  "gitnexus"
+                                    },
+                       "fetch":  {
+                                     "command":  "uvx",
+                                     "args":  [
+                                                  "mcp-server-fetch"
+                                              ]
+                                 },
+                       "wikipedia":  {
+                                         "command":  "uvx",
+                                         "args":  [
+                                                      "wikipedia-mcp"
+                                                  ]
+                                     },
+                       "sequential-thinking":  {
+                                                   "command":  "cmd",
+                                                   "args":  [
+                                                                "/c",
+                                                                "npx",
+                                                                "-y",
+                                                                "@modelcontextprotocol/server-sequential-thinking"
+                                                            ]
+                                               },
+                       "serena":  {
+                                       "command":  "uvx",
+                                       "args":  [
+                                                    "--from",
+                                                    "git+https://github.com/oraios/serena",
+                                                    "serena",
+                                                    "start-mcp-server"
+                                                ]
+                                   },
+                       "notebooklm-mcp":  {
+                                              "command":  "uvx",
+                                              "args":  [
+                                                           "--from",
+                                                           "notebooklm-mcp-cli",
+                                                           "notebooklm-mcp"
+                                                       ]
+                                          },
+                       "exa":  {
+                                   "type":  "http",
+                                   "url":  "https://mcp.exa.ai/mcp?exaApiKey=1947ba22-ce5a-4032-a5c8-99e6868bebb3",
+                                   "headers":  {
+
+                                               }
+                               }
+                   }
+}

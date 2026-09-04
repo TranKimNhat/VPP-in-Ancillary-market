@@ -1,0 +1,48 @@
+{
+  "task": "T01_agfm",
+  "date": "2026-09-03",
+  "git_commit": "e9e977a772b8e443b49e1a0d93e8c539258a6790",
+  "python": "3.13.14",
+  "numpy": "2.3.5",
+  "pandas": "2.3.3",
+  "network": {
+    "source": "data/feeder123 (IEEE 123 node test feeder)",
+    "mode": "feeder123",
+    "balanced": true,
+    "convert_switches": true,
+    "islanded_override_slack_to_g1": true,
+    "n_bus": 128,
+    "n_line": 118,
+    "n_switch_closed": 5,
+    "topology": "G0 (nominal tie-switch state)"
+  },
+  "bases": {
+    "V_base_kV": 4.16,
+    "S_base_MVA": 1.0,
+    "Z_base_ohm": 17.305600000000002
+  },
+  "eps_primary": "eps_x010",
+  "p_head_primary": "bess_mw",
+  "deployments": {
+    "2gfm": [
+      "G1",
+      "G2"
+    ],
+    "5gfm": [
+      "G1",
+      "G2",
+      "G3",
+      "G4",
+      "G5"
+    ],
+    "6gfm": [
+      "G1",
+      "G2",
+      "G3",
+      "G4",
+      "G5",
+      "G6"
+    ]
+  },
+  "placement": "artifacts/placement/official_placement_v4_rescaled.json"
+}

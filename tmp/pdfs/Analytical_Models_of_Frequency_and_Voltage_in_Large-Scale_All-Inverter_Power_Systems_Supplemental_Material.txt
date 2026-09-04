@@ -1,0 +1,248 @@
+
+===== PAGE 1 =====
+1
+Analytical Models of Frequency and V oltage in
+Large-Scale All-Inverter Power Systems
+Supplemental Material
+Marena Trujillo∗†‡ , Amir Sajadi †‡, Jonathan Shaw §, and Bri-Mathias Hodge ∗†‡§
+∗Department of Electrical, Computer, and Energy Engineering, University of Colorado of Boulder,
+Boulder, Colorado 80309
+†Renewable and Sustainable Energy Institute, University of Colorado of Boulder, Boulder, Colorado
+80309
+‡National Renewable Energy Laboratory, Golden, Colorado 80401
+§Department of Applied Mathematics, University of Colorado of Boulder, Boulder, Colorado 80309
+{marena.trujillo, amir.sajadi, jonathan.shaw, brimathias.hodge }@colorado.edu
+S.I. S UPPLEMENTAL MATERIAL : VALIDATION OF THE PROPOSED LOW-O RDER VOLTAGE RESPONSE MODEL
+AGAINST EMT S IMULATION
+The voltage response of a droop GFM consists of several steps, namely the reactive power measurement filter,
+the Q-V droop, the voltage and current controllers, and the LCL filter. In our paper, we suggest that the relationship
+between the change in reactive power seen by a GFM and the subsequent change in terminal voltage magnitude
+can be well approximated by the following first-order differential equation.
+∆ ˙|V | = − 1
+T ∆|V | + αRqKv
+T ∆Q (S1)
+The approximated settling value of ∆|V | is:
+∆|V |sett = lim
+t→∞
+−αRqKv∆Qe−t/T + αRqKv∆Q = αRqKv∆Q (S2)
+This indicates that there is an approximately linear relationship between the reactive power error and the settling
+value of ∆|V |. We also assume that the active power dynamics of the GFM have a negligible effect on post-
+disturbance voltage dynamics. Here, we provide comprehensive data from 18 PSCAD simulations to corroborate
+our suggested Kv range and the neglect of active power-voltage dynamics. The GFM inverter models from [S1]
+were used.
+0 0.05 0.1 0.15
+Qerror [pu]
+0
+0.01
+0.02
+0.03
+0.04
+0.05|Vm| [pu]
+Pstep = 0 MW
+Pstep = 10 MW
+Pstep = 30 MW
+Fig. S1: Relationship between ∆|V | and α∆Qerror from PSCAD simulation data.
+===== PAGE 2 =====
+2
+In Fig. S1, we see the change in reactive power in the device base, α∆Qerror, has a nearly perfectly linear
+relationship with the settling value of the change in terminal voltage ∆|V |. This linear relationship holds for both
+small and large changes in reactive power, as indicated by the values on the x-axis. The different colored markers
+in Fig. 1 represent the magnitude of the active power load step accompanying the reactive power load step in each
+simulation run. From this data, we can reasonably deduce that the change in the slope of the best fit line is very
+small when a simultaneous active power disturbance is applied, even if that active power disturbance is large, thus
+validating our assumption that the effect of active power disturbances on voltage magnitude is far less than the
+effect of reactive power disturbances. In the simulations used to generate the plot in Fig. 1, a GFM capacity of 200
+MV A was used, but the Kv parameter was found to stay nearly constant for different rated capacities.
+From the simulation data in Fig. S1, we find that the linear best fit line has a slope of 0.2214. We can calculate
+the exact value of Kv by dividing the slope of the line by the droop coefficient, which was 0.05 in these simulations.
+slope of the linear best fit line = ∆|V |
+α∆Q = RqKv (S3)
+Kv = slope of the linear best fit line
+Rq
+= 0.2214
+0.05 = 4.4280 (S4)
+We use a Kv value of 5 in our paper to provide a slightly conservative estimate of settling voltage and to
+compensate for small inaccuracies introduced by simplifying assumptions, e.g. neglecting any P-V dynamics,
+estimating ∆Q via the proposed methodology.
+The precise value of this parameter for a specific inverter where either the actual hardware or its EMT model
+(developed by the vendor) is available, can be obtained through hardware testing in the laboratory environment,
+such as the testing presented in [S2], or parameter identification analysis in the simulation environment such as the
+input-output sensitivity analysis we utilized in this paper. Either approach offers an intrinsic order reduction since
+only the dominant modes that are excited during transients of a specific variable, which is voltage in this case, are
+captured. An analytical description to rigorously derive Kv is provided in the following.
+S.II. L INEARIZATION AND MODAL ANALYSIS
+Assuming the active power dynamics of the GFM have a negligible effect on voltage dynamics, the changes
+in voltage magnitude are primarily driven by changes in the q-axis voltage. The control diagram representing the
+decoupled q-axis voltage dynamics is shown in Fig. S2. The steps of the voltage response process, as seen in Fig.
+S2, can be described as follows.
+Voltage	Controller Current	Controller
+LCL	FilterDroop
+Power	calculation/measurement
+Vo	dq
+If	dq
+Vg	dq
+Io	dq
+−+ +−
+++++
++−
+++++
+dq0
+θelec
+abc
+ Inverse
+Park	Transform
+abc
+ABC
+ abc
+ABC
+abc
+ABC
+VabcIabcA
+B
+C
+abc
+VabcIabcA
+B
+C
+abc
+abc
+θelec
+dq0
+Park	Transform
+abc
+θelec
+dq0
+Park	Transform1
+abc
+θelec
+dq0
+Park	Transform2
+abc
+θelec
+dq0
+Park	Transform3
+++
+x
+x
++−PowerCalc
+s- +
+s- +
+s- +
+Continuous
+ABC
+Vgq
+x
+Voabc Vgabc
+Ioabc
+Voq
+Ioq
+Ioq
+Ifd
+Vod
+Qmeas
+Qerror
+VgqIod
+Vgd
+Qinstant
+IfabcIfq
+Fig. S2: GFM control block diagram for voltage dyanmics (built in Simulink).
+1) Park Transform. The internal voltage and current Vo and If , and the terminal voltage and current Vg and Io
+are converted from the abc reference frame to the dq0 reference via the Park’s Transformation.
+Xdq0 = TPXabc
+===== PAGE 3 =====
+3
+where X represents the states being converted.
+2) Power Calculation. The instantaneous active power, Pinstant, and reactive power, Qinstant, at the terminal
+are calculated.
+Qinstant = 3
+2 (Vgq · Iod − Vgd · Ioq)
+3) Power Measurement Filter . Then Qinstant goes through the power measurement filter.
+˙Qmeas = sQmeas = 1
+Tm
+(G1Qinstant − Qmeas)
+4) V oltage Reference Calculation. The initial internal voltage reference is calculated. It is equal to the initial
+terminal voltage reference plus the difference between the terminal voltage and the internal voltage.
+Vref,init = Vref,terminal + Vogdif f
+where
+• Vref,terminal = Vbase,kV · 1000 ·
+q
+2
+3 · Vref,pu (initial terminal voltage reference)
+• Vogdif f =
+q
+V 2
+od + V 2oq −
+q
+V 2
+gd + V 2gq (initial difference between the terminal and internal voltage)
+5) Q-V Droop. The difference in the measured Q and the reactive power setpoint is found. This error is the input
+to the droop control.
+Vref,q = Vref,init − (Qset − Qmeas)( −G2Rq,int
+1 + sTd
+)
+where
+• Rq,int = RpuVbase,kV
+Sbase
+. Note that Sbase is in MV A·1000
+6) V oltage Controller .The output q-axis voltage reference from the droop control, Vref,q , is used to calculate
+the reference q-axis current, Iref,q .
+Iref,q = (Vref,q − Voq)
+
+Kpv + Kiv
+sTv
+
++ IoqGf f i − 0.000001 · VodCf ωint
+• The variable ωint is the frequency output of the active power droop controller and is approximately equal
+to 2π · 60. However, the quantity 0.000001 · VodCf ωint is very small and can be neglected.
+7) Current Controller . The internal q-axis current reference from the voltage controller, Iref,q , serves as the
+input to the current controller. The output is the q-axis voltage reference, Vm,ref,q , not to be confused with
+the output of the droop control, Vref,q . Here we neglect current limiting dynamics.
+Vm,ref,q = (Iref,q − If,q)(Kpi + Kii
+sTi
+) + VoqGf f i − ωintIf dLf
+8) Inverse Park Transform. The states Vm,ref,q and Vm,ref,d are converted from dq0 to abc. The zero sequence
+voltage is a constant 0.
+Vabc = T−1
+P Vdq0
+9) LCL Filter . At this point, the three phase voltage passes through an LCL filter. The filter terminal is the point
+of interconnection with the system. Vo,abc and If,abc are measured over the capacitor of the LCL filter. Note
+that the default resistance on the capacitance branch is zero for the model in [S1], so Rf 2 is neglected in the
+following calculation.
+∆Io
+∆E = 1
+s3L2C + s2(2LCR) + s(2L + CR 2) + 2R (S5)
+∆Vo
+∆E = 1
+s2CL + sCR + 2 (S6)
+∆If
+∆E = s2CL + sCR + 1
+s3L2C + s2(2LCR) + s(2L + CR 2) + 2R (S7)
+===== PAGE 4 =====
+4
+If the instantaneous reactive power ∆Qinstant is taken as the input and the change in terminal voltage magnitude,
+∆|V |, is the output, then the resulting linearized system is 17th order. However, the step response of the 17th order
+system, shown in blue in Fig. S3, resembles that of a first-order system. This response shape is seen because a single
+dominant pole is driving the behavior of the system [S3]. A first-order system may be fitted to the the full-order
+step response by calculating the equivalent first-order system time constant, as given by (S8).
+Tq = Tr
+2.2 (S8)
+where Tr is the rise time. The step response of the first-order approximation is shown in red in S3, where we
+find a good agreement between the full-order response and the reduced-order response.
+0 0.5 1 1.5 2 2.5 3
+Time [s]
+0
+2
+4
+6Amplitude
+10-11 Step Response
+17th order
+1st order
+Fig. S3: Step response of the system shown in in Fig. S2. Note that the amplitude of the response is small, but in
+practice changes in the input state would be very large seeing as the represent reactive power changes measured in
+V AR.
+REFERENCES
+[S1] R. W. Kenyon, A. Sajadi, A. Hoke, and B.-M. Hodge, “Open-Source PSCAD Grid-Following and Grid-Forming Inverters and A Benchmark for Zero-Inertia
+Power System Simulations,” in 2021 IEEE Kansas Power and Energy Conference (KPEC) . IEEE, pp. 1–6.
+[S2] R. Mahmud, D. Narang, and A. Hoke, “Reduced-order parameterized short-circuit current model of inverter-interfaced distributed generators,” IEEE Transactions
+on Power Delivery , vol. 36, no. 6, pp. 3671–3680, 2020.
+[S3] R. C. Dorf and R. H. Bishop, Modern Control Systems , 12th ed. Prentice Hall, Pearson.

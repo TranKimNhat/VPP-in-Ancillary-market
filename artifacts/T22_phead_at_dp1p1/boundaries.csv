@@ -1,0 +1,2 @@
+quantity,event,dP_mw,P_dg_pre_mw,bracket_lo,bracket_hi,found,value,x_secure,x_insecure,tol,n_eval,monotone,note,kappa
+P_head_min_mw,gen_loss,1.1,0.0,0.05,3.414,False,,,,0.02,2,,secure at both ends: no boundary inside the bracket,

@@ -3,14 +3,17 @@ Topology-aware linearized frequency dynamics for all-GFM islanded microgrid.
 
 This module implements the Kron-reduced state-space model described in the
 reviewer response (Trujillo et al. framework adapted for 100% inverter-based
-resources). The system matrix A_f depends on both topology G_t (via the
-reduced Jacobian J_r) and the learnable droop gains K_droop (via M_p).
+resources), with per-GFM Virtual-Synchronous-Generator (VSG) swing dynamics:
+2H_i·dΔω_i/dt = ΔP_set,i − ΔP_e,i − D_i·Δω_i. The system matrix A_f depends on
+topology G_t (via the reduced Jacobian J_r), the virtual inertia H_i, and the
+learnable droop gains K_droop (realised as the swing damping D_i = K_i).
 
-Key features vs legacy FrequencyDynamics:
+Key features vs the legacy scalar-COI SG model (removed):
   1. Per-bus frequency deviation (not scalar COI)
   2. Implicit active losses via AC Jacobian (R retained)
   3. Topology enters system matrix through J_r(G_t)
-  4. Learnable droop K_droop_i enters M_p diagonal
+  4. Virtual inertia H_i gives a genuine inertial response (RoCoF = ΔP/2H);
+     learnable droop K_droop_i enters as the swing damping D_i
   5. Matrix exponential integration for speed (cached per topology/K bin)
 
 Reference:
@@ -66,10 +69,11 @@ class LTITopologyFreqDynamics:
     The state vector is x = [Δδ_rel (n_gfm-1), Δω (n_gfm)]^T.
     Relative angles are w.r.t. the reference GFM (largest rating).
 
-    System:
+    System (per-GFM VSG swing, D_i = K_droop_i):
         dx/dt = A_f(G_t, K_droop) x + B_ref ΔP_ref + B_net ΔP_L
     where:
-        A_f = [[0, ω0 * 1^{-1}], [-T_c^{-1} M_p J̃_r, -T_c^{-1}]]
+        A_f = [[0, ω0 * 1^{-1}], [-diag(1/2H) J̃_r, -diag(1/2H) D]]
+        B_ref|_ω = diag(1/2H)
         1^{-1} = relative-angle transform (n_gfm-1 × n_gfm)
     """
 
@@ -84,6 +88,9 @@ class LTITopologyFreqDynamics:
         agc_ki: float = 0.05,
         cache_k_bins: int = 5,
         use_pseudoinverse: bool = True,
+        h_virt_vsg: float = 2.0,
+        h_virt_floor: float = 0.5,
+        s_base_mva: float = 15.7,
     ):
         """
         Args:
@@ -104,6 +111,9 @@ class LTITopologyFreqDynamics:
         self.agc_ki = agc_ki
         self.cache_k_bins = cache_k_bins
         self.use_pseudoinverse = use_pseudoinverse
+        self.h_virt_vsg = float(h_virt_vsg)
+        self.h_virt_floor = float(h_virt_floor)
+        self.s_base_mva = float(s_base_mva)
 
         self._bus_map = bus_map
         self._base_net = base_net
@@ -118,6 +128,11 @@ class LTITopologyFreqDynamics:
         self._gfm_pp_idx = np.array([g.pp_bus_idx for g in self._gfm_params], dtype=int)
         self._gfm_ratings = np.array([g.rating_mva for g in self._gfm_params], dtype=float)
         self._tau_c = np.array([g.tau_filter for g in self._gfm_params], dtype=float)
+        # Virtual inertia per GFM (VSG swing): 2H·dΔω/dt = ΔP_set − ΔP_e − D·Δω.
+        # H must be > 0 for all units (else 1/2H singular); floor enforced in parse.
+        self._H_virt = np.array([g.H_virt for g in self._gfm_params], dtype=float)
+        self._inv2H = 1.0 / (2.0 * self._H_virt)  # per-GFM input/coupling gain
+        self._connected_mask = np.ones(self.n_gfm, dtype=bool)  # all connected by default
 
         self._ref_idx = int(np.argmax(self._gfm_ratings))
         self._ref_gfm_id = self._gfm_params[self._ref_idx].gfm_id
@@ -135,6 +150,8 @@ class LTITopologyFreqDynamics:
 
         self._J_r: np.ndarray | None = None
         self._J_L: np.ndarray | None = None
+        self._pas_row_idx: np.ndarray | None = None
+        self._ppidx_to_Jcol: dict[int, int] = {}
         self._current_topology_id: int | None = None
         self._current_k_bin: int | None = None
 
@@ -157,7 +174,16 @@ class LTITopologyFreqDynamics:
             rating = float(spec.get("inverter_mva", spec.get("bess_mw", 1.0)))
             tau = float(spec.get("tau_filter", self.tau_default))
             mode = str(spec.get("mode", "Droop"))
-            H_virt = float(spec.get("H_virt", 0.0))
+            # Virtual inertia: explicit spec wins; else default by mode. A VSG-mode
+            # unit emulates inertia (h_virt_vsg); a Droop-mode unit still needs a
+            # small positive H (floor) so the 2H·dΔω/dt swing stays well-posed —
+            # in that limit it behaves as quasi-instantaneous droop.
+            if "H_virt" in spec:
+                H_virt = max(float(spec["H_virt"]), self.h_virt_floor)
+            elif mode.upper() == "VSG":
+                H_virt = self.h_virt_vsg
+            else:
+                H_virt = self.h_virt_floor
             self._gfm_params.append(GFMParams(
                 gfm_id=gfm_id,
                 bus_id=bus_id,
@@ -196,17 +222,45 @@ class LTITopologyFreqDynamics:
         if ppc is None:
             raise RuntimeError("net._ppc is None after runpp; cannot extract Jacobian")
 
-        # Translate pandas indices (from _bus_map) to row positions in J_full.
-        # base_net.bus.index can have gaps (e.g., 0..449 with len=123 after MATPOWER
-        # conversion); Y_bus and J_full are indexed by row position (0..n_bus-1).
-        pandas_to_row = {int(p_idx): row for row, p_idx in enumerate(net.bus.index)}
+        # Translate pandas bus indices to row positions in Y_bus / J_full.
+        # CRITICAL: pandapower fuses buses joined by closed switches / zero-impedance
+        # branches in its internal ppc, so net.bus.index is NOT 1:1 with ppc rows --
+        # a fused bus is collapsed onto a representative ppc node while its own leftover
+        # row is left ISOLATED (NaN voltage, zero admittance). A naive positional map
+        # (enumerate over net.bus.index) points such a bus -- notably the reference GFM,
+        # which connects through a fused node -- at its isolated leftover row, zeroing
+        # that GFM's Jacobian row/column. The result is a rank-deficient J~_r and a
+        # marginal (~0) eigenvalue in A_f: a collective inter-machine mode that never
+        # synchronizes within the evaluation window. Use pandapower's fusion-aware
+        # lookup so every GFM/passive bus maps to its TRUE electrical ppc node.
+        lookups = getattr(net, "_pd2ppc_lookups", None)
+        bus_lookup = lookups.get("bus") if isinstance(lookups, dict) else None
+        if bus_lookup is not None:
+            def _row_of(p_idx: int) -> int:
+                return int(bus_lookup[int(p_idx)])
+        else:  # fallback: positional map (no fusion info available)
+            _naive = {int(p_idx): row for row, p_idx in enumerate(net.bus.index)}
+            def _row_of(p_idx: int) -> int:
+                return int(_naive.get(int(p_idx), -1))
+
         self._gfm_row_idx = np.array(
-            [pandas_to_row.get(int(p_idx), -1) for p_idx in self._gfm_pp_idx],
-            dtype=int,
+            [_row_of(p_idx) for p_idx in self._gfm_pp_idx], dtype=int,
         )
 
         J_full = self._build_jacobian(net, ppc)
-        self._J_r, self._J_L = self._kron_reduce(J_full, net)
+        self._J_r, self._J_L, pas_idx = self._kron_reduce(J_full, net)
+        self._pas_row_idx = np.asarray(pas_idx, dtype=int)
+
+        # Map pandapower bus index -> column in J_L for located disturbance injection.
+        # J_L column c corresponds to passive ppc row pas_idx[c]; map each net bus to
+        # its (fused) ppc row, then to that column. Fused buses share a column.
+        ppc_row_to_col = {int(r): c for c, r in enumerate(self._pas_row_idx)}
+        self._ppidx_to_Jcol = {}
+        for p_idx in net.bus.index:
+            r = _row_of(int(p_idx))
+            if r in ppc_row_to_col:
+                self._ppidx_to_Jcol[int(p_idx)] = ppc_row_to_col[r]
+
         self._current_topology_id = topology_id
         self._phi_cache.clear()
         self._A_f_cache.clear()
@@ -259,13 +313,14 @@ class LTITopologyFreqDynamics:
 
         return J_Ptheta
 
-    def _kron_reduce(self, J_full: np.ndarray, net: pp.pandapowerNet) -> tuple[np.ndarray, np.ndarray]:
+    def _kron_reduce(self, J_full: np.ndarray, net: pp.pandapowerNet) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Kron-reduce Jacobian to dynamic (GFM) buses.
 
-        Returns (J_r, J_L) where:
+        Returns (J_r, J_L, pas_idx) where:
             J_r = J_II - J_IL @ inv(J_LL) @ J_LI
             J_L = J_IL @ inv(J_LL)
+            pas_idx = J_full row positions of the passive buses (J_L column order)
         """
         n_bus = J_full.shape[0]
         # Use row positions translated in bind_operating_point, falling back to
@@ -321,30 +376,49 @@ class LTITopologyFreqDynamics:
         J_r = J_r[np.ix_(reorder, reorder)]
         J_L = J_L[reorder, :]
 
-        return J_r, J_L
+        # J_L rows are reordered to GFM order above; its COLUMNS stay in pas_idx
+        # order (J_IL columns were taken in pas_idx order and J_LL_inv is square),
+        # so pas_idx maps each J_L column back to a J_full row position. Returned
+        # so the caller can build a pp-bus -> J_L-column map for located injection.
+        return J_r, J_L, pas_idx
 
     def _build_input_matrices(self) -> None:
         """Build B_ref and B_net input matrices."""
         n_omega = self.n_gfm
-        T_c_inv = np.diag(1.0 / self._tau_c)
 
+        # Power reference enters the swing through the inertia gain diag(1/2H).
         self._B_ref = np.zeros((self._n_state, n_omega), dtype=float)
-        self._B_ref[(self.n_gfm - 1):, :] = T_c_inv
+        self._B_ref[(self.n_gfm - 1):, :] = np.diag(self._inv2H)
 
+        # Passive-bus disturbance map: a per-passive-bus injection ΔP_L_pas enters
+        # the swing through diag(1/2H)·J_L (Kron sensitivity of GFM power mismatch
+        # to passive-bus injections). J_L columns here sum to ≈ −1 (the Jacobian sign
+        # convention), i.e. J_L plays the role of a NEGATED, spatially-distributed
+        # rating share. So B_net = +diag(1/2H)·J_L makes a positive ΔP_L (generation
+        # deficit) push Δω DOWN — matching the legacy scalar path's sign. B_net is
+        # topology-only (no K dependence); rebuilt here per topology right after
+        # _kron_reduce, so the Phi/M (k_bin) cache is unaffected.
         if self._J_L is not None:
             n_passive = self._J_L.shape[1]
             self._B_net = np.zeros((self._n_state, n_passive), dtype=float)
+            self._B_net[(self.n_gfm - 1):, :] = self._inv2H[:, None] * self._J_L
         else:
             self._B_net = np.zeros((self._n_state, 1), dtype=float)
 
     def _assemble_A_f(self, K_droop: np.ndarray) -> np.ndarray:
         """
-        Assemble system matrix A_f for given droop gains.
+        Assemble system matrix A_f for given droop gains (VSG swing dynamics).
 
-        A_f = [[0, ω0 * 1^{-1}],
-               [-T_c^{-1} M_p J̃_r, -T_c^{-1}]]
+        Per-GFM swing equation: 2H_i·dΔω_i/dt = ΔP_set,i − ΔP_e,i − D_i·Δω_i,
+        with ΔP_e = J̃_r·Δδ and damping D_i = K_droop_i (learned droop realised as
+        swing damping, preserving the steady-state droop Δω_ss = ΔP/K). Hence:
 
-        where M_p = diag(1/K_droop_i) and J̃_r is J_r with reference column removed.
+        A_f = [[0,                    ω0 * 1^{-1}      ],
+               [-diag(1/2H) J̃_r,     -diag(1/2H) D    ]]
+
+        The immediate inertial response is RoCoF = ΔP/(2H), independent of K — the
+        defining VSG behaviour. (Legacy first-order droop used -T_c^{-1} M_p J̃_r
+        and -T_c^{-1}; replaced by the inertia-scaled blocks above.)
         """
         n_delta = self.n_gfm - 1
         n_omega = self.n_gfm
@@ -353,18 +427,16 @@ class LTITopologyFreqDynamics:
 
         A_f[:n_delta, n_delta:] = self.omega0 * self._one_inv
 
-        T_c_inv = np.diag(1.0 / self._tau_c)
-
-        K_safe = np.maximum(np.abs(K_droop), 1e-6)
-        M_p = np.diag(1.0 / K_safe)
+        inv2H = self._inv2H  # per-GFM 1/(2H_i), shape (n_gfm,)
+        D = np.maximum(np.abs(K_droop), 1e-6)  # damping = droop gain
 
         if self._J_r is not None:
             J_r_tilde = self._J_r[:, self._non_ref_idx]
-            A_f[n_delta:, :n_delta] = -T_c_inv @ M_p @ J_r_tilde
+            A_f[n_delta:, :n_delta] = -(inv2H[:, None] * J_r_tilde)
         else:
             A_f[n_delta:, :n_delta] = np.zeros((n_omega, n_delta))
 
-        A_f[n_delta:, n_delta:] = -T_c_inv
+        A_f[n_delta:, n_delta:] = -np.diag(inv2H * D)
 
         return A_f
 
@@ -413,6 +485,48 @@ class LTITopologyFreqDynamics:
         self._agc_integral = 0.0
         self._p_ref_pu = 0.0
 
+    def _disturbance_omega_forcing(
+        self,
+        delta_P_L: float | np.ndarray,
+        event_location_pp: int | None = None,
+    ) -> np.ndarray:
+        """Omega-block forcing (shape (n_gfm,)) from the passive-bus disturbance.
+
+        Four cases (plan §1), in priority order:
+          1. event at a GFM bus -> inject directly into that GFM's swing (bypass J_L).
+          2. event maps to a J_L column -> located one-hot injection via B_net.
+          3. delta_P_L is a length-n_passive vector -> use directly via B_net.
+          4. else (scalar / unmappable, e.g. line_trip) -> legacy rating-share scalar.
+        Sign: positive delta_P_L = generation deficit -> Δω down (negative forcing).
+        Shared by step() and nadir_safe_projection() so the in-the-loop guard
+        predicts exactly what step() applies.
+        """
+        inv2H = self._inv2H
+        share = self._gfm_ratings / float(np.sum(self._gfm_ratings))
+        dP_L = np.asarray(delta_P_L, dtype=float)
+        dP_L_total = float(dP_L.sum()) if dP_L.ndim > 0 else float(dP_L)
+        B_net_om = self._B_net[(self.n_gfm - 1):, :] if self._B_net is not None else None
+
+        # Case 1: event at a GFM bus -> direct swing injection.
+        if event_location_pp is not None and event_location_pp in self._gfm_pp_idx:
+            gfm_i = int(np.where(self._gfm_pp_idx == event_location_pp)[0][0])
+            f = np.zeros(self.n_gfm, dtype=float)
+            f[gfm_i] = -inv2H[gfm_i] * dP_L_total
+            return f
+
+        # Case 2: located passive-bus injection via J_L one-hot column.
+        if (event_location_pp is not None and B_net_om is not None
+                and event_location_pp in self._ppidx_to_Jcol):
+            col = int(self._ppidx_to_Jcol[event_location_pp])
+            return B_net_om[:, col] * dP_L_total
+
+        # Case 3: explicit per-passive-bus vector.
+        if (B_net_om is not None and dP_L.ndim == 1 and dP_L.size == B_net_om.shape[1]):
+            return B_net_om @ dP_L
+
+        # Case 4: legacy rating-share scalar (unlocated / line_trip / scalar).
+        return -inv2H * (share * dP_L_total)
+
     def step(
         self,
         dt: float,
@@ -421,6 +535,7 @@ class LTITopologyFreqDynamics:
         K_droop: np.ndarray,
         topology_id: int,
         ffr_active: bool = False,
+        event_location_pp: int | None = None,
     ) -> FrequencyStateLTI:
         """
         Integrate one fast-step using matrix exponential.
@@ -432,6 +547,9 @@ class LTITopologyFreqDynamics:
             K_droop: Per-GFM droop gains, shape (n_gfm,).
             topology_id: Current topology cache index.
             ffr_active: Whether FFR is active (freezes AGC).
+            event_location_pp: Pandapower bus index of the disturbance location.
+                Routes the disturbance through J_L (located injection) when known;
+                None falls back to the legacy rating-share scalar.
 
         Returns:
             FrequencyStateLTI with per-bus and scalar outputs.
@@ -444,8 +562,7 @@ class LTITopologyFreqDynamics:
         rating_total = float(np.sum(self._gfm_ratings))
         share = self._gfm_ratings / rating_total
         if self._B_ref is not None:
-            M_p = np.diag(1.0 / np.maximum(np.abs(K_droop), 1e-6))
-            T_c_inv = np.diag(1.0 / self._tau_c)
+            inv2H = self._inv2H  # input enters the swing via diag(1/2H)
 
             # AGC closure: distribute previous-step integral as P_ref adjustment
             # proportional to rating share. Sign: under-frequency (Δf<0) makes
@@ -453,15 +570,15 @@ class LTITopologyFreqDynamics:
             # to restore f→50 Hz. Uses one-step-delayed integral to avoid algebraic
             # loop (integral updated below from this step's Δf).
             delta_P_ref_eff = np.asarray(delta_P_ref, dtype=float) - self._agc_integral * share
-            u_input[(self.n_gfm - 1):] = T_c_inv @ M_p @ delta_P_ref_eff
+            u_input[(self.n_gfm - 1):] = inv2H * delta_P_ref_eff
 
-            # Passive-bus disturbance: scalar imbalance distributed across GFMs by
-            # rating share. Positive delta_P_L = generation deficit → Δω decreases.
-            # TODO: replace with J_L-based per-passive-bus injection for full
-            # topology-aware response (matches V-G derivation in bigupdate.md).
-            dP_L = np.asarray(delta_P_L, dtype=float)
-            dP_L_total = float(dP_L.sum()) if dP_L.ndim > 0 else float(dP_L)
-            u_input[(self.n_gfm - 1):] -= T_c_inv @ M_p @ (share * dP_L_total)
+            # Passive-bus disturbance: topology-aware per-bus injection via J_L when
+            # the event location is known (located one-hot through B_net), falling
+            # back to the legacy rating-share scalar otherwise. See
+            # _disturbance_omega_forcing for the four resolution cases.
+            u_input[(self.n_gfm - 1):] += self._disturbance_omega_forcing(
+                delta_P_L, event_location_pp
+            )
 
         delta_omega = self._x[(self.n_gfm - 1):]
         delta_f_coi = float(np.sum(self._gfm_ratings * delta_omega) / np.sum(self._gfm_ratings)) * self.f0
@@ -488,6 +605,61 @@ class LTITopologyFreqDynamics:
 
         return self.get_state()
 
+    def simulate_hires(
+        self,
+        dt: float,
+        delta_P_ref: np.ndarray,
+        delta_P_L: float | np.ndarray,
+        K_droop: np.ndarray,
+        topology_id: int,
+        n_sub: int,
+        event_location_pp: int | None = None,
+    ) -> list[float]:
+        """Non-destructive sub-step COI Δf trace over one fast-step (plotting only).
+
+        step() advances the state with a single ZOH jump over dt (=dt_fast), which
+        lands on the quasi-steady value and SKIPS the sub-second nadir transient.
+        For figures we re-simulate the SAME fast-step at micro_dt = dt/n_sub using
+        the group property exp(A_f·dt) = exp(A_f·micro_dt)^n_sub, so the trace's last
+        sample coincides with step()'s post-state (identical up to round-off) while
+        the intermediate samples reveal the true under-damped nadir.
+
+        This is READ-ONLY: it copies self._x and reuses the current AGC integral,
+        mutating nothing. step() still performs the real (training-identical)
+        propagation; this only produces extra observation points. Returns n_sub COI
+        Δf samples (Hz deviation) at spacing micro_dt.
+        """
+        if self._B_ref is None or int(n_sub) <= 1:
+            return []
+        micro_dt = float(dt) / int(n_sub)
+        A_f = self._assemble_A_f(np.asarray(K_droop, dtype=float))
+        n = self._n_state
+        aug = np.zeros((2 * n, 2 * n), dtype=float)
+        aug[:n, :n] = A_f
+        aug[:n, n:] = np.eye(n)
+        aug_exp = scipy.linalg.expm(aug * micro_dt)
+        Phi_s, M_s = aug_exp[:n, :n], aug_exp[:n, n:]
+
+        # Mirror step()'s u_input EXACTLY (same delta_P_ref_eff with one-step-delayed
+        # AGC integral + located disturbance forcing).
+        share = self._gfm_ratings / float(np.sum(self._gfm_ratings))
+        u_input = np.zeros(self._n_state, dtype=float)
+        delta_P_ref_eff = np.asarray(delta_P_ref, dtype=float) - self._agc_integral * share
+        u_input[(self.n_gfm - 1):] = self._inv2H * delta_P_ref_eff
+        u_input[(self.n_gfm - 1):] += self._disturbance_omega_forcing(
+            delta_P_L, event_location_pp
+        )
+
+        x = self._x.copy()
+        rating = self._gfm_ratings
+        rating_sum = float(np.sum(rating))
+        out: list[float] = []
+        for _ in range(int(n_sub)):
+            x = Phi_s @ x + M_s @ u_input
+            delta_omega = x[(self.n_gfm - 1):]
+            out.append(float(np.sum(rating * delta_omega) / rating_sum) * self.f0)
+        return out
+
     def nadir_safe_projection(
         self,
         delta_P_ref: np.ndarray,
@@ -496,21 +668,21 @@ class LTITopologyFreqDynamics:
         topology_id: int,
         delta_f_under: float = 0.5,
         delta_f_over: float = 0.5,
+        event_location_pp: int | None = None,
     ) -> tuple[np.ndarray, bool, float, float]:
-        """Closed-form minimal-perturbation safety projection on delta_P_ref.
+        """Closed-form minimal-perturbation safety projection on delta_P_ref (COI).
 
-        Predicts the next-step COI Δf as an affine function of delta_P_ref using
-        the SAME ZOH dynamics as step(), then — if the prediction would breach the
-        nadir/zenith band [-delta_f_under, +delta_f_over] — Euclidean-projects
-        delta_P_ref onto the active half-space (single linear constraint, so the
-        projection is closed-form; no QP solver needed). This is the nadir
-        "Safety Layer": minimal intervention, near-zero compute, runs in-the-loop.
+        Predicts the next-step COI Δf as an affine function of delta_P_ref using the
+        SAME ZOH dynamics + located disturbance forcing as step(); if the prediction
+        would breach the band [-delta_f_under, +delta_f_over], Euclidean-projects
+        delta_P_ref onto the active half-space (single linear constraint -> closed
+        form, no QP solver). The COI is the system-frequency observable resolvable at
+        the 1 s FFR/SFR control step (Anderson 1990); per-GFM inter-machine deviations
+        are a sub-second phenomenon outside this control timescale, so the guard acts
+        on the COI -- the quantity the controller is rewarded and evaluated on.
 
-        Δf_pred = a + bᵀ·ΔP_ref, with a,b built to mirror step() exactly
-        (AGC one-step-delay + rating-share disturbance). Assumes the refinement
-        does not hit the power cap (closed-form regime); downstream rating/reserve
-        clipping handles the rare cap case.
-
+        Δf_pred = a + bᵀ·ΔP_ref, with a,b built to mirror step() (AGC one-step-delay +
+        located disturbance forcing via _disturbance_omega_forcing).
         Returns (delta_P_ref_safe, activated, projection_distance, df_pred).
         """
         n = self.n_gfm
@@ -519,20 +691,17 @@ class LTITopologyFreqDynamics:
             return dPref0, False, 0.0, 0.0
 
         Phi, M = self._get_phi(K_droop, topology_id)
-        rating_total = float(np.sum(self._gfm_ratings))
-        w = self._gfm_ratings / rating_total                       # COI weights
-        share = w                                                  # rating share
-        M_p = np.diag(1.0 / np.maximum(np.abs(K_droop), 1e-6))
-        T_c_inv = np.diag(1.0 / self._tau_c)
-        G = T_c_inv @ M_p                                          # ΔP_ref → u_omega
-        dP_L = np.asarray(delta_P_L, dtype=float)
-        dP_L_total = float(dP_L.sum()) if dP_L.ndim > 0 else float(dP_L)
-        c_u = -(T_c_inv @ M_p @ share) * (self._agc_integral + dP_L_total)
+        w = self._gfm_ratings / float(np.sum(self._gfm_ratings))   # COI (rating) weights
+        G = np.diag(self._inv2H)                                   # ΔP_ref → u_omega
+        # c_u: the ΔP_ref-independent part of u_omega — AGC one-step-delay + the SAME
+        # located disturbance forcing step() applies (keeps guard ⇄ plant in lockstep).
+        c_u = -(self._inv2H * w) * self._agc_integral \
+            + self._disturbance_omega_forcing(delta_P_L, event_location_pp)
 
         M_om_om = M[(n - 1):, (n - 1):]                            # omega-block of M
         Phi_x_om = (Phi @ self._x)[(n - 1):]
         a = self.f0 * float(w @ (Phi_x_om + M_om_om @ c_u))
-        b = self.f0 * (G.T @ (M_om_om.T @ w))                      # ∂Δf_pred/∂ΔP_ref
+        b = self.f0 * (G.T @ (M_om_om.T @ w))                      # ∂Δf_coi/∂ΔP_ref
         df_pred = a + float(b @ dPref0)
 
         activated = False
@@ -597,6 +766,33 @@ class LTITopologyFreqDynamics:
     @property
     def gfm_ratings(self) -> np.ndarray:
         return self._gfm_ratings.copy()
+
+    def update_topology(self, connected_gfm_ids: set[str] | None = None) -> None:
+        """Mark which GFMs are electrically connected (affects aggregate h_sys).
+
+        When a tie-switch
+        reconfiguration isolates a GFM, it no longer contributes virtual inertia.
+        Kron reduction already handles the network coupling; this only gates the
+        rating-weighted inertia sum exposed via the h_sys property.
+        """
+        if connected_gfm_ids is None:
+            self._connected_mask = np.ones(self.n_gfm, dtype=bool)
+            return
+        self._connected_mask = np.array(
+            [g.gfm_id in connected_gfm_ids for g in self._gfm_params], dtype=bool
+        )
+
+    @property
+    def h_sys(self) -> float:
+        """Aggregate system inertia constant H_sys = Σ(H_i·S_i)/S_BASE [s].
+
+        Rating-weighted over connected GFMs only. This is the virtual inertia the
+        VSG fleet emulates — there is no rotating mass in a 100% IBR microgrid —
+        and is consumed by the MPC battery correction (evcs_model.mpc_correction).
+        """
+        mask = self._connected_mask
+        hs = float(np.sum(self._H_virt[mask] * self._gfm_ratings[mask]) / self.s_base_mva)
+        return hs
 
     @property
     def reference_gfm_id(self) -> str:

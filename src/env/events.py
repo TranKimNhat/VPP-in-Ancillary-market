@@ -32,6 +32,10 @@ class EventConfig:
     location: int  # bus or line index
     t_inject: float = 30.0
     injected: bool = False
+    # Pandapower bus index of the disturbance, resolved during inject(). Enables
+    # located J_L injection in the frequency model. None for line_trip (no single
+    # bus) or when the location can't be mapped.
+    location_pp: int | None = None
 
 
 class EventInjector:
@@ -196,6 +200,7 @@ class EventInjector:
             bus_pp = self._busnum_to_pp_idx(net, int(event.location))
             if bus_pp is None:
                 raise ValueError(f"load_step bus {event.location} not found")
+            event.location_pp = int(bus_pp)
             load_mask = net.load["bus"] == bus_pp
             load_idx = list(net.load.index[load_mask])
             if load_idx:
@@ -207,6 +212,7 @@ class EventInjector:
             bus_pp = self._busnum_to_pp_idx(net, int(event.location))
             if bus_pp is None:
                 raise ValueError(f"gen_trip bus {event.location} not found")
+            event.location_pp = int(bus_pp)
             trip_amount = abs(delta_p)
             remaining = trip_amount
             sgen_idx = list(net.sgen.index[net.sgen["bus"] == bus_pp])
@@ -257,12 +263,14 @@ class EventInjector:
             bus_pp = self._busnum_to_pp_idx(net, int(event.location))
             if bus_pp is None:
                 raise ValueError(f"high_ren bus {event.location} not found")
+            event.location_pp = int(bus_pp)
             sgen_idx = list(net.sgen.index[net.sgen["bus"] == bus_pp])
             if sgen_idx:
                 add_each = abs(delta_p) / float(len(sgen_idx))
                 for idx in sgen_idx:
                     net.sgen.at[idx, "p_mw"] = float(net.sgen.at[idx, "p_mw"]) + add_each
-            delta_p = abs(delta_p)
+            # Surplus generation → freq rises → negative power imbalance (gen > load)
+            delta_p = -abs(delta_p)
 
         else:
             raise ValueError(f"Unknown event type: {event.type}")

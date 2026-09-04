@@ -17,9 +17,15 @@ exist, replace these with the actual ``src/eval/eval_*.py`` outputs.
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from beautiful_style import apply_style, beautify_all, METHOD_PALETTE_BF
+
+apply_style()
 
 # --------------------------------------------------------------------- styling
 FIG_DIR = Path(__file__).resolve().parent.parent / "paper" / "figures"
@@ -34,14 +40,7 @@ METHOD_ORDER = [
     "No FFR",
 ]
 
-PALETTE = {
-    "GraphSAGE-MAPPO": "#1f3a93",   # bold blue - Proposed
-    "MLP-MAPPO":       "#e94e77",
-    "GCNN-PPO":        "#f5a623",
-    "MATD3":           "#6a737d",
-    "Fixed Droop":     "#56c596",
-    "No FFR":          "#a04668",
-}
+PALETTE = dict(METHOD_PALETTE_BF)
 
 # Mock numbers from section6_results.tex (Tables VI, VII, IX, XII)
 NADIR = {
@@ -131,7 +130,7 @@ def make_fig_freq_grid() -> None:
         "S1 (load_step +2.5 MW)":  ("S1", 30.0),
         "S2 (gen_trip −3.9 MW)":   ("S2", 30.0),
         "S3 (line_trip −2.4 MW)":  ("S3", 30.0),
-        "S4 (gen_trip −5.5 MW)":   ("S4", 30.0),
+        "S4 (high_ren +4.7 MW)":   ("S4", 30.0),
     }
     fig, axes = plt.subplots(2, 2, figsize=(12.5, 8), sharex=True, sharey=True)
     axes_flat = axes.flatten()
@@ -170,7 +169,7 @@ def make_fig_freq_grid() -> None:
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Frequency (Hz)")
         ax.set_ylim(46.5, 50.6)
-        ax.grid(alpha=0.3)
+        beautify_all([ax])
 
     # Single shared legend
     handles, labels = axes_flat[0].get_legend_handles_labels()
@@ -183,7 +182,8 @@ def make_fig_freq_grid() -> None:
     fig.suptitle("Frequency response across contingency scenarios — Proposed vs baselines", fontsize=13, y=1.0)
     plt.tight_layout(rect=[0, 0.04, 1, 0.98])
     out = FIG_DIR / "fig_freq_grid_S1_S4.png"
-    fig.savefig(out, dpi=150, bbox_inches="tight")
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {out.name}")
 
@@ -214,10 +214,11 @@ def make_fig_iae_bars() -> None:
     ax.set_ylabel("Post-event IAE (Hz·s)")
     ax.set_title("Post-event IAE per scenario (mean ± std, 20 runs)")
     ax.legend(loc="upper left", fontsize=8, ncol=2)
-    ax.grid(alpha=0.3, axis="y")
+    beautify_all([ax])
     plt.tight_layout()
     out = FIG_DIR / "fig_iae_bars.png"
-    fig.savefig(out, dpi=150)
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {out.name}")
 
@@ -264,10 +265,11 @@ def make_fig6_iae_vs_distance() -> None:
     ax.set_ylabel("IAE post-event degradation (%)")
     ax.set_title("Topology generalisation: IAE degradation vs edge distance")
     ax.legend(loc="upper left", fontsize=8.5)
-    ax.grid(alpha=0.3)
+    beautify_all([ax])
     plt.tight_layout()
     out = FIG_DIR / "fig6_iae_vs_distance.png"
-    fig.savefig(out, dpi=150)
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {out.name}")
 
@@ -296,13 +298,14 @@ def make_fig_severity() -> None:
     ax.set_ylim(-5, 105)
     ax.set_xlim(1.0, 6.0)
     ax.legend(loc="lower left", fontsize=9)
-    ax.grid(alpha=0.3)
+    beautify_all([ax])
     # Annotate % S_BASE on secondary x-axis
     ax2 = ax.secondary_xaxis("top", functions=(lambda x: x / 15.705 * 100, lambda y: y * 15.705 / 100))
     ax2.set_xlabel("% of $S_{BASE}$")
     plt.tight_layout()
     out = FIG_DIR / "fig_severity.png"
-    fig.savefig(out, dpi=150)
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {out.name}")
 
@@ -352,10 +355,11 @@ def make_fig12_revenue_decomposition() -> None:
     ax.set_ylabel("Cashflow per day (€)")
     ax.set_title("Daily revenue decomposition by method (€/day, system-wide)")
     ax.legend(loc="lower left", fontsize=8.5, ncol=2)
-    ax.grid(alpha=0.3, axis="y")
+    beautify_all([ax])
     plt.tight_layout()
     out = FIG_DIR / "fig12_revenue_decomposition.png"
-    fig.savefig(out, dpi=150)
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {out.name}")
 
@@ -401,11 +405,12 @@ def make_fig13_pareto() -> None:
     ax.set_ylabel("Net profit per day (€)")
     ax.set_title("Profitability vs frequency-security trade-off")
     ax.set_xlim(-5, 105)
-    ax.grid(alpha=0.3)
+    beautify_all([ax])
     ax.legend(loc="lower right", fontsize=9)
     plt.tight_layout()
     out = FIG_DIR / "fig13_pareto_profit_vs_ffr.png"
-    fig.savefig(out, dpi=150)
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {out.name}")
 
@@ -485,7 +490,7 @@ def make_fig_cooperative_dispatch() -> None:
         ("S1 load_step +2.5 MW", 2.5),
         ("S2 gen_trip −3.9 MW", -3.9),
         ("S3 line_trip −2.4 MW", -2.4),
-        ("S4 gen_trip −4.5 MW", -5.5),
+        ("S4 high_ren +4.7 MW", +4.7),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(12, 7.5), sharex=True)
     axes_flat = axes.flatten()
@@ -505,7 +510,7 @@ def make_fig_cooperative_dispatch() -> None:
         ax.set_title(title, fontsize=11)
         ax.set_ylabel("Power injection (pu)")
         ax.set_xlabel("Time (s)")
-        ax.grid(alpha=0.3)
+        beautify_all([ax])
 
     handles, labels = axes_flat[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=4, fontsize=9, bbox_to_anchor=(0.5, -0.02))
@@ -513,7 +518,8 @@ def make_fig_cooperative_dispatch() -> None:
                  fontsize=12.5, y=0.995)
     plt.tight_layout(rect=[0, 0.05, 1, 0.97])
     out = FIG_DIR / "fig_cooperative_dispatch.png"
-    fig.savefig(out, dpi=150, bbox_inches="tight")
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {out.name}")
 
@@ -590,7 +596,7 @@ def make_fig_freq_analytic() -> None:
         ("S1 load_step (+2.5 MW)",  +2.5, 30.0, 80.0),
         ("S2 gen_trip (-3.9 MW)",   -3.9, 30.0, 80.0),
         ("S3 line_trip (-2.4 MW)",  -2.4, 30.0, 80.0),
-        ("S4 gen_trip (-4.5 MW)",   -4.5, 30.0, 100.0),
+        ("S4 high_ren (+4.7 MW)",   +4.7, 30.0, 100.0),
     ]
     method_ffr = {
         "GraphSAGE-MAPPO": 0.12,   # ~12% S_BASE of fast injection
@@ -628,7 +634,7 @@ def make_fig_freq_analytic() -> None:
         ax.set_ylabel("Frequency (Hz)")
         ax.set_xlim(0, t_end)
         ax.set_ylim(48.7, 51.0)
-        ax.grid(alpha=0.3)
+        beautify_all([ax])
 
     handles, labels = axes_flat[0].get_legend_handles_labels()
     seen, uniq = set(), []
@@ -641,7 +647,8 @@ def make_fig_freq_analytic() -> None:
                  fontsize=12.5, y=0.995)
     plt.tight_layout(rect=[0, 0.05, 1, 0.97])
     out = FIG_DIR / "fig_freq_analytic.png"
-    fig.savefig(out, dpi=150, bbox_inches="tight")
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {out.name}")
 
@@ -658,7 +665,7 @@ def make_fig_freq_analytic_zoom() -> None:
         ("S1 load_step (+2.5 MW)",  +2.5, 30.0),
         ("S2 gen_trip (-3.9 MW)",   -3.9, 30.0),
         ("S3 line_trip (-2.4 MW)",  -2.4, 30.0),
-        ("S4 gen_trip (-4.5 MW)",   -4.5, 30.0),
+        ("S4 high_ren (+4.7 MW)",   +4.7, 30.0),
     ]
     method_ffr = {
         "GraphSAGE-MAPPO": 0.12,
@@ -701,7 +708,7 @@ def make_fig_freq_analytic_zoom() -> None:
         ax.set_ylabel("Frequency (Hz)")
         ax.set_xlim(-1.0, zoom_window)
         ax.set_ylim(48.7, 51.0)
-        ax.grid(alpha=0.3)
+        beautify_all([ax])
 
     handles, labels = axes_flat[0].get_legend_handles_labels()
     seen, uniq = set(), []
@@ -714,18 +721,23 @@ def make_fig_freq_analytic_zoom() -> None:
                  fontsize=12.5, y=0.995)
     plt.tight_layout(rect=[0, 0.07, 1, 0.97])
     out = FIG_DIR / "fig_freq_analytic_zoom.png"
-    fig.savefig(out, dpi=150, bbox_inches="tight")
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
     print(f"wrote {out.name}")
 
 
 if __name__ == "__main__":
-    make_fig_freq_grid()
+    # NOTE: fig_freq_grid_S1_S4 is produced from REAL traces by
+    # scripts/regenerate_freq_grid_real.py — do not overwrite it with the mock.
     make_fig_iae_bars()
-    make_fig6_iae_vs_distance()
-    make_fig_severity()
+    # NOTE: fig6_iae_vs_distance is produced from the REAL CSV by
+    # scripts/regenerate_figures_from_csv.py — do not overwrite with the mock.
+    # NOTE: fig_severity is produced from the REAL severity CSV by
+    # scripts/regenerate_figures_from_csv.py — do not overwrite with the mock.
     make_fig12_revenue_decomposition()
-    make_fig13_pareto()
+    # NOTE: fig13_pareto is produced from the REAL economics CSV by
+    # scripts/regenerate_figures_from_csv.py — do not overwrite with the mock.
     make_fig_cooperative_dispatch()
     make_fig_freq_analytic()
     make_fig_freq_analytic_zoom()

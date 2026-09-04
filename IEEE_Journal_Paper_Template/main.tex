@@ -1,7 +1,7 @@
 \documentclass[lettersize,journal]{IEEEtran}
 \usepackage{amsmath,amsfonts,amssymb}
-\usepackage{algorithmic}
 \usepackage{algorithm}
+\usepackage{algpseudocode}
 \usepackage{array}
 \usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
 \usepackage{textcomp}
@@ -9,622 +9,922 @@
 \usepackage{url}
 \usepackage{verbatim}
 \usepackage{graphicx}
+\usepackage{makecell}
 \usepackage{cite}
 \usepackage{multirow}
 \usepackage{booktabs}
 \usepackage{threeparttable}
 \usepackage{enumitem}
-\hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
+
+
+% \hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
 % updated with editorial comments 8/9/2021
 
 
 \usepackage{orcidlink}
-
+\algrenewcommand\algorithmicrequire{\textbf{Input:}}
+\algrenewcommand\algorithmicensure{\textbf{Output:}}
 
 \begin{document}
-
-\title{Graph Learning for Topology-Adaptive Fast Frequency Response in Inverter-Based Microgrids}
-
-% \author{IEEE Publication Technology,~\IEEEmembership{Staff,~IEEE,}
-%         % <-this % stops a space
-% \thanks{This paper was produced by the IEEE Publication Technology Group. They are in Piscataway, NJ.}% <-this % stops a space
-% \thanks{Manuscript received April 19, 2021; revised August 16, 2021.}}
-
-\author{Tran Kim Nhat, Nguyen Van Cuong\orcidlink{0000-0001-8877-7735},~\IEEEmembership{Graduate Student Member,~IEEE}, Nguyen Phi Long\orcidlink{0000-0002-3788-8731},~\IEEEmembership{Member,~IEEE}, and Laurent El Ghaoui\orcidlink{0000-0002-0499-5610}
 	
-%	\thanks{Manuscript received January 1, 20xx; revised xxxx xx, xxxx. \textit{(Corresponding author: Nguyen Phi Long)}. The authors acknowledge the financial support provided by the Vingroup Innovation Foundation (VINIF) under Project VINIF.2025.DA119.}
+	% \title{Safe Multi-Agent Graph Learning for Fast Frequency Response of Virtual Power Plants in Inverter-Based Islanded Microgrids}
 	
-	\thanks{The authors acknowledge the financial support provided by the Vingroup Innovation Foundation (VINIF) under Project VINIF.2025.DA119. \textit{(Corresponding author: Nguyen Phi Long.)}}
+	% \title{Topology-Adaptive Graph Learning for Fast Frequency Response of Virtual Power Plants in Inverter-Based Islanded Microgrids}
+	
+	\title{Safe Multi-Agent Graph Learning for Fast Frequency Response of Virtual Power Plants in Inverter-Based Islanded Microgrids}
+	
+	
+	
+	% \author{IEEE Publication Technology,~\IEEEmembership{Staff,~IEEE,}
+		%         % <-this % stops a space
+		% \thanks{This paper was produced by the IEEE Publication Technology Group. They are in Piscataway, NJ.}% <-this % stops a space
+		% \thanks{Manuscript received April 19, 2021; revised August 16, 2021.}}
+	
+	
+	
+	
+	
+	\author{Tran Kim Nhat, Nguyen Van Cuong\orcidlink{0000-0001-8877-7735},
+		~\IEEEmembership{Graduate Student Member,~IEEE},
+		Nguyen Phi Long\orcidlink{0000-0002-3788-8731},
+		~\IEEEmembership{Member,~IEEE},
+		and Laurent El Ghaoui\orcidlink{0000-0002-0499-5610}
 		
-	\thanks{T.K. Nhat, N.V. Cuong, N.P. Long, and Laurent El Ghaoui, are with Center for Environmental Intelligence and College of Engineering \& Computer Science, VinUniversity, Hanoi 100000, Vietnam (e-mail: nhat.tk@vinuni.edu.vn; 25cuong.nv@vinuni.edu.vn; long.np2@vinuni.edu.vn; laurent.eg@vinuni.edu.vn).}
+		\thanks{The authors acknowledge the financial support provided by the
+			Vingroup Innovation Foundation (VINIF) under Project VINIF.2025.DA119.
+			\textit{(Corresponding author: Nguyen Phi Long.)}}
+		
+		\thanks{T. K. Nhat, N. V. Cuong, N. P. Long, and L. El Ghaoui are with Center for
+			Environmental Intelligence and College of Engineering \& Computer
+			Science, VinUniversity, Hanoi 100000, Vietnam
+			(e-mails: nhat.tk@vinuni.edu.vn; 25cuong.nv@vinuni.edu.vn; long.np2@vinuni.edu.vn;
+			laurent.eg@vinuni.edu.vn).}
+		
+		\thanks{N. V. Cuong and N. P. Long are also with School of
+			Electrical and Electronic Engineering, Hanoi University of Industry,
+			Hanoi 100000, Vietnam (e-mails: cuongnv@haui.edu.vn; long.nguyen04@haui.edu.vn).}
+		
+		% \thanks{N. V. Cuong is also with School of Electrical and Electronic
+			% 	Engineering, Hanoi University of Industry, Hanoi 100000, Vietnam
+			% 	(e-mail: cuongnv@haui.edu.vn).}
+		
+		% \thanks{N. P. Long is with School of Electrical and Electronic
+			% 	Engineering, Hanoi University of Industry, Hanoi 100000, Vietnam
+			% 	(e-mail: long.nguyen04@haui.edu.vn).}
+		
+		
+	}
 	
-	\thanks{N.V. Cuong and N.P. Long are also with School of Electrical and Electronic Engineering, Hanoi University of Industry, Hanoi 100000, Vietnam (e-mail: cuongnv@haui.edu.vn; long.nguyen04@haui.edu.vn).}
-}
-
-
-
-% The paper headers
-% \markboth{Journal of \LaTeX\ Class Files,~Vol.~14, No.~8, August~2021}%
-% {Shell \MakeLowercase{\textit{et al.}}: A Sample Article Using IEEEtran.cls for IEEE Journals}
-
-%\IEEEpubid{0000--0000/00\$00.00~\copyright~2021 IEEE}
-% Remember, if you use this you must call \IEEEpubidadjcol in the second
-% column for its text to clear the IEEEpubid mark.
-
-\maketitle
-
-\begin{abstract}
-High penetration of inverter-based resources (IBRs) in islanded microgrids reduces system inertia and makes fast frequency response (FFR) sensitive to feeder reconfiguration, which the fixed-gain, topology-blind droop loop cannot track. This paper proposes a topology-adaptive FFR controller that couples an inductive GraphSAGE encoder over the active feeder graph with a parameter-shared multi-agent proximal policy optimization (MAPPO) actor under centralized training with decentralized execution; each distributed energy resource jointly emits a fast active-power reference and a local droop gain. The training environment is a topology-dependent reduced state-space frequency model whose inter-unit coupling is reshaped by each reconfiguration through the Kron-reduced network Jacobian, and frequency security is enforced by a shared envelope a monotone-gain Lyapunov certificate and a closed-form nadir-projection layer applied identically to every controller. Trained on a single topology of a modified islanded IEEE 123-bus feeder and evaluated zero-shot on $24$ unseen reconfigurations, the proposed controller re-enters the ENTSO-E $\pm50$~mHz band $1.9$--$3.0\times$ faster than the learning baselines ($9$--$14$~s versus $17$--$43$~s) with a $20$--$72\times$ lower time-weighted error, and retains its post-event integral frequency error within $6\,\%$ of the training-feeder value across the hold-out the lowest unseen error of any controller, $53\,\%$ below the next-best learning baseline, whose errors grow by $112$--$421\,\%$. Against fixed droop it raises the severe-event nadir by up to $1.0$~Hz at the lowest per-event cost of the learning controllers ($1.73$--$1.78$~\texteuro).
-\end{abstract}
-
-
-
-\begin{IEEEkeywords}
-Fast frequency response (FFR), islanded microgrids (IMGs), inverter-based resources (IBR), virtual power plant (VPP), GraphSAGE network, multi-agent reinforcement learning (MARL), proximal policy optimization (PPO)
-\end{IEEEkeywords}
-
-% =====================================================================
-\section*{Nomenclature}
-\begin{IEEEdescription}[\IEEEsetlabelwidth{$\Delta P_{\mathrm{ref}},\Delta P_{\mathrm{imb}}$}]
-\item[$g,\,i,\,m,\,t$] Index of GFM unit, DER, agent, time step.
-\item[$I,\,L$] Retained GFM buses; eliminated load buses.
-\item[$\mathcal{A},\,\mathcal{Z}$] Set of GFL agents; set of VPP zones.
-\item[$\mathcal{G}_t,\,\mathcal{N}(j)$] Active feeder graph; neighborhood of node $j$.
-\item[$H_g,\,H_{\mathrm{sys}}$] GFM virtual inertia; aggregate system inertia.
-\item[$D_g,\,n_g$] GFM damping coefficient; number of GFM units.
-\item[$f_0,\,\omega_0$] Nominal frequency; $\omega_0=2\pi f_0$.
-\item[$S_{\mathrm{base}},\,S_g$] System base power; rating of unit $g$.
-\item[$P_{\mathrm{rated}},\,\Delta t$] DER rated power; fast control step.
-\item[$K_{\min},K_{\max}$] Lower/upper droop-gain bound.
-\item[$\delta$] Nadir-admissible COI band ($0.5$\,Hz).
-\item[$\gamma,\,\lambda,\,\epsilon$] Discount; GAE factor; PPO clip range.
-\item[$\Delta\omega_g,\Delta\delta_g$] Frequency/angle deviation of unit $g$ (vectors $\Delta\boldsymbol{\omega}$, $\Delta\boldsymbol{\delta}_{\mathrm{rel}}$).
-\item[$x,\,u_t$] State vector; control input.
-\item[$\Delta P_{\mathrm{set},g},\Delta P_{e,g}$] Power set point; electrical-power deviation.
-\item[$\Delta P_{\mathrm{ref}},\Delta P_{\mathrm{imb}}$] Commanded reference; disturbance imbalance.
-\item[$\Delta P^{\mathrm{ffr}}_{i,t},\,R^{\mathrm{ffr}}_{i,t}$] Incremental FFR power; deliverable reserve.
-\item[$\mathrm{SoC}_t$] State of charge.
-\item[$V_t,S_t,P_t,Q_t$] Voltage, loading, and line-flow profiles.
-\item[$\Delta f_t,\,\dot f_t$] COI frequency deviation; RoCoF.
-\item[$a_m,a^P_m,a^K_m$] Agent action; power and droop channels.
-\item[$K_m$] Learned local droop gain of agent $m$.
-\item[$H_j^{(k)}$] Embedding of node $j$ at GraphSAGE layer $k$.
-\item[$r_t,\,\hat A_t,\,\rho_t$] Team reward; GAE advantage; PPO ratio.
-\item[$A_f(\mathcal{G}_t,K_t)$] Topology-parameterized state matrix.
-\item[$B_{\mathrm{ref}},B_{\mathrm{net}}$] Reference and located-disturbance input maps.
-\item[$\tilde J_r,\,J_{(\cdot)}$] Kron-reduced power Jacobian and blocks.
-\item[$D(K_t)$] Effective damping matrix.
-\item[$W_{\mathrm{self}},W_{\mathrm{neigh}}$] Shared GraphSAGE aggregator weights.
-\item[$V,\,M$] Lyapunov function; inertia matrix.
-\end{IEEEdescription}
-
-\section{Introduction}
-% ==================================================================
-\label{sec:intro}
-% ==================================================================
-
-\IEEEPARstart{T}{he} transition toward $100$\,\% inverter-based resources (IBRs) in islanded distribution feeders removes the synchronous inertia that has traditionally bounded the rate of change of frequency (RoCoF), pushing the post-disturbance frequency \emph{nadir} toward under-frequency load-shedding (UFLS) thresholds and, in severe cases, blackout~\cite{roy2022overview}. Secure operation therefore requires the inverter-interfaced distributed energy resources (DERs) battery energy storage (BESS), vehicle-to-grid (V2G) chargers, and distributed photovoltaics (DPV) to deliver \emph{fast frequency response} (FFR) on sub-second-to-second time scales, coordinated with the grid-forming (GFM) inverters that set the voltage and frequency reference~\cite{perez2023adaptive,salem2025gfmreview}. The scheme deployed today is the \emph{classical droop} controller, in which each DER injects a power increment proportional to the local frequency deviation,
-\begin{equation}
-\Delta P^{\mathrm{ffr}}_{i,t}=-K_i\,\Delta f_t,
-\label{eq:classical_droop}
-\end{equation}
-with a fixed per-device gain~$K_i$. This loop has two structural limitations. \emph{First, the gain is fixed:} commissioned for the worst foreseeable event, it is under-utilized during mild disturbances and cannot amplify near UFLS or surrender headroom when storage energy is scarce~\cite{boutfarjoute2025fuzzy,kerdphol2017robust}. \emph{Second, the controller is topology-blind:} FFR deliverability is set jointly by the DER fleet and the active feeder graph, which distribution-system-operator (DSO) tie-switch reconfiguration and line contingencies continually reshape~\cite{mohyuddin2022dsovpp,jacob2024outage}, yet neither $K_i$ nor the state in~\eqref{eq:classical_droop} encodes the active graph.
-
-Adaptive virtual-inertia and virtual-synchronous-generator (VSG) control improves RoCoF and nadir over fixed droop under time-varying generation, and field demonstrations confirm that GFM--VSG inverters can stabilize a 100\% IBR microgrid without rotating machines~\cite{hamanah2024robust}; these controllers, however, are re-tuned by small-signal analysis around a fixed feeder and operating point, treating topology variation as parametric uncertainty rather than a structural change of the graph. Multi-agent reinforcement learning (MARL) under centralized training with decentralized execution (CTDE) coordinates large DER populations for dispatch, voltage, and primary frequency control~\cite{dolatyabi2025happo,shi2025coordvpp,qiu2023hierarchical}, yet standard formulations rely on multi-layer-perceptron (MLP) encoders or transductive graph convolutions that embed a \emph{fixed} adjacency~\cite{wang2025mappo,wang2023graphppo,guo2024gcnnppo,guo2024ldlfc}, binding observations, message-passing neighborhoods, and policies to the training graph, and they expose either a power-reference \emph{or} a droop-gain action, rarely both~\cite{hu2022multitimescale}. Inductive graph neural networks such as GraphSAGE~\cite{hamilton2017graphsage} learn aggregator functions that generalize to unseen graphs and have been applied to topology-varying emergency control on transmission systems~\cite{pei2023graphsage,CHEN2023930}; to our knowledge, however, no prior study combines an inductive encoder, a per-DER joint power-reference/droop-gain action, and an islanded $100$\,\% IBR setting under a zero-shot topology hold-out. We accordingly disclaim novelty of GraphSAGE itself and of the GraphSAGE--RL combination~\cite{pei2023graphsage}; the contribution lies in the problem, the architecture, and the evaluation.
-
-Three gaps persist. FFR deliverability is commonly modeled from the local energy state alone, ignoring the active graph and the resulting voltage and current envelopes. The power reference and the droop gain are never exposed to the policy jointly, so the controller can neither pre-position storage nor trade transient support against energy headroom in real time. And MARL FFR controllers are almost universally evaluated on their training topologies, leaving the zero-shot generalization gap on frequency-security metrics nadir, integral absolute error (IAE), RoCoF, and UFLS success rate unquantified.
-
-This paper closes these gaps with three contributions.
-
-\begin{enumerate}[leftmargin=*]
-  \item \textbf{Topology-coupled deliverability and frequency model.} We cast the available FFR reserve and the effectiveness of a droop commitment as functions of the active feeder graph, bus voltages, and inverter loading, and evaluate the response through a topology-dependent reduced state-space model $\mathbf{A}_f(\mathcal{G}_t,\mathbf{K}_t)$ whose inter-GFM coupling is reshaped by each reconfiguration through the Kron-reduced network Jacobian removing the inconsistency of driving a topology-adaptive policy with a reconfiguration-invariant centre-of-inertia model.
-
-  \item \textbf{GraphSAGE--MAPPO with a joint action and a safety envelope.} An inductive GraphSAGE encoder over the active graph feeds a parameter-shared MAPPO actor under CTDE that emits, per DER, a joint power-reference/droop-gain action $(a^{P}_{i,t},a^{K}_{i,t})$, replacing the fixed-gain droop loop. Frequency security is enforced as a shared safe-by-construction envelope: a monotone-gain parameterization with a Lyapunov certificate over the feasible topology set, backbone-governed RoCoF, and a closed-form nadir-projection layer.
-
-  \item \textbf{Zero-shot topology hold-out on frequency-security metrics.} We train on a single feeder topology and evaluate zero-shot on $24$ disjoint unseen reconfigurations of a modified islanded IEEE 123-bus feeder, isolating the source of topology adaptation through an encoder-only ablation under an identical learning stack to our knowledge the first MARL FFR controller for islanded microgrids verified this way.
-\end{enumerate}
-
-The remainder of the paper is organized as follows. Section~\ref{sec:model} presents the islanded IBR microgrid, its component and topology-dependent frequency-dynamics models, and the three-layer DSO--VPP--DER execution architecture. Section~\ref{sec:method} casts real-time FFR as a cooperative Dec-POMDP and details the GraphSAGE--MAPPO controller and its safety envelope. Section~\ref{sec:casestudy} describes the test system, training, and hold-out protocol; Section~\ref{sec:results} reports the case studies; and Section~\ref{sec:conclusion} concludes.
-
-
-
-
-\section{System Model and Problem Formulation}
-\label{sec:model}
-%                        
-\subsection{Islanded 100\,\% Inverter-Based Microgrid and Component Models}
-\label{sec:model:overview}
-\subsubsection{Grid-Forming Backbone}
-A backbone of $n_g$ grid-forming (GFM) inverters establishes the voltage and frequency references. Each unit $g$ emulates the swing dynamics of a synchronous machine through a virtual-inertia control loop \cite{hou2020adaptive,fathi2018extended},
-\begin{align}
-  2H_g\,\frac{d\Delta\omega_g}{dt}
-    &= \Delta P_{\mathrm{set},g}-\Delta P_{e,g}-D_g\,\Delta\omega_g,
-       \label{eq:vsg_swing}\\
-  \frac{d\Delta\delta_g}{dt} &= \omega_0\,\Delta\omega_g,
-       \label{eq:vsg_angle}
-\end{align}
-where $\Delta P_{e,g}$ is the network-imposed electrical-power deviation, introduced below, and the virtual inertia $H_g$ is a programmable control parameter rather than rotating mass \cite{10638828}. The backbone is heterogeneous: one unit is configured as a full virtual synchronous generator (VSG) carrying the largest virtual inertia, while the remaining $n_g-1$ units operate as droop grid-forming inverters with a lower inertia floor (per-unit values in Table~\ref{tab:system}). Two consequences follow: the immediate post-disturbance RoCoF equals $\Delta P_{\mathrm{imb}}/(2H_{\mathrm{sys}})$, fixed by the aggregate backbone inertia and not alterable by any downstream power command within the first step, while $D_g$ shapes the post-nadir settling. The backbone therefore governs RoCoF, while the grid-following fleet supplies additional post-disturbance damping.
-
-\subsubsection{Grid-Following DER Fleet}
-A fleet of $|\mathcal{A}|$ grid-following (GFL) DERs BESS, V2G chargers, and DPV injects active power and a learned droop term but does not emulate inertia. These are the controllable agents of the proposed method, modeled at the level of detail required by the one-second fast step $\Delta t$; the inner voltage and current loops settle far faster than $\Delta t$ and are represented by their first-order envelopes. A BESS agent is a state-of-charge (SoC) integrator with separate charge/discharge efficiencies, held within a physical SoC band; a V2G agent augments this recursion with connection availability, a discharge-enable SoC threshold, a usable-capacity cap, and a first-order response lag, and leaves the fleet at its departure step, so the controllable set is time-varying. DPV operates at maximum power point and provides curtailment-only (non-positive) regulation, treated as instantaneous at the fast step. The device recursions and the located-disturbance and discretization maps are collected in the supplementary material (Sec.~S-I).
-
-\subsubsection{Deliverable FFR Reserve}
-The reserve a DER can actually deliver is not a function of its energy state alone. In an islanded feeder it depends on the active topology and on the resulting voltage and current envelopes,
-\begin{equation}
-  R^{\mathrm{ffr}}_{i,t}
-   = f\!\left(\mathcal{G}_t,\ \mathrm{SoC}_{i,t},\ V_t,\ S_t,\ P_t,\ Q_t\right).
-  \label{eq:deliverability}
-\end{equation}
-A controller that ignores $\mathcal{G}_t$ commits a reserve that cannot be delivered under the realized topology, producing under-supply and larger frequency excursions. This relation motivates the topology-dependent frequency model developed next and is the physical basis of the first contribution.
-
-%                        
-\subsection{Topology-Dependent Frequency Model}
-\label{sec:model:freqmodel}
-
-The classical center-of-inertia (COI) model collapses the feeder to a single scalar swing equation and therefore cannot express how tie-switch reconfiguration or line contingencies redistribute the frequency response. We instead retain the inter-unit angle structure and let the active feeder graph enter the state matrix explicitly. The COI quantity is recovered only as a read-out.
-
-\subsubsection{Reduced-Order State Space}
-Collect the GFM deviations into the state $x=\big[\Delta\boldsymbol{\delta}_{\mathrm{rel}}\in\mathbb{R}^{n_g-1},\
-\Delta\boldsymbol{\omega}\in\mathbb{R}^{n_g}\big]^{\!\top}$, the relative angles being referenced to the largest-rated GFM unit. Assembling \eqref{eq:vsg_swing}--\eqref{eq:vsg_angle} over the backbone gives the linear, topology-parameterized dynamics
-\begin{equation}
-  \frac{dx}{dt}
-   = A_f(\mathcal{G}_t,K_t)\,x
-     + B_{\mathrm{ref}}\,\Delta P_{\mathrm{ref}}
-     + B_{\mathrm{net}}\,\Delta P_{\mathrm{imb}},
-  \label{eq:statespace}
-\end{equation}
-with the block state matrix
-\begin{equation}
-  A_f(\mathcal{G}_t,K_t)=
-  \begin{bmatrix}
-     \mathbf{0} & \omega_0\,\mathbf{1}^{-1}\\[4pt]
-     -\operatorname{diag}\!\big(\tfrac{1}{2H}\big)\,\tilde{J}_r(\mathcal{G}_t)
-        & -\operatorname{diag}\!\big(\tfrac{1}{2H}\big)\,D(K_t)
-  \end{bmatrix},
-  \label{eq:af_matrix}
-\end{equation}
-where $\mathbf{1}^{-1}$ is the reference-subtraction (relative-angle) map and $D(K_t)=\operatorname{diag}(K_{\mathrm{eff},g})$ collects the effective damping set by the learned droop gains $K_t$.
-
-\subsubsection{Topology Entry via Kron Reduction}
-The active feeder graph $\mathcal{G}_t$ enters the state matrix through the Kron-reduced active-power Jacobian $\tilde{J}_r(\mathcal{G}_t)$, obtained by eliminating the passive buses of the energized feeder \cite{luo2014kronmicrogrid,ajala2023gfmreduction},
-
-\begin{equation}
-  \tilde{J}_r = J_{II}-J_{IL}\,J_{LL}^{-1}\,J_{LI}.
-  \label{eq:kron}
-\end{equation}
-Tie-switch reconfiguration and line contingencies change the block partition in \eqref{eq:kron}, so each topology produces a distinct $\tilde{J}_r$ and hence a distinct synchronizing-torque coupling among the GFM units. The topology therefore acts through $\tilde{J}_r$ while the learned droop acts through $D(K_t)$; the block structure of $A_f$ makes both dependencies explicit, which the scalar COI model cannot.
-
-\subsubsection{Located Disturbance Entry}
-The imbalance $\Delta P_{\mathrm{imb}}$ is injected at the \emph{physical} feeder bus of the contingency, not spread uniformly across units, so the input matrix $B_{\mathrm{net}}(\mathcal{G}_t)$ is itself topology-dependent through the Kron transfer $J_L(\mathcal{G}_t)$ (derived in the supplementary material). A contingency electrically close to unit $g$ then loads $g$ more than distant units, and a reconfiguration that re-routes around $g$ redistributes that loading. The active graph $\mathcal{G}_t$ thus shapes not only the synchronizing coupling in $\tilde{J}_r$ but also \emph{where} the disturbance is felt; a controller blind to $\mathcal{G}_t$ can anticipate neither effect.
-
-\subsubsection{Discretization, Read-Out, and Secondary Control}
-Because $\Delta t=1$\,s is large relative to the inverter time constants, the model is discretized by zero-order hold to $(\Phi,\Gamma)$, evaluated by the augmented matrix exponential and cached per topology and droop-gain bin. The COI frequency is recovered as a rating-weighted read-out,
-\begin{equation}
-  \Delta f_t = f_0\,\frac{\sum_g S_g\,\Delta\omega_g}{\sum_g S_g},
-  \qquad
-  \dot f_t = \frac{\Delta f_t-\Delta f_{t-1}}{\Delta t},
-  \label{eq:coi_readout}
-\end{equation}
-so the COI is an observable of the reduced dynamics rather than the state itself, and it is also the input to a slow integral secondary loop that removes the steady-state offset (supplementary material). The only lumped aggregate the model carries is the rating-weighted backbone inertia $H_{\mathrm{sys}}$; since $H_g$ is \emph{programmable virtual} inertia, $H_{\mathrm{sys}}$ is set by control rather than by physical machines. Unlike the single-COI swing model, the closed loop carries \emph{no} aggregate damping or droop constant: damping and droop enter per unit through $D(K_t)$, set by the backbone droop plus the learned grid-following droop. The numerical value of $H_{\mathrm{sys}}$ is reported in Section~\ref{sec:casestudy}.
-
-\subsubsection{Frequency-Security Read-Out and Timescale}
-Frequency security is assessed on the COI read-out \eqref{eq:coi_readout}: at the one-second FFR control step the COI is the resolvable system-frequency observable, in line with the standard reduced-order system-frequency-response (SFR) modelling of the FFR literature \cite{anderson1990sfr}. The relative-angle block of \eqref{eq:af_matrix} lets individual units' frequencies differ \emph{during} the transient, but these inter-machine deviations are a sub-second phenomenon below the control step; we report them only as a transient spatial diagnostic (worst-unit excursion, supplementary material), not as a headline metric. Crucially, topology shapes the \emph{COI} response itself, not merely its read-out: both the synchronizing coupling $\tilde{J}_r(\mathcal{G}_t)$ and the located forcing $B_{\mathrm{net}}(\mathcal{G}_t)$ are topology-dependent, so reconfiguration changes the equivalent inertia and damping seen by the COI and, through the deliverability relation, which committed reserve is actually deliverable   the channels a topology-aware controller must exploit \cite{luo2014kronmicrogrid,ajala2023gfmreduction}.
-
-A modal property of \eqref{eq:af_matrix} underpins this read-out choice. Because the rows of $\tilde{J}_r$ sum to approximately zero (angle-reference invariance; only the retained resistive losses break the identity), the rating-weighted COI decouples from the synchronizing block and is governed by a single real mode, $\lambda_{\mathrm{COI}}\approx-\sum_g K_{\mathrm{eff},g}\big/\sum_g 2H_g$, while the inter-machine swing pairs of the stiff, Kron-reduced distribution feeder lie at tens to hundreds of hertz and cancel in the rating-weighted sum. The COI trajectory is therefore quasi-first-order   there is no governor-style oscillatory tail, unlike synchronous-machine SFR models   and the learned action shapes the recovery exclusively through the damping channel $D(K_t)$ and the reference channel $\Delta P_{\mathrm{ref}}$; the modal analysis is given in the supplementary material (Sec.~S-II).
-
-
-
-%                        
-\subsection{Three-Layer Economic VPP--DSO Coordination}
-\label{sec:model:layers}
-
-The DER fleet is organized for market participation by partitioning the feeder into $|\mathcal{Z}|$ virtual power plant (VPP) zones with agent sets $\mathcal{A}_z$, $\mathcal{A}=\bigcup_{z\in\mathcal{Z}}\mathcal{A}_z$. The real-time controller acts inside a three-layer coordination that separates grid feasibility, market-facing aggregation, and fast execution (Fig.~\ref{fig:architecture}): the DSO clears a second-order-cone OPF with feeder reconfiguration and posts the DLMP and the active topology \cite{bai2018dlmp,basdomenech2024dlmp}; the VPP aggregator returns a deliverable energy-and-reserve offer from a Wasserstein distributionally-robust bid under price and renewable uncertainty \cite{liu2021wdrovpp,arrigo2021wdroreserve}; and the proposed controller executes the fast active-power and droop commands against these signals as a \emph{price taker}, the standard hierarchical structure shown to coincide with centralized clearing \cite{huang2015dlmp,li2014dlmp}. Real-time delivery is not fed back to re-clear the upper layers within the horizon (no price impact); closed-loop coupling and price-making bids \cite{baringo2021pricemaker} are left to future work.
-
-\begin{figure}[!t]
-\centering
-\includegraphics[width=0.92\linewidth]{img/architecture_3layer.png}
-\caption{Three-layer DSO-VPP-DER coordination: the DSO posts DLMP and the active topology, the VPP aggregator returns a robust energy-and-reserve offer, and the proposed Layer-2 controller dispatches the DER fleet in real time as a price taker.}
-\label{fig:architecture}
-\end{figure}
-
-% =====================================================================
-\section{Proposed GraphSAGE-MAPPO Controller}
-\label{sec:method}
-
-\begin{figure}[!t]
-\centering
-\includegraphics[width=1\linewidth]{img/GraphSAGE-MAPPOargi.pdf}
-\caption{Proposed GraphSAGE-MAPPO controller.}
-\label{fig:method_arch}
-\end{figure}
-%                        
-\subsection{FFR as a Cooperative Dec-POMDP}
-\label{sec:method:mdp}
-
-The overall controller architecture is shown in Fig.~\ref{fig:method_arch}. The 41 GFL agents observe only local and neighborhood information, so the FFR task is a decentralized partially observable Markov decision process (Dec-POMDP) $\langle\mathcal{A},\mathcal{S},\{O_m\},\{U_m\},P,r,\gamma\rangle$ solved under centralized training with decentralized execution (CTDE). The fast step is $\Delta t=1$\,s with 300 steps per episode.
-
-\subsubsection{Observation}
-Each agent $m$ observes a 16-dimensional local vector comprising the local frequency deviation and RoCoF from the COI read-out, net power, SoC and dischargeable-energy headroom, the zonal locational marginal price, a four-way device-type one-hot encoding, VPP membership, the previous droop gain and power reference, SoC violation flags, a persistence power forecast, and a departure proxy. The local vectors are placed on the 123-bus graph at their host buses and augmented with four per-bus grid-background features (active and reactive load, voltage magnitude, and agent density), giving the full feeder observation $\mathit{obs}_{\mathrm{full}}\in\mathbb{R}^{123\times20}$.
-
-\subsubsection{Action}
-Each agent emits a two-dimensional action $a_m=[a^P_m,\,a^K_m]\in[-1,1]^2$ that jointly sets a fast active-power reference and a local droop gain, replacing the fixed-gain response $\Delta P^{\mathrm{ffr}}_{i,t}=-K_i\,\Delta f_t$ of the classical loop with a learned, state-conditioned one,
-\begin{align}
-  \Delta P_m &= a^P_m\cdot 0.1\,P_{\mathrm{rated},m},
-  \label{eq:action_power}\\
-  K_m &= K_{\min,m}+\tfrac{1}{2}\big(1+a^K_m\big)\big(K_{\max,m}-K_{\min,m}\big).
-  \label{eq:action_droop}
-\end{align}
-The two channels combine into the realized per-DER injection
-\begin{equation}
-  \Delta P^{\mathrm{ffr}}_{m,t} \;=\; \Delta P_m \;-\; K_m\,\Delta f_t,
-  \label{eq:dual_law}
-\end{equation}
-a feed-forward reference plus a learned proportional (droop) feedback on the COI read-out; the classical loop \eqref{eq:classical_droop} is recovered as the special case $\Delta P_m=0$ with $K_m$ fixed. The power channel spans up to $\pm10\,\%$ of rated power (clipped to the device rating and SoC headroom, slew-limited at $0.2$/step); the droop channel spans $[K_{\min,m},K_{\max,m}]$ with $K_{\min,m}=0$ and per-type ceilings listed in Table~\ref{tab:system}. A droop gain is enabled only when $\mathrm{SoC}_m$ lies in the FFR-eligibility band, nested inside the physical band (Table~\ref{tab:system}); otherwise $K_m=0$. The per-DER commands aggregate to each host GFM unit   the reference channel in per unit on $S_{\mathrm{base}}$ and the droop channel as an additive contribution to the swing damping $D(K_t)$ after a MW/Hz-to-per-unit conversion   as detailed in the supplementary material (Sec.~S-I). Exposing $a^P_m$ and $a^K_m$ jointly lets the policy pre-position storage ahead of an anticipated FFR call and trade transient performance against service-quality constraints, which neither a power-only nor a droop-only formulation can do.
-\subsubsection{Reward}
-A single team reward couples frequency security, control effort, and service quality,
-
-\begin{equation}
-  r_t = r^{\Delta f}_t + r^{\mathrm{nadir}}_t + r^{\mathrm{viol}}_t
-        + r^{\mathrm{ffr}}_t + r^{\mathrm{eff}}_t + r^{\mathrm{soc}}_t
-        + r^{\mathrm{mkt}}_t + r^{\mathrm{commit}}_t,
-  \label{eq:reward}
-\end{equation}
-
-where the frequency, nadir, and violation terms penalize the COI deviation from $f_0$ and its excursions beyond the safe band the same security target used for evaluation and applied identically to every controller, including the baselines the FFR-bonus term rewards staying within it, and the effort, SoC, market, and commitment terms regularize the action, penalize SoC violation, credit market revenue, and discourage abrupt gain changes. Error terms are normalized to $[0,1]$ against event-scaled references and combined by fixed weights; the explicit forms, deadbands, references, and weights of every term are given in the supplementary material (Sec.~S-V). The RoCoF term is disabled because peak RoCoF is governed by the GFM backbone rather than by the GFL action (Section~\ref{sec:method:safety}). The reward is passed through a running normalizer ($\gamma=0.99$, clipped at $\pm10$).
-
-%                        
-\subsection{Multi-Agent PPO under CTDE}
-\label{sec:method:mappo}
-
-The controller is trained with multi-agent proximal policy optimization (MAPPO) \cite{yu2022mappoeffective,schulman2017ppo} under CTDE: a centralized critic uses global information during training, while each agent executes from its local observation alone at run time. Both the actor and the critic operate on the per-agent embeddings produced by the encoder of Section~\ref{sec:method:graphsage}.
-
-\emph{Actor.} A single parameter-shared diagonal-Gaussian policy maps each agent embedding through a two-layer perceptron to the mean and log-standard deviation of the two-dimensional action, with a bounded mean $\mu=0.75\tanh(\cdot)$ and $\sigma=\operatorname{softplus}(\cdot)+0.05$. Parameter sharing keeps the policy size independent of $|\mathcal{A}|$ and permits a varying agent count across topologies.
-
-\emph{Critic.} A centralized critic concatenates each agent embedding with a global context formed by mean- and max-pooling over all agents and returns a per-agent value. The per-agent value retains credit information for each DER while the pooled context supplies the system-level signal needed for cooperative coordination.
-
-\emph{Update.} Advantages are estimated by generalized advantage estimation ($\gamma=0.99$, $\lambda=0.95$) from the shared team reward
-\eqref{eq:reward}, and the policy is updated by the clipped PPO surrogate with ratio $\rho_t$ and clip range $\epsilon=0.2$~\cite{schulman2017ppo} (supplementary material, Sec.~S-III). The total loss adds a value-regression term (coefficient $0.5$) and an entropy bonus annealed across the training curriculum.
-
-%                        
-\subsection{Inductive GraphSAGE Encoder}
-\label{sec:method:graphsage}
-
-The encoder is the component that makes the controller transferable to unseen feeder configurations. We use an inductive GraphSAGE encoder
-\cite{hamilton2017graphsage}, which learns aggregator \emph{functions} over node neighborhoods rather than a fixed per-node embedding. For node $j$ at layer $k$,
-\begin{equation}
-  H_j^{(k)}
-   = \sigma\!\Big(W_{\mathrm{self}}\,H_j^{(k-1)}
-     + W_{\mathrm{neigh}}\!\cdot\!
-       \operatorname{mean}_{u\in\mathcal{N}(j)} H_u^{(k-1)}\Big),
-  \label{eq:graphsage}
-\end{equation}
-where $H_j^{(0)}$ is the per-bus observation and the aggregator weights are shared across all nodes and topologies. We use two layers, mapping the 20-dimensional input to a 128-dimensional hidden layer with ReLU and then to a 128-dimensional embedding.
-
-\emph{Why inductive enables zero-shot transfer.} The edge index of $\mathcal{N}(j)$ in \eqref{eq:graphsage} is rebuilt at every step from the active graph $\mathcal{G}_t$; because the learned weights are properties of the aggregator rather than of any specific adjacency, reconfiguration changes which neighbors are aggregated but not the function that aggregates them. Transductive graph-convolution encoders, whose spectral filters are tied to a fixed adjacency, must instead be retrained when the graph changes; the inductive construction lets a single controller satisfy the topology-coupled deliverability relation without per-topology retraining.
-
-\emph{Embedding extraction.} After two aggregation passes over the 123-bus graph, the embeddings at the 41 DER host buses are extracted and passed to the actor and the centralized critic. Both heads therefore reason over a representation that already encodes the neighborhood structure of the realized feeder.
-
-%                        
-\subsection{Shared Safety Envelope}
-\label{sec:method:safety}
-
-Frequency security is enforced by an envelope that is a property of the environment, not of any particular controller; the proposed policy and every baseline act inside the same envelope. The comparison therefore isolates performance and generalization within the safe set, not safety itself. The envelope rests on four mechanisms.
-
-\emph{Stability by construction.} The map \eqref{eq:action_droop} with $K_{\min}=0$ keeps the droop gains non-negative, so the damping matrix
-$D(K_t)=\operatorname{diag}(K_t)\succeq 0$ and the realized droop $-K_m\Delta f_t$ is monotone non-increasing in frequency \cite{feng2022stabilityrl,alduaij2025partialmonotone}.
-
-\emph{Lyapunov certificate.} For the swing energy $V=\tfrac12\Delta\boldsymbol{\omega}^{\!\top}M\Delta\boldsymbol{\omega}+\tfrac12\Delta\boldsymbol{\delta}_{\mathrm{rel}}^{\!\top}\tilde{J}_r\Delta\boldsymbol{\delta}_{\mathrm{rel}}$, the derivative along the closed-loop dynamics is $\dot V=-\Delta\boldsymbol{\omega}^{\!\top}D(K_t)\Delta\boldsymbol{\omega}\le0$.
-Since $A_f$ is affine in $K_t$ through $D(K_t)$, the vertices of the droop-gain box are extremal and a finite vertex check certifies Hurwitz stability over the full topology-by-gain set; the derivation, together with a switching (average dwell-time) certificate, is given in the supplementary material (Sec.~S-II).
-
-\emph{RoCoF by system design.} The peak RoCoF satisfies $\dot f=\Delta P_{\mathrm{imb}}/(2H_{\mathrm{backbone}})$ and is set by the GFM backbone inertia, not by the GFL action in the first step \cite{kenyon2021gfmfreqorder}. The RoCoF reward term is consequently disabled in \eqref{eq:reward}.
-
-\emph{Nadir projection.} A closed-form minimal-perturbation projection of $\Delta P_{\mathrm{ref}}$ keeps the predicted next-step COI deviation within $[-\delta,+\delta]$ ($\delta=0.5$\,Hz), using an affine predictor that mirrors the discretized dynamics and the located-disturbance forcing of the supplementary material. A single linear constraint gives a closed form with no quadratic program \cite{tabas2021safefilter}; the affine predictor and the projection formula are derived in the supplementary material (Sec.~S-IV). The guard acts on the COI because that is the resolvable system-frequency observable at the control step and the quantity the controller is rewarded and evaluated on.
-
-% =====================================================================
-\section{Case Study}
-\label{sec:casestudy}
-
-
-
-%
-\subsection{Test System and Scenarios}
-\label{sec:casestudy:system}
-\label{sec:casestudy:scenarios}
-
-The controller is evaluated on a modified IEEE 123-bus distribution feeder operated as a 100\,\% inverter-based islanded microgrid (Fig.~\ref{fig:topology}); system and device parameters are given in Table~\ref{tab:system} and the frequency-security thresholds, taken from the ENTSO-E network codes and IEEE standards, in Table~\ref{tab:fsec_standards}.
-
-
-\begin{figure}[!t]
-\centering
-\includegraphics[width=0.95\linewidth]{img/Topology.pdf}
-\caption{Islanded IEEE 123-bus feeder with VPP zones.}
-\label{fig:topology}
-\end{figure}
-
-
-\begin{table}[!h]
-\caption{System and device parameters.}
-\label{tab:system}
-\centering
-\footnotesize
-\resizebox{\linewidth}{!}{
-\begin{tabular}{lll}
-\toprule
-Quantity & Symbol & Value \\
-\midrule
-Base power, frequency & $S_{\mathrm{base}}, f_0$ & $15.7$\,MW, $50$\,Hz \\
-GFM backbone (VSG / droop) & $n_g, H_g$ & $6$ ($2.0$\,s / $0.5$\,s) \\
-Aggregate system inertia & $H_{\mathrm{sys}}$ & $1.34$\,s \\
-GFL agents, VPP zones & $|\mathcal{A}|, |\mathcal{Z}|$ & 41 agents, 34 zones \\
-Droop ceiling (BESS/V2G/DPV) & $K_{\max}$ & $0.30$ / $0.20$ / $0.15 \cdot P_{\mathrm{rated}}$ \\
-SoC band (Physical / FFR) &   & $[0.20, 0.90]$ / $[0.25, 0.85]$ \\
-Efficiency, V2G response lag & $\eta, T_{\mathrm{v2g}}$ & $0.95$, $0.3$\,s \\
-Time step, Episode length & $\Delta t$ & $1$\,s / $300$ steps \\
-\bottomrule
-\end{tabular}
-}
-\end{table}
-
-\begin{table}[!t]
-\caption{Frequency-security thresholds~\cite{entsoe_sogl_2017}.}
-\label{tab:fsec_standards}
-\centering
-% \resizebox{\linewidth}{!}{
-\begin{tabular}{ll}
-\toprule
-Quantity & Value\\
-\midrule
-UFLS Stage 1 trip       & $49.0$~Hz       \\
-Operator alarm / FFR target & $49.5$~Hz   \\
-UFLS Stage 1 delay      & $300$~ms        \\
-RoCoF ride-through      & $2.0$~Hz/s      \\
-FCR full activation     & $\pm 200$~mHz   \\
-Standard freq.\ range (settling band) & $\pm 50$~mHz \\
-\bottomrule
-\end{tabular}
-% }
-\end{table}
-The controller is exercised with four disturbance classes load step, generation trip, line trip, and high-renewable surge scaled as a fraction of $S_{\mathrm{base}}$ (Table~\ref{tab:scenarios}). Topology generalization is assessed under a strict zero-shot protocol: the controller is trained on a \emph{single} fixed feeder topology $G_0$ and evaluated, with no retraining or adaptation, on $24$ distinct reconfigurations $\mathcal{G}_{\mathrm{test}}=\{G_1,\dots,G_{24}\}$, $G_0\notin\mathcal{G}_{\mathrm{test}}$, generated from $G_0$ by tie-switch operations and $N{-}1$ line contingencies. Since radial reconfiguration changes only a bounded fraction of edges (Jaccard edge distance up to $\approx\!0.18$), the protocol stresses structural generalization within the reachable configuration space rather than transfer to arbitrary graphs.
-
-\begin{table}[!t]
-\caption{Contingency scenarios.}
-\label{tab:scenarios}
-\centering
-\footnotesize
-\resizebox{\linewidth}{!}{
-\begin{tabular}{llccc}
-\toprule
-Sc. & Event       & $\Delta P$ (MW) & \% $S_{\mathrm{base}}$ & Purpose \\
-\midrule
-S1  & load step             & +2.5 & 16 & moderate          \\
-S2  & generation trip       & -3.9 & 25 & severe under-freq. \\
-S3  & line trip             &  2.4 & 15 & topology mutation  \\
-S4  & high-renewable surge  & +4.7 & 30 & over-freq. stress  \\
-\bottomrule
-\end{tabular}
-}
-\end{table}
-
-%
-\subsection{Baselines and Training Protocol}
-\label{sec:casestudy:baselines}
-\label{sec:casestudy:training}
-
-The proposed controller is compared against five baselines (Table~\ref{tab:methods}). All learning baselines run in the identical environment, observation, dual action, reward, and shared safety envelope of Sections~\ref{sec:model}--\ref{sec:method}; only the encoder or learning algorithm differs, so the comparison isolates each architectural component rather than safety itself. MLP-MAPPO isolates the value of graph message-passing; GCNN-PPO is a transductive, single-centralized state-of-the-art reference, differing in both encoder and agent structure rather than serving as a clean inductive-versus-transductive control.
-
-
-\begin{table}[!h]
-\caption{Baselines and the component each isolates.}
-\label{tab:methods}
-\centering
-\footnotesize
-\resizebox{\linewidth}{!}{
-\begin{tabular}{lllll}
-\toprule
-\# & Method & Encoder & RL algorithm & Multi-agent \\
-\midrule
-1 & GraphSAGE-MAPPO (\emph{ours}) & GraphSAGE   & PPO  & MAPPO (CTDE)         \\
-2 & MLP-MAPPO (ablation)          & MLP         & PPO  & MAPPO (CTDE)         \\
-3 & GCNN-PPO~\cite{guo2024gcnnppo}& Spectral GCN& PPO  & Single centralized   \\
-4 & MATD3~\cite{li2025matd3}      & MLP         & TD3  & CTDE                 \\
-5 & Fixed droop                   &           &    &                    \\
-6 & No FFR                        &           &    &                    \\
-\bottomrule
-\end{tabular}
-}
-\end{table}
-Training uses a six-phase disturbance curriculum of $6000$ episodes that escalates event magnitude and probability from load-only events to the full $N{-}1$ mix at $40\,\%$ contingency magnitude; the per-phase schedule (episodes, event mix, magnitude, learning-rate and entropy factors) is tabulated in the supplementary material (Sec.~S-VI). Hyperparameters are selected by asynchronous successive halving (ASHA) on the evaluation IAE of the training feeder (12 sampled configurations, elimination factor $\eta=3$, stage budgets of $25/75/225$ episodes, multi-seed re-scoring at promotion; Sec.~S-VI), with the selected configuration in Table~\ref{tab:hyperparams} shared by every learning baseline   identical capacity, optimizer, curriculum, and training budget   so the proposed method enjoys no capacity or schedule advantage, and each method is reported at its converged performance.
-
-\begin{table}[t]
-  \centering
-  \caption{Hyperparameters (ASHA-tuned; shared by all learning methods).}
-  \label{tab:hyperparams}
-  \begin{tabular}{lll}
-    \hline
-    Hyperparameter & Symbol & Value\\
-    \hline
-    Learning rate (phase-scheduled) &     & $3.1\times10^{-5}\rightarrow8\times10^{-6}$\\
-    Discount / GAE         & $\gamma,\lambda$ & $0.99$, $0.95$\\
-    PPO clip               & $\epsilon$     & $0.2$\\
-    Entropy coefficient    &              & $5\times10^{-3}\rightarrow0$\\
-    Embedding / hidden dim &              & $128$\,/\,$128$\\
-    GraphSAGE layers       &              & $2$\\
-    Update epochs / minibatch &           & $4$\,/\,$16$\\
-    Curriculum length      &              & $6000$ episodes / $6$ phases\\
-    \hline
-  \end{tabular}
-\end{table}
-
-%
-\subsection{Evaluation Protocol}
-\label{sec:casestudy:metrics}
-
-Performance is reported on three metric groups: frequency security (nadir, maximum RoCoF, IAE, settling time, FFR success rate), service and economics (committed reserve, energy-plus-capacity revenue), and topology generalization (training-to-unseen IAE gap and its spread). The frequency-security metrics are defined on the COI deviation $\Delta f(t)$ with event time $t_e$: the post-event integral error is windowed,
-\begin{equation}
-  \mathrm{IAE}_{\mathrm{post}}=\!\int_{t_e}^{t_e+T_w}\!\big|\Delta f(t)\big|\,dt,\qquad T_w=50~\mathrm{s},
-  \label{eq:iae_post}
-\end{equation}
-complemented by the unwindowed $\mathrm{IAE}_{\mathrm{tot}}$ and the time-weighted $\mathrm{ITAE}=\int_{t_e}^{T}(t-t_e)\,|\Delta f|\,dt$, which expose post-window limit-cycle behavior that \eqref{eq:iae_post} cannot. The settling time is the first instant after which $|\Delta f|$ remains within $\pm50$~mHz   the ENTSO-E SO~GL standard frequency range (Table~\ref{tab:fsec_standards}). FFR success requires that no continuous excursion below the $49.5$~Hz alarm persists longer than the $300$~ms UFLS Stage-1 relay delay, checked on the $0.1$~s sub-step trace; formal definitions and the sub-step trace protocol are collected in the supplementary material (Sec.~S-VII). Each learning controller is evaluated zero-shot on the same $24$ unseen reconfigurations, and each per-topology value averages repeated episodes with randomized operating points and event timing. Table entries report the mean across held-out topologies with a $95\,\%$ confidence interval; the difference between the proposed controller and the next-best method on IAE and nadir is assessed by a paired Wilcoxon signed-rank test, and the proposed controller is trained from three independent random seeds, with consistent topology-generalization results across all three.
-
-
-
-\section{Results and Discussion}
-\label{sec:results}
-
-All results below are computed from a single frozen evaluation of the converged controllers ($20$ episodes per scenario--method pair, metric definitions of Sec.~S-VII). Fig.~\ref{fig:radar_overview} summarizes the evaluation: for each contingency the six controllers are scored on five axes post-event IAE, nadir (or zenith) margin, settling speed, reliable reserve delivery, and topology robustness each oriented so that larger is better, grounded at zero, and normalized by the best in-group value. Two facts organize the results. First, the shared safety envelope holds the post-event nadir at the $49.5$~Hz alarm for \emph{every} learning controller, so all four achieve a unit FFR success rate while the two non-learning controls breach the alarm; safety is therefore common to the comparison, and the discriminators are integral error, settling speed, run-to-run consistency, and topology robustness. Second, on these discriminators the proposed controller encloses the largest area in all four contingencies.
- 
-\begin{figure*}[!t]
-\centering
-\includegraphics[width=0.98\textwidth]{img/fig1_radar.pdf}
-\caption{Per-scenario performance radar over five axes post-event IAE, frequency margin, settling speed, reserve delivery, and topology robustness each oriented so larger is better and normalized by the best in-group value (outer ring). The topology axis is system-level, hence identical across panels.}
-\label{fig:radar_overview}
-\end{figure*}
- 
-% ==================================================================
-\subsection{Frequency-Security Performance}
-\label{ssec:res_stability}
-% ==================================================================
- 
-Fig.~\ref{fig:freq_grid} overlays the mean frequency trajectories of the six controllers for the four contingencies ($\pm1\sigma$ band shown for the proposed controller).
-
-\begin{figure}[!h]
-\centering
-\includegraphics[width=0.95\linewidth]{section1_stability/fig_freq_grid.pdf}
-\caption{Frequency response (mean; $\pm 1\sigma$ band on the proposed controller; $0.05$~s sub-step traces, Sec.~S-VII). Red: UFLS-1 ($49.0$~Hz); orange: $49.5/50.5$~Hz alarm; green band: $\pm50$~mHz settling (ENTSO-E standard frequency range).}
-\label{fig:freq_grid}
-\end{figure}
- 
-\emph{Frequency excursion.}
-The shared safety envelope holds the post-event nadir at the $49.5$~Hz alarm for all four learning controllers in S1--S3 and caps the over-frequency zenith at $50.5$~Hz in S4, so each achieves a unit FFR-success rate. The two non-learning controls breach the alarm: fixed droop reaches $48.75$~Hz on the severe generation trip~S2 and $51.51$~Hz on the surge~S4, and no-FFR $48.42$ and $51.91$~Hz, both with zero FFR success. Relative to fixed droop the proposed controller therefore raises the S2 nadir by $0.75$~Hz and cuts the S4 over-frequency excursion above nominal from $1.51$~Hz to $0.50$~Hz. The sawtooth visible on the proposed trace at the band edge is the closed-form nadir projection activating step-by-step, resolved by the $0.05$~s sub-step trace.
-
-\emph{Integral error and settling.}
-Among the safe controllers the discriminators are the integral error and the settling speed. On the windowed IAE$_{\mathrm{post}}$ \eqref{eq:iae_post} the saturating MATD3 attains the smallest in-window error in every scenario ($2.65$--$5.30$~Hz$\cdot$s) by holding near-maximum effort throughout the window; the proposed controller follows within $7$--$15$\,\% ($2.83$--$5.76$) and is $18$--$21$\,\% below fixed droop ($38$--$50$\,\% below no-FFR) while keeping the nadir safe. This windowed metric, however, rewards exactly the sustained saturation that the unwindowed metrics expose as pathological. The latter are decisive: the proposed controller has the lowest IAE$_{\mathrm{tot}}$ in all four scenarios ($3.7$--$6.6$ vs.\ $7.5$--$45.7$) and an ITAE of $9.3$--$34.1$ against $671$--$5317$ for the other learning controllers a $20$--$72\times$ reduction relative to the best of them because it re-enters the $\pm50$~mHz settling band (Table~\ref{tab:fsec_standards}) in $9$--$14$~s, $1.9$--$3.0\times$ faster than the next-best learning controller ($17$--$43$~s), and \emph{stays} there, whereas MATD3 and GCNN-PPO sustain a high-amplitude oscillation that the $50$-s window of IAE$_{\mathrm{post}}$ does not penalize. Fixed droop settles comparably fast only by leaving the nadir below the alarm. The run-to-run spread on the training feeder is the smallest of all controllers (standard deviation of IAE$_{\mathrm{post}}\le0.002$~Hz$\cdot$s, against $0.06$--$0.70$ for the other learning methods), so the reported means are not seed artifacts.
-
-\emph{FFR-success and RoCoF.}
-The FFR-success column cleanly separates the learning controllers (unit success nadir held within the alarm band) from the non-learning controls (zero). The maximum RoCoF is $\approx0.5$~Hz/s for every learning controller and below $1.3$~Hz/s throughout, well inside the IEEE Std~1547 $2.0$~Hz/s ride-through; consistent with Section~\ref{sec:method:safety}, peak RoCoF is set by the backbone inertia rather than by the GFL action and so does not discriminate the controllers.
-
-\begin{figure}[!t]
-\centering
-\includegraphics[width=0.92\columnwidth]{img/fig_severity.pdf}
-\caption{Severity scaling ($2$--$6$~MW): (a) nadir and (b) settling time.}
-\label{fig:severity}
-\end{figure}
-
-\emph{Severity scaling.}
-Sweeping the imbalance from $2$ to $6$~MW ($13$--$38$\,\% of $S_{\mathrm{base}}$, Fig.~\ref{fig:severity}), every learning controller holds the nadir at $49.5$~Hz while the non-learning controls fall to $48.49/48.09$~Hz, so the proposed controller's nadir margin over fixed droop widens from $0.14$ to $1.01$~Hz. Among the safe controllers it settles in $8$--$15$~s against $16$--$50$~s, degrading by only $7$~s over the sweep where MATD3 degrades by $27$~s ($16\!\to\!43$~s) gracefully rather than as a cliff.
- 
-% ==================================================================
-\subsection{Topology Generalization}
-\label{ssec:res_topo}
-% ==================================================================
- 
-Topology generalization the central claim is shown by the training-to-unseen retention over the $24$-reconfiguration hold-out (Fig.~\ref{fig:topo_gap}) and by the spread of post-event IAE across those unseen topologies (Fig.~\ref{fig:unseen}).
-
-\begin{figure}[!t]
-\centering
-\includegraphics[width=0.92\columnwidth]{img/fig_topology.pdf}
-\caption{Train-to-unseen IAE over the $24$-reconfiguration hold-out (open: training $G_0$; filled: unseen mean; label: gap).}
-\label{fig:topo_gap}
-\end{figure}
-
-\emph{Base-to-unseen retention.}
-The proposed controller carries its training-feeder IAE$_{\mathrm{post}}$ of $4.74$~Hz$\cdot$s to $5.01$ on the unseen reconfigurations (gap $+5.7$\,\%, retention $0.946$) the lowest unseen error of any controller, $53$\,\% below the next-best learning controller (GCNN-PPO, $10.56$). The fixed-adjacency and non-graph baselines collapse despite near-identical training-feeder performance: GCNN-PPO degrades by $+112$\,\% ($4.98\!\to\!10.56$) and MATD3 by $+421$\,\% ($4.15\!\to\!21.6$). MLP-MAPPO shows a \emph{negative} gap ($-21$\,\%) only because its training-feeder error is already $2\times$ ours ($9.45$~Hz$\cdot$s) a floor effect, not generalization; the same artifact explains the small gaps of the non-responsive classical references. The inductive encoder supplies not only the lower error but its predictability: the across-topology standard deviation is $0.17$~Hz$\cdot$s, against $4.68$ (GCNN-PPO, $27\times$), $6.69$ (MATD3, $38\times$), and $1.13$ (MLP-MAPPO, $6\times$).
-
-\begin{figure}[!h]
-\centering
-\includegraphics[width=0.95\columnwidth]{img/fig_unseen_iae.pdf}
-\caption{Post-event IAE across the $24$ unseen reconfigurations (box: IQR; whiskers: min--max; diamond: training $G_0$).}
-\label{fig:unseen}
-\end{figure}
-
-\emph{Across the hold-out.}
-Across the $24$ unseen topologies the proposed controller's IAE stays within a $\pm0.17$~Hz$\cdot$s band of its training value and remains below the next-best controller on the hold-out fixed droop, which trades its low IAE for a breached nadir with high significance (paired Wilcoxon signed-rank, $p<10^{-6}$); every learning baseline is dominated on \emph{every} topology. MATD3 and GCNN-PPO spread widely (unseen IAE up to $\approx24$ and $19$~Hz$\cdot$s). The tight, low cluster in Fig.~\ref{fig:unseen} is the visual signature of an inductive encoder that re-aggregates over each active edge set instead of reusing a fixed adjacency, and it persists in operation: on the unseen topologies the proposed controller still settles in $16.5$~s on average, against $37$--$49.5$~s for the learning baselines.
- 
-% ==================================================================
-\subsection{Economic Efficiency}
-\label{ssec:res_econ}
-% ==================================================================
- 
-This subsection evaluates the controller as a \emph{price taker} against the DLMP and reserve prices set in the upper layers (Section~\ref{sec:model:layers}), reporting the per-event DSO settlement each controller induces under a common price deck \cite{rahimiyan2016pricetaker,li2014dlmp}. Each event is settled as
-\begin{equation}
-  C_{\mathrm{event}}
-   = \lambda_{\mathrm{cap}}\,R_{\mathrm{armed}}\,T_{\mathrm{ev}}
-   + \lambda_{\mathrm{act}}\,E_{\mathrm{ffr}}
-   + \mathrm{VOLL}\cdot E_{\mathrm{shed}},
-  \label{eq:dso_cost}
-\end{equation}
-where $R_{\mathrm{armed}}=K_{\mathrm{peak}}\,\delta$ is the reserve armed at the band edge, $E_{\mathrm{ffr}}$ the delivered FFR energy, and $E_{\mathrm{shed}}$ the energy-not-served of a staged ENTSO-E UFLS model ($5/15/30\,\%$ of load below $49.0/48.5/48.0$~Hz) applied to the realized trajectory. Prices follow the reserve-context convention: $\lambda_{\mathrm{cap}}=50$~\texteuro/MW/h, $\lambda_{\mathrm{act}}=100$~\texteuro/MWh, $\mathrm{VOLL}=3000$~\texteuro/MWh, with a $\{1500,8000\}$~\texteuro/MWh VOLL sweep confirming ranking invariance (Sec.~S-VII).
-
-\begin{figure}[!t]
-\centering
-\includegraphics[width=0.95\columnwidth]{img/fig_pareto.pdf}
-\caption{Average per-event DSO settlement \eqref{eq:dso_cost}: service payments (capacity + activation) vs.\ load-shedding penalty (VOLL).}
-\label{fig:pareto}
-\end{figure}
-
-\emph{Avoided shedding and cost stability.}
-The decisive economic split is delivery (Fig.~\ref{fig:pareto}): on the severe generation trip (S2) the non-learning controls fail to arrest the swing and incur per-event settlements of $9.89$~\texteuro\ (No-FFR, dominated by VOLL load-shedding cost) and $4.02$~\texteuro\ (Fixed Droop, partial shedding), whereas all four learning controllers eliminate shedding entirely and pay only for reserve. Among learning controllers the proposed method is the most economical ($1.73$--$1.78$~\texteuro\ across S1--S4, tightest scenario spread) versus ${\approx}1.98$~\texteuro\ for GCNN-PPO, $1.98$--$2.02$~\texteuro\ for MATD3, and $2.71$~\texteuro\ for MLP-MAPPO. MLP-MAPPO incurs the highest reserve bill in the group---a constant commitment regardless of scenario severity---consistent with its larger static dispatch that yields weaker settling. The proposed controller thus pairs the lowest per-event cost among learning methods with the best frequency-security and topology-robustness outcomes.
- 
-% ==================================================================
-\subsection{Discussion}
-\label{ssec:discussion}
-% ==================================================================
- 
-Taken together, the studies separate two control philosophies that the windowed IAE$_{\mathrm{post}}$ alone cannot. MATD3 converges to a near-saturated, state-insensitive commitment its actions ride the actuator limits regardless of operating point which buys the smallest in-window error on the under-frequency events but at a characteristic cost signature: a slow, high-amplitude post-event swing (ITAE $\sim\!10^3$), a ${\approx}2.0$~\texteuro\ reserve bill second only to MLP-MAPPO ($2.71$~\texteuro), and a $+421$\,\% collapse on unseen topologies. The proposed controller commits reserve \emph{selectively}: the inductive GraphSAGE encoder learns topology-invariant bus features and re-aggregates over whatever feeder is active, so the policy delivers the lowest total and time-weighted error, settles $1.9$--$3.0\times$ faster and stays settled, holds a scenario-invariant DSO cost, and carries its performance across reconfigurations with a $0.17$~Hz$\cdot$s spread. The encoder-only ablation, identical but for the encoder, loses both the low error and more tellingly its cross-topology predictability, which attributes the gain to the inductive graph representation rather than to the cooperative RL stack.
-
-The principal limitation is one of validation level. The frequency model is small-signal: it captures reconfiguration through the Kron-reduced Jacobian but omits electromagnetic-transient (EMT) converter behavior and the inner voltage/current loops, and the closed loop is exercised without communication delay or measurement noise. Validation on a commercial EMT platform (e.g., PSCAD or EMTP-RV) and in a hardware-in-the-loop testbed is therefore the principal next step.
-
-
-
-
-\section{Conclusion} \label{sec:conclusion}
-This paper replaced the classical droop loop for fast frequency response in $100$\,\% inverter-based islanded microgrids with a topology-adaptive cooperative MARL controller: an inductive GraphSAGE encoder over the active feeder graph feeds a parameter-shared MAPPO actor whose per-DER action jointly sets a power reference and a local droop gain, inside a shared safe-by-construction envelope. Trained on a single feeder topology and evaluated zero-shot on $24$ unseen reconfigurations of a modified islanded IEEE 123-bus feeder, every learning controller stayed nadir-safe, but the proposed controller settled $1.9$--$3.0\times$ faster with a $20$--$72\times$ lower time-weighted error, and retained its post-event integral frequency error within $6\%$ of the training-feeder value the lowest unseen error of any controller, against $+112$ to $+421\%$ degradation for fixed-adjacency and saturating baselines at the lowest per-event cost among the learning controllers. An encoder-only ablation attributed this cross-topology predictability to the inductive graph representation rather than the cooperative RL stack; inductive graph encoders are thus a practical route to FFR controllers that remain effective as feeders are reconfigured, without retraining. Validation on a commercial electromagnetic-transient platform and a hardware-in-the-loop testbed under realistic communication delay and measurement noise is the principal next step.
-
-
-
-
-
-% \section*{Acknowledgments}
-% The authors would like to acknowledge the support provided by VinUniversity.
-
-
-
-% {\appendix[Proof of the Zonklar Equations]
-% Use $\backslash${\tt{appendix}} if you have a single appendix:
-% Do not use $\backslash${\tt{section}} anymore after $\backslash${\tt{appendix}}, only $\backslash${\tt{section*}}.
-% If you have multiple appendixes use $\backslash${\tt{appendices}} then use $\backslash${\tt{section}} to start each appendix.
-% You must declare a $\backslash${\tt{section}} before using any $\backslash${\tt{subsection}} or using $\backslash${\tt{label}} ($\backslash${\tt{appendices}} by itself
-%  starts a section numbered zero.)}
-
-
-
-% %{\appendices
-% %\section*{Proof of the First Zonklar Equation}
-% %Appendix one text goes here.
-% % You can choose not to have a title for an appendix if you want by leaving the argument blank
-% %\section*{Proof of the Second Zonklar Equation}
-% %Appendix two text goes here.}
-
-
-
-% \section{References Section}
-% You can use a bibliography generated by BibTeX as a .bbl file.
-%  BibTeX documentation can be easily obtained at:
-%  http://mirror.ctan.org/biblio/bibtex/contrib/doc/
-%  The IEEEtran BibTeX style support page is:
-%  http://www.michaelshell.org/tex/ieeetran/bibtex/
- 
-%  % argument is your BibTeX string definitions and bibliography database(s)
-% %\bibliography{IEEEabrv,../bib/paper}
-% %
-% \section{Simple References}
-% You can manually copy in the resultant .bbl file and set second argument of $\backslash${\tt{begin}} to the number of references
-%  (used to reserve space for the reference number labels box).
-
-
-\bibliographystyle{IEEEtran}
-\bibliography{Ref}
-
-\vfill
-
+	
+	
+	
+	% The paper headers
+	% \markboth{Journal of \LaTeX\ Class Files,~Vol.~14, No.~8, August~2021}%
+	% {Shell \MakeLowercase{\textit{et al.}}: A Sample Article Using IEEEtran.cls for IEEE Journals}
+	
+	%\IEEEpubid{0000--0000/00\$00.00~\copyright~2021 IEEE}
+	% Remember, if you use this you must call \IEEEpubidadjcol in the second
+	% column for its text to clear the IEEEpubid mark.
+	
+	\maketitle
+	
+	\begin{abstract}
+		High penetration of inverter-based resources (IBRs) in islanded microgrids lowers inertia and makes fast frequency response (FFR) sensitive to feeder reconfiguration, which the fixed droop control, topology blind droop loop cannot track. 
+		When IBRs are aggregated into virtual power plants (VPPs) that bid FFR reserve into the ancillary service market, the committed reserve is only as deliverable as the active feeder can route, so the VPP's real-time execution layer must stay topology aware as the distribution system operator reconfigures the grid. 
+		We propose a topology adaptive FFR controller for this layer: An inductive GraphSAGE encoder over the active feeder graph feeds a parameter shared multi-agent proximal policy optimization actor under centralized training with decentralized execution, and each resource jointly emits a fast power reference and a local droop gain inside a shared safety envelope. 
+		Trained on one topology of a modified IEEE 123-bus feeder and evaluated zero-shot on 24 unseen reconfigurations, the proposed method achieves the lowest unseen integral of time-weighted absolute error among all standards-compliant methods. The learning baselines and fixed droop control yield errors 1.45--1.75 times and 3.7 times higher, respectively, while the proposed method exhibits no degradation beyond the training feeder and delivers the lowest-cost FFR service, reducing the average distribution system operator procurement cost to \text{\texteuro}1.87 per event, 10--13\% below that of the best competing learning controllers.
+	\end{abstract}
+	
+	
+	
+	\begin{IEEEkeywords}
+		Fast Frequency Response, Islanded Microgrids, Inverter-based Resource, Virtual Power Plant, GraphSAGE Network, Multi-Agent Reinforcement Learning
+	\end{IEEEkeywords}
+	
+	\section{Introduction}
+	% ==================================================================
+	\label{sec:intro}
+	% ==================================================================
+	
+	\IEEEPARstart{T}{he} transition toward $100$\% inverter-based resources (IBRs) in islanded distribution feeders removes the synchronous inertia that has traditionally bounded the rate of change of frequency (RoCoF), pushing the frequency nadir after a disturbance toward underfrequency load shedding (UFLS) thresholds and, in severe cases, blackout~\cite{roy2022overview}. Secure operation therefore requires the distributed energy resources (DERs) interfaced through inverters, namely battery energy storage system (BESS), vehicle-to-grid (V2G) chargers, and distributed photovoltaics (DPV), to deliver fast frequency response (FFR) on subsecond to second time scales, coordinated with the grid-forming (GFM) inverters that set the voltage and frequency reference~\cite{salem2025gfmreview}. In market operation these DERs do not act in isolation: they are aggregated into virtual power plants (VPPs) that bid energy and fast frequency reserve into the distribution ancillary service market coordinated by a distribution system operator (DSO)~\cite{liu2025fastresponse}, so the FFR loop studied here is the real-time execution layer through which a VPP delivers the reserve it has committed. The scheme deployed today is the classical droop controller, in which each DER injects an active power increment proportional to the local frequency deviation through a fixed per device gain. This loop has two structural limitations. First, the traditional controller is fixed: commissioned for the worst foreseeable event, it is underutilized during mild disturbances and cannot amplify near UFLS or reallocate headroom when storage energy is scarce~\cite{boutfarjoute2025fuzzy}. Second, the controller is topology blind: FFR deliverability is set jointly by the DER fleet and the active feeder graph, which DSO tie switch reconfiguration and line contingencies continually reshape~\cite{jacob2024outage}, yet neither the gain nor the controller state encodes the active graph.
+	
+	Adaptive virtual inertia and virtual synchronous generator (VSG) control improves RoCoF and nadir over fixed droop and can stabilize a $100$\% IBR microgrid without rotating machines~\cite{hamanah2024robust}, but is retuned by small signal analysis around a fixed feeder, treating topology variation as parametric uncertainty rather than a structural change of the graph. Model-based optimization and model predictive control can handle operational constraints well but heavily depend on model accuracy. Additionally, constantly re-solving the optimization problem as conditions change creates a high computational burden, limiting real-time implementation \cite{9044326}. Multi-agent reinforcement learning (MARL) under centralized training with decentralized execution (CTDE) coordinates large DER populations for dispatch, voltage, and primary frequency control~\cite{shi2025coordvpp,qiu2023hierarchical}, yet standard formulations embed a fixed adjacency through multilayer perceptron (MLP) or transductive graph convolution encoders~\cite{wang2025mappo,wang2023graphppo} and expose either a power reference or a droop gain, rarely both~\cite{hu2022multitimescale}. Closest to this setting, a learning-based VPP frequency regulation controller with transient safety guarantees tolerates a reconfiguration by recomputing participation factors and retraining for large changes~\cite{zhang2026vppsafety}, and techno-economic frameworks integrate fast response reserve into VPP ancillary service operation~\cite{fernandopulle2024vppffr}; both aggregate IBRs on a given network, so a topology change is met by parameter reallocation or retraining. The present controller instead encodes the active graph with an inductive GraphSAGE encoder~\cite{pei2023graphsage,CHEN2023930} and is evaluated zero-shot across $24$ reconfigurations with no retraining. To our knowledge no prior study combines an inductive encoder, a per DER joint power reference and droop gain action, and an islanded $100$\% IBR setting under a zero-shot topology holdout; the novelty lies in the problem, architecture, and evaluation, not in GraphSAGE itself~\cite{pei2023graphsage}.
+	
+	Three gaps follow: reserve deliverability is modeled from local energy alone and counts network-inaccessible reserve as deliverable; power references and droop gains are designed separately rather than jointly; and controllers are evaluated only on their training topology, leaving robustness to reconfiguration unquantified.
+	This paper develops a topology adaptive FFR controller for islanded $100\%$ IBR microgrids that learns over the active feeder graph, exposes a joint power reference and droop gain action, and is verified for zero-shot transfer across feeder reconfigurations. Three contributions follow.
+	
+	\begin{enumerate}[leftmargin=*]
+		\item \textbf{Topology coupled deliverability and frequency model.}  Reserve deliverability is modeled as a function of the active feeder graph, bus voltages, and inverter loading, while closed-loop frequency dynamics are represented by a topology-dependent reduced-order model. Reconfiguration therefore affects both reserve accessibility and the synchronizing and disturbance-coupling structure of the frequency response, eliminating the inconsistency of combining topology-aware control with topology invariant for dynamic grid.
+		
+		\item \textbf{GraphSAGE-MAPPO with a joint action and a safety envelope.} An inductive GraphSAGE encoder over the active feeder graph provides node embeddings to a parameter-shared multi-agent proximal policy optimization (MAPPO) actor under CTDE. The actor outputs a power reference and droop gain for each DER. Frequency-security constraints are addressed by a safety envelope: a monotonic-gain parameterization with a Common Lyapunov stability certificate, a backbone-governed RoCoF bound, and a closed-form one-step projection that holds the predicted next-step center of inertia (COI) within the band.
+		
+		%		jointly
+		
+		%enforced through a safe-by-construction envelope comprising monotonic gain parameterization with a common Lyapunov certificate, backbone-governed RoCoF limits, and a closed-form nadir projection layer.
+		
+		\item \textbf{Zero-shot topology holdout on frequency security metrics.} The policy is trained on a single feeder topology and tested without retraining on 24 unseen reconfigurations of a modified islanded IEEE 123-bus feeder. An encoder-only ablation, replacing GraphSAGE with an MLP while keeping the remaining learning architecture unchanged, isolates the contribution of the graph encoder to topology adaptation. To the best of our knowledge, this is the first MARL-based FFR controller for islanded microgrids validated through zero-shot topology transfer.
+	\end{enumerate}
+	
+	\section{System and Frequency Response Models}
+	\label{sec:model}
+	%                        
+	\subsection{Islanded 100\% Inverter Based Microgrid and Component Models}
+	\label{sec:model:overview}
+	\subsubsection{Grid-Forming Inverters}
+	A backbone of $n_g$ GFM inverters establishes the voltage and frequency references. Each unit $g$ emulates the swing dynamics of a synchronous machine through a virtual inertia control loop \cite{hou2020adaptive},
+	\begin{align}
+		2H_g\,\frac{d\Delta\omega_g}{dt}
+		&= \Delta P_{\mathrm{set},g}-\Delta P_{e,g}-D_g\,\Delta\omega_g,
+		\label{eq:vsg_swing}\\
+		\frac{d\Delta\delta_g}{dt} &= \omega_0\,\Delta\omega_g,
+		\label{eq:vsg_angle}
+	\end{align}
+	where $\Delta P_{e,g}$ is the network imposed electrical power deviation introduced below, $\omega_0=2\pi f_0$ is the nominal angular frequency, and the virtual inertia $H_g$ is a programmable control parameter rather than rotating mass~\cite{10638828}. The backbone is heterogeneous (one VSG plus $n_g-1$ droop GFM units; per unit values in Table~\ref{tab:system}). The grid-following (GFL) fleet acts only over the finite step $\Delta t$, contributing to the per step RoCoF and to the post-nadir damping mechanism described in
+	Sec.~\ref{sec:method:safety}.
+	
+	\subsubsection{Grid-Following DER Fleet}
+	A fleet of $|\mathcal{A}|$ GFL DERs, including BESS, V2G chargers, and DPV, injects active power with a learned droop term but no inertia. These controllable agents constitute the VPP’s FFR layer, which is the only layer designed here. The GFM backbone provides inertial response and primary droop, while a proportional–integral AGC loop restores the steady-state offset over minutes. At the one-second fast step $\Delta t$, the inner voltage and current loops behave as first-order envelopes. DPV applies curtailment-only regulation, and each BESS/V2G unit operates as a state-of-charge (SoC) integrator with charge/discharge efficiencies $\eta_{\mathrm{ch}}, \eta_{\mathrm{dis}}$, energy capacity $E$, and interval $\Delta T$~\cite{alden2026vppev},
+	
+	
+	\begin{equation}
+		\mathrm{SoC}_{i,t+1}=
+		\begin{cases}
+			\mathrm{SoC}_{i,t}-\dfrac{P_{i,t}\,\Delta T}{\eta_{\mathrm{dis}}\,E_i},
+			& P_{i,t}>0\ \text{(discharge)},\\[6pt]
+			\mathrm{SoC}_{i,t}+\dfrac{|P_{i,t}|\,\eta_{\mathrm{ch}}\,\Delta T}{E_i},
+			& P_{i,t}<0\ \text{(charge)},
+		\end{cases}
+		\label{eq:bess_soc}
+	\end{equation}
+	held within physical and FFR-eligibility SoC bands; the V2G fleet is time-varying through connection availability and departures.
+	
+	The reserve a DER can actually deliver is not a function of this energy state alone. In an islanded feeder it also depends on the active topology and the resulting voltage and current envelopes,
+	\begin{equation}
+		R^{\mathrm{ffr}}_{i,t}
+		= f\!\left(\mathcal{G}_t,\ \mathrm{SoC}_{i,t},\ V_t,\ S_t,\ P_t,\ Q_t\right),
+		\label{eq:deliverability}
+	\end{equation}
+	where $V_t,S_t,P_t,Q_t$ are the bus voltage, apparent loading, and active and reactive line-flow profiles of the energized feeder. A controller that ignores $\mathcal{G}_t$ commits reserve that cannot be delivered under the realized topology, producing undersupply and larger frequency excursions; this topology-dependent deliverability is the physical basis of the first contribution.
+	
+	%                        
+	\subsection{Market and Execution Context}
+	\label{sec:model:layers}
+	
+	The DER fleet is organized for market participation by partitioning the feeder into $|\mathcal{Z}|$ VPP zones with agent sets $\mathcal{A}_z$, where $\mathcal{A}=\bigcup_{z\in\mathcal{Z}}\mathcal{A}_z$.
+	As illustrated in Fig.~\ref{fig:architecture}, this work designs and evaluates only the fast execution layer, while treating the upper market and network-management layers as exogenous operating context. The DSO provides the active feeder topology and associated network signals through its operational scheduling process 
+	\cite{basdomenech2024dlmp}, while the VPP aggregator supplies the committed energy and reserve targets obtained from its market-clearing procedure under uncertainty
+	\cite{liu2021wdrovpp,arrigo2021wdroreserve}. The proposed
+	controller acts as a price-taking execution layer that converts these signals into real-time active-power and droop commands, consistent with the hierarchical structures commonly adopted in distribution-level flexibility markets
+	\cite{huang2015dlmp}.
+	
+	The fast-frequency reserve commitment is represented by the
+	deliverable quantity $R^{\mathrm{ffr}}_{i,t}$ in
+	\eqref{eq:deliverability}. Consequently, the active feeder graph assumed during reserve commitment must also be observed by the real-time execution layer. Otherwise, topology-blind control may commit reserve that cannot be physically routed to the disturbance location, leading to reserve under-delivery. This coupling motivates the topology-dependent frequency response model developed next.
+	
+	\begin{figure}[!htbp]
+		\centering
+		\includegraphics[width=0.99\linewidth, trim=7mm 5mm 7mm 5mm, clip]{img/architecture_3layer.pdf}
+		\caption{Operating context: the proposed controller as the DER execution layer (price taker) under DSO and VPP signals.}
+		\label{fig:architecture}
+	\end{figure}
+	
+	%
+	\subsection{Topology Dependent Frequency Model}
+	\label{sec:model:freqmodel}
+	
+	The classical COI model collapses the feeder to a single scalar swing equation and therefore cannot express how tie switch reconfiguration or line contingencies redistribute the frequency response. We instead retain the inter unit angle structure and let the active feeder graph enter the state matrix explicitly, recovering the COI quantity only as a readout.
+	
+	\subsubsection{Topology-Dependent Couplings via Kron Reduction}
+	The active feeder graph $\mathcal{G}_t$ enters the model through two blocks of one Kron reduction. Partitioning the buses into the retained GFM set $I$ and the eliminated load set $L$ and condensing the latter \cite{luo2014kronmicrogrid,ajala2023gfmreduction} gives the Kron-reduced active-power Jacobian,
+	\begin{equation}
+		\tilde{J}_r = J_{II}-J_{IL}\,J_{LL}^{-1}\,J_{LI},
+		\label{eq:kron}
+	\end{equation}
+	which sets the synchronizing torque coupling among the GFM units; tie switch reconfiguration and line contingencies change the block partition in \eqref{eq:kron}, so each topology produces a distinct $\tilde{J}_r$. The disturbance enters through the other block of the same partition: the imbalance $\Delta P_{\mathrm{imb}}$ is injected at the physical feeder bus of the contingency, not spread uniformly across units, so condensing that injection onto the retained units through the Kron transfer $J_L=J_{IL}J_{LL}^{-1}$ makes the input matrix topology dependent,
+	\begin{equation}
+		B_{\mathrm{net}}(\mathcal{G}_t)=\operatorname{diag}\!\big(\tfrac{1}{2H}\big)\,J_L(\mathcal{G}_t),
+		\label{eq:bnet}
+	\end{equation}
+	reducing to a uniform, location-agnostic injection only in the degenerate case $J_L\propto\mathbf{1}$. A contingency electrically close to unit $g$ loads it more than distant units, and a reconfiguration that reroutes around $g$ redistributes that loading, so the active graph shapes both the synchronizing coupling and where the disturbance is felt.
+	
+	\subsubsection{Reduced-Order State-Space Model}
+	Collect the GFM deviations into the state $x=\big[\Delta\boldsymbol{\delta}_{\mathrm{rel}}\in\mathbb{R}^{n_g-1},\ \Delta\boldsymbol{\omega}\in\mathbb{R}^{n_g}\big]^{\!\top}$, the relative angles being referenced to the largest rated GFM unit. Assembling \eqref{eq:vsg_swing} and \eqref{eq:vsg_angle} over the backbone gives the linear, topology-parameterized dynamics,
+	\begin{equation}
+		\frac{dx}{dt}
+		= A_f(\mathcal{G}_t,K_t)\,x
+		+ B_{\mathrm{ref}}\,\Delta P_{\mathrm{ref,t}}
+		+ B_{\mathrm{net}}(\mathcal{G}_t)\,\Delta P_{\mathrm{imb}},
+		\label{eq:statespace}
+	\end{equation}
+	where $\Delta \mathbf{P}_{\mathrm{ref},t} \in \mathbb{R}^{n_g}$ is the per-GFM reference vector obtained by aggregating the DER-level scalar commands $\Delta P_{m,t}$ to their nearest GFM units, $\Delta P_{\mathrm{imb},t}$ is the scalar contingency magnitude routed by $B_{\mathrm{net}}(\mathcal{G}_t)$ of \eqref{eq:bnet}, and the block state matrix is
+	\begin{equation}
+		A_f(\mathcal{G}_t,K_t)=
+		\begin{bmatrix}
+			\mathbf{0} & \omega_0\,C\\[4pt]
+			-\operatorname{diag}\!\big(\tfrac{1}{2H}\big)\,\tilde{J}_r^{\mathrm{rel}}(\mathcal{G}_t)
+			& -\operatorname{diag}\!\big(\tfrac{1}{2H}\big)\,D(K_t)
+		\end{bmatrix},
+		\label{eq:af_matrix}
+	\end{equation}
+	with $C\in\mathbb{R}^{(n_g-1)\times n_g}$ the reference differencing operator (row $i$ holds $+1$ at unit $i$ and $-1$ at the reference unit), $\tilde{J}_r^{\mathrm{rel}}(\mathcal{G}_t)~\in~\mathbb{R}^{\,n_g\times(n_g-1)}$ the Jacobian $\tilde{J}_r$ of \eqref{eq:kron} with its reference column removed, and $D(K_t)~=~\operatorname{diag}(K_{\mathrm{eff},g})$ the effective damping set by the learned droop gains $K_t$.
+	The learned per-DER gains, absolute quantities in MW/Hz, enter the per-unit damping after aggregation to the nearest GFM unit $g$,
+	\begin{equation}
+		K_{\mathrm{eff},g}
+		= K_{\mathrm{bb}}
+		+ \frac{f_0}{S_{\mathrm{base}}}\sum_{m:\,g(m)=g} K_m ,
+		\label{eq:kdroop_conv}
+	\end{equation}
+	where $K_{\mathrm{bb}}$ is the backbone droop and $K_m$ is the learned gain of \eqref{eq:action_droop}; parallel droop sources add, so the learned GFL droop adds to the backbone damping in $D(K_t)=\operatorname{diag}(K_{\mathrm{eff},g})$.
+	\subsubsection{Discretization, Readout, and Secondary Control}
+	Because $\Delta t=1$\,s is large relative to the inverter time constants, the model is discretized by Zero-Order Hold (ZOH) to $(\Phi,\Gamma)$, cached per topology and droop gain bin. The COI frequency is recovered as a rating weighted readout,
+	\begin{equation}
+		\Delta f_t = f_0\,\frac{\sum_g S_g\,\Delta\omega_g}{\sum_g S_g},
+		\qquad
+		\dot f_t = \frac{\Delta f_t-\Delta f_{t-1}}{\Delta t},
+		\label{eq:coi_readout}
+	\end{equation}
+	so the COI is an observable of the reduced dynamics rather than the state itself, and is also the input to a slow integral secondary loop that removes the steady state offset. Unlike the single COI swing model, the closed loop carries no aggregate damping or droop constant; damping and droop enter per unit through $D(K_t)$, formed by the backbone droop and the learned GFL droop. The only lumped aggregate is the rating weighted backbone inertia $H_{\mathrm{sys}}$, set by control because $H_g$ is programmable virtual inertia; its numerical value is reported in Sec.~\ref{sec:casestudy}.
+	
+	\subsubsection{COI Metric and Topology Sensitivity}
+	Frequency security is evaluated on the COI readout \eqref{eq:coi_readout}, the system wide frequency observable at the one second step and consistent with reduced order system frequency response (SFR) models~\cite{8336919}. Projecting the swing block onto the rating weights decouples a single real COI mode,
+	\begin{equation}
+		\lambda_{\mathrm{COI}}\approx-\frac{\sum_g K_{\mathrm{eff},g}}{\sum_g 2H_g},
+		\label{eq:coi_mode}
+	\end{equation}
+	With a time constant of $\tau \approx 1.5$~s at the backbone gains of Table~\ref{tab:system}, determined by aggregate droop and inertia and thus nearly topology-invariant, the COI trajectory exhibits quasi–first-order behavior. The remaining $2(n_g-1)$ eigenvalues correspond to inter-machine swing pairs in the 38--345~Hz range for the base feeder and they cancel in the rating-weighted readout, thereby eliminating the oscillatory governor tail characteristic of synchronous machine SFR models. Reconfiguration influences the COI not through this mode but via the located forcing $B_{\mathrm{net}}(\mathcal{G}_t)$ and the deliverable reserve \eqref{eq:deliverability}; consequently, a model that neglects $\mathcal{G}_t$ yields inaccurate estimates of both.
+	
+%	two orders of magnitude above the 1~s control bandwidth, 
+	
+	
+	\section{Proposed GraphSAGE-MAPPO Controller}
+	\label{sec:method}
+	%                        
+	\subsection{FFR as a Cooperative Dec-POMDP}
+	\label{sec:method:mdp}
+	
+	
+	At each fast step the execution layer observes the active feeder graph $\mathcal{G}_t$, the zonal prices, and the realized frequency, and chooses the per-device fast power reference and droop gain $u_{m,t}=(\Delta P_{m,t},K_{m,t})$ for every $m\in\mathcal{A}$ to hold the COI frequency inside the security band at minimal control effort,
+	\begin{equation}
+		\begin{aligned}
+			\min_{\{u_{m,t}\}} \quad
+			& \mathbb{E}\!\left[
+			\sum_t \bigl(|\Delta f_t|
+			+\beta(|\Delta f_t|-\delta)^+\bigr)
+			\right] \\
+			\mathrm{s.t.}\quad
+			& x_{t+1}
+			= \Phi_t x_t
+			+ \Gamma_{\mathrm{ref},t}\Delta P_{\mathrm{ref},t}
+			+ \Gamma_{\mathrm{net},t}\Delta P_{\mathrm{imb},t}, \\
+			& A_f(\mathcal{G}_t,K_t)\ \mathrm{stable}, \\
+			& |\dot f_t| \le \dot f_{\mathrm{lim}}, \qquad
+			|\Delta f_t| \le \delta, \\
+			& 0 \le K_{m,t} \le K_{\max,m}, \\
+			& |\Delta P_{m,t}| \le R^{\mathrm{ffr}}_{m,t}(\mathcal{G}_t), \qquad
+			\mathrm{SoC}_{m,t}\in[\underline{s},\bar{s}],
+		\end{aligned}
+		\label{eq:problem}
+	\end{equation}
+	where $\delta$ is the safe band, $\dot f_{\mathrm{lim}}$ is the RoCoF ride-through limit, and $(x)^+~=~\max\{0,x\}$. The compact notation $\Phi_t=\Phi(\mathcal{G}_t,K_t)$, $\Gamma_{\mathrm{ref},t}=M(\mathcal{G}_t,K_t)B_{\mathrm{ref}}$, and	
+	% $\Delta f_t$ and $\dot f_t$ are the COI readouts \eqref{eq:coi_readout},
+	$\Gamma_{\mathrm{net},t}~=~M(\mathcal{G}_t,K_t)B_{\mathrm{net}}(\mathcal{G}_t)$ The ZOH-discretized state and input maps define the ZOH discretization of \eqref{eq:statespace}.. Because $\mathcal{G}_t$, the disturbance, and the prices are revealed only in real time and the per-device limits are time varying and nonconvex, we do not solve \eqref{eq:problem} online; instead we cast it as a cooperative decentralized partially observable Markov decision process (Dec-POMDP) $\langle\mathcal{A},\mathcal{S},\{O_m\},\{U_m\},P,r,\gamma\rangle$ and learn a safety-filtered policy under CTDE. The $41$ GFL agents observe only local and neighborhood information; the fast step is $\Delta t=1$\,s with $300$
+	steps per episode, and the architecture is shown in Fig.~\ref{fig:method_arch}. The objective of \eqref{eq:problem} maps onto the reward \eqref{eq:reward} and its constraints onto the safety envelope of Sec.~\ref{sec:method:safety}.
+	
+	
+	
+	\subsubsection{Observation}
+	Each agent $m$ observes a 16 dimensional local vector comprising the local frequency deviation and RoCoF from the COI readout, net power, SoC and dischargeable energy headroom, the zonal locational marginal price, a four way device type one hot encoding, VPP membership, the previous droop gain and power reference, SoC violation flags, a persistence power forecast, and a departure proxy. The local vectors are placed on the 123 bus graph at their host buses and augmented with four per bus grid background features (active and reactive load, voltage magnitude, and agent density), giving the full feeder observation $\mathit{obs}_{\mathrm{full}}\in\mathbb{R}^{123\times20}$.
+	
+	\subsubsection{Action}
+	The scheme it replaces is the classical droop controller, in which each DER injects a power increment proportional to the local frequency deviation through a fixed per device gain $K_i$,
+	\begin{equation}
+		\Delta P^{\mathrm{ffr}}_{i,t}=-K_i\,\Delta f_t.
+		\label{eq:classical_droop}
+	\end{equation}
+	Each agent instead emits a two dimensional action $a_m~=~[a^P_m,\,a^K_m]\in[-1,1]^2$ that jointly sets a fast active power reference and a local droop gain, replacing this fixed droop gain control with a learned, state conditioned one,
+	\begin{align}
+		\Delta P_m
+		&= \eta_P\,a^P_m\,P_{\mathrm{rated},m},
+		\label{eq:action_power}\\
+		K_m
+		&= K_{\min,m}
+		+\tfrac{1}{2}\bigl(1+a^K_m\bigr)
+		\bigl(K_{\max,m}-K_{\min,m}\bigr),
+		\label{eq:action_droop}
+	\end{align}
+	where $\eta_P$ is the power channel fraction of the device rating. The two channels combine into the realized per DER injection
+	\begin{equation}
+		\Delta P^{\mathrm{ffr}}_{m,t} \;=\; \Delta P_m \;-\; K_m\,\Delta f_t,
+		\label{eq:dual_law}
+	\end{equation}
+	a feedforward reference plus a learned proportional (droop) feedback on the COI readout; the classical loop \eqref{eq:classical_droop} is recovered as the special case $\Delta P_m=0$ with $K_m$ fixed. The power channel spans up to $\eta_P=\pm10\,\%$ of rated power (clipped to the device rating and SoC headroom, rate limited by $\Delta a_{\max}=0.2$ per step); the droop channel spans $[K_{\min,m},K_{\max,m}]$ with $K_{\min,m}=0$ and per type ceilings listed in Table~\ref{tab:system}. A droop gain is enabled only when $\mathrm{SoC}_m$ lies in the FFR eligibility band, nested inside the physical band; otherwise $K_m=0$. Aggregation of the per DER commands to the host GFM units, including the conversion of the droop channel into $D(K_t)$, follows \eqref{eq:kdroop_conv}. Exposing $a^P_m$ and $a^K_m$ jointly gives two degrees of freedom per device, a feedforward reference to position storage ahead of an FFR call and a state conditioned droop gain to shape the response, neither available to a power only or droop only law.
+	\subsubsection{Reward}
+	A single team reward couples frequency security, control effort, and service quality,
+	\begin{equation}
+		r_t = r^{\Delta f}_t + r^{\mathrm{nadir}}_t + r^{\mathrm{viol}}_t
+		+ r^{\mathrm{ffr}}_t + r^{\mathrm{eff}}_t + r^{\mathrm{soc}}_t
+		+ r^{\mathrm{mkt}}_t + r^{\mathrm{commit}}_t .
+		\label{eq:reward}
+	\end{equation}
+	Let $(x)^+=\max\{0,x\}$ be the positive part, $\Pi_{[a,b]}(y)=\min\{b,\max\{a,y\}\}$ the projection onto $[a,b]$, and $\langle g_m\rangle=\frac{1}{|\mathcal{A}|}\sum_{m\in\mathcal{A}}g_m$ the fleet average. Each security term shares one normalized, deadbanded form
+	\begin{equation}
+		e(x;d,x_{\mathrm{ref}})=\Pi_{[0,1]}\!\Big(\frac{(|x|-d)^+}{x_{\mathrm{ref}}}\Big),
+		\label{eq:rew_template}
+	\end{equation}
+	in which the deadband $d$ suppresses penalties from noise near $f_0$ and the event scaled reference $x_{\mathrm{ref}}$ keeps the gradient from saturating across the contingency classes. With $f=f_0+\Delta f_t$ and alarm threshold $f_{\mathrm{th}}$, the three groups are
+	\begin{align}
+		r^{\Delta f}_t &= -\,w_{\Delta f}\,e\big(\Delta f_t;\,d_f,\Delta f_{\mathrm{ref}}\big),\label{eq:r_deltaf}\\
+		r^{\mathrm{nadir}}_t &= -\,w_{\mathrm{nad}}\,\Pi_{[0,1]}\!\Big(\tfrac{(f_{\mathrm{th}}-f)^+ +\big(f-(2f_0-f_{\mathrm{th}})\big)^+}{\Delta f_{\mathrm{nad}}}\Big),\label{eq:r_nadir}\\
+		r^{\mathrm{viol}}_t &= -\,w_{\mathrm{viol}}\,\Pi_{[0,2]}\!\Big(\tfrac{(|\Delta f_t|-\delta)^+}{\delta}\Big),\label{eq:r_viol}\\
+		r^{\mathrm{ffr}}_t &= +\,w_{\mathrm{ffr}}\,\Pi_{[0,1]}\!\big(1-|\Delta f_t|/\delta\big),\label{eq:r_ffr}\\
+		r^{\mathrm{eff}}_t &= -\,\frac{w_{\mathrm{eff}}}{a_{\mathrm{ref}}^2}\,\big\langle \|a_m\|^2+\kappa\,\|\Delta a_m\|^2\big\rangle,\label{eq:r_eff}\\
+		r^{\mathrm{commit}}_t &= -\,w_{\mathrm{com}}\,\big\langle (\Delta K_m/K_{\max,m})^2\big\rangle,\label{eq:r_commit}\\
+		r^{\mathrm{soc}}_t &= -\,w_{\mathrm{soc}}\,\big\langle [(\underline s-\mathrm{SoC}_m)^+]^2+[(\mathrm{SoC}_m-\bar s)^+]^2\big\rangle,\label{eq:r_soc}\\
+		r^{\mathrm{mkt}}_t &= +\,w_{\mathrm{mkt}}\,\Pi_{[-1,1]}\!\big\langle \tilde\lambda^{\mathrm{lmp}}\,a^P_m+\tilde\lambda^{\mathrm{cap}}\,K_m/K_{\max,m}\big\rangle,\label{eq:r_mkt}
+	\end{align}
+	where $\tilde\lambda^{\mathrm{lmp}}=\lambda^{\mathrm{lmp}}/\lambda^{\mathrm{lmp}}_{\mathrm{ref}}$ and $\tilde\lambda^{\mathrm{cap}}=\lambda^{\mathrm{cap}}/\lambda^{\mathrm{cap}}_{\mathrm{ref}}$ are the energy and capacity prices normalized by their references, $(\underline s,\bar s)$ is the usable SoC band, and the per term weights $w$, deadbands $d$, references $x_{\mathrm{ref}}$, together with $a_{\mathrm{ref}}$ and $\kappa$ in Sec.~\ref{sec:casestudy:training}. The first group $(r^{\Delta f},r^{\mathrm{nadir}},r^{\mathrm{viol}})$ realizes the security objective of \eqref{eq:problem} and applies identically to every controller, including the baselines; the second $(r^{\mathrm{ffr}},r^{\mathrm{eff}},r^{\mathrm{commit}})$ rewards in band delivery and regularizes effort and reserve smoothness; the third $(r^{\mathrm{soc}},r^{\mathrm{mkt}})$ ties the policy to the SoC limits and the prevailing reserve price. The reward stream is passed through a running normalizer and clipped to $[-10,10]$.
+	
+	The $20$~mHz frequency deadband sits between the european network of transmission system operators for electricity (ENTSO-E) maximum frequency containment reserve (FCR) deadband ($10$~mHz) and the typical AGC restoration deadband ($30$~mHz), suppressing nuisance gradients from measurement scale fluctuations while preserving sensitivity to genuine events. 
+	% The reward stream is passed through a running normalizer and clipped to $[-10,10]$.
+	
+	% \begin{table}[!h]
+		% \caption{Reward weights, deadbands, and normalization references.}
+		% \label{tab:reward_weights}
+		% \centering
+		% \footnotesize
+		% \resizebox{\linewidth}{!}{
+			% \begin{tabular}{lcccl}
+				% \toprule
+				% Term & Weight & Deadband & Reference & Note\\
+				% \midrule
+				% $r^{\Delta f}$       & $0.9$  & $20$~mHz & $3.0$~Hz & symmetric over/under\\
+				% $r^{\mathrm{nadir}}$ & $0.6$  & --       & $2.5$~Hz & $49.5/50.5$~Hz thresholds\\
+				% $r^{\mathrm{viol}}$  & $0.4$  & --       & $0.5$~Hz & continuous, cap $2$\\
+				% $r^{\mathrm{ffr}}$   & $0.4$  & --       & $0.5$~Hz & positive shaping bonus\\
+				% $r^{\mathrm{eff}}$   & $0.05$ & --       & $0.75$   & $+0.3\times$ smoothness\\
+				% $r^{\mathrm{soc}}$   & $0.08$ & --       & --       & quadratic outside band\\
+				% $r^{\mathrm{mkt}}$   & $0.05$ & --       & $100$~\texteuro/MWh, $20$~\texteuro/MW/h & energy + capacity\\
+				% $r^{\mathrm{commit}}$& $0.06$ & --       & $K_{\max}$ & gain chatter penalty\\
+				% \bottomrule
+				% \end{tabular}
+			% }
+		% \end{table}
+	
+	
+	
+	%                        
+	\subsection{Inductive GraphSAGE Encoder}
+	\label{sec:method:graphsage}
+	
+	The encoder is the component that makes the controller transferable to unseen feeder configurations. We use an inductive GraphSAGE encoder~\cite{hamilton2017graphsage}, which learns aggregator functions over node neighborhoods rather than a fixed per node embedding. For node $j$ at layer $k$,
+	\begin{equation}
+		H_j^{(k)}
+		= \sigma\!\Big(W_{\mathrm{self}}\,H_j^{(k-1)}
+		+ W_{\mathrm{neigh}}\!\cdot\!
+		\operatorname{mean}_{u\in\mathcal{N}(j)} H_u^{(k-1)}\Big),
+		\label{eq:graphsage}
+	\end{equation}
+	where $H_j^{(0)}$ is the per bus observation, $\sigma$ the rectified linear unit nonlinearity, $\mathcal{N}(j)$ the neighbors of $j$ in the active graph, and $W_{\mathrm{self}},W_{\mathrm{neigh}}$ the self and neighbor aggregator weights shared across all nodes and topologies; two layers map the 20 dimensional input through a 128 dimensional hidden layer to a 128 dimensional embedding. Because $\mathcal{N}(j)$ is rebuilt at every step from the active graph $\mathcal{G}_t$ and the learned weights belong to the aggregator rather than to a fixed adjacency, reconfiguration changes which neighbors are aggregated but not the aggregating function. This is what enables zero-shot transfer: a transductive graph convolution ties its spectral filters to one adjacency and must be retrained when the graph changes, whereas the inductive encoder satisfies the topology coupled deliverability relation without per topology retraining. After two passes over the 123 bus graph, the embeddings at the 41 DER host buses feed the actor and the centralized critic, both reasoning over a representation that already encodes the realized feeder's neighborhood structure.
+	
+	%
+	\subsection{Multi-agent Proximal Policy Optimization under CTDE}
+	\label{sec:method:mappo}
+	
+	The controller is trained with MAPPO~\cite{yu2022mappoeffective} under CTDE: a centralized critic uses global information during training while each agent executes from its local observation alone at run time, and both heads operate on the per agent embeddings from the encoder above show in Fig.~\ref{fig:method_arch}.
+	
+	
+	\begin{figure}[!h]
+		\centering
+		% \includegraphics[width=0.99\linewidth]{img/GraphSAGE-MAPPOargi.pdf}
+		\includegraphics[width=0.99\linewidth, trim=5mm 10mm 5mm 7mm, clip]{img/GraphSAGE-MAPPOargi.pdf}
+		\caption{Proposed GraphSAGE-MAPPO controller.}
+		\label{fig:method_arch}
+	\end{figure}
+	
+	
+	The actor is a single parameter shared diagonal Gaussian policy that maps each agent embedding through a two layer perceptron to the mean and log standard deviation of the two dimensional action, with bounded mean $\mu=\bar a\,\tanh(\cdot)$ and spread $\sigma=\varsigma(\cdot)+\sigma_0$, where $\varsigma$ is the softplus and $\bar a=0.75,\ \sigma_0=0.05$. Parameter sharing keeps the policy size independent of $|\mathcal{A}|$ and permits a varying agent count across topologies. The centralized critic concatenates each agent embedding with a global context formed by mean and max pooling over all agents and returns a per agent value, retaining credit for each DER while the pooled context supplies the system level signal for cooperative coordination.
+	
+	For the update, advantages follow generalized advantage estimation (GAE) ($\gamma=0.99$, $\lambda=0.95$)~\cite{schulman2015high} on the shared team reward \eqref{eq:reward}, and the policy is updated by the clipped proximal policy optimization (PPO) surrogate with ratio $\rho_t$ and clip range $\epsilon=0.2$~\cite{schulman2017ppo}; the loss adds a value regression term and an entropy bonus annealed across the curriculum. 
+	The complete training procedure is summarized in Algorithm~\ref{alg:training}.
+	
+	\begin{algorithm}[t]
+		\caption{Topology-aware MAPPO training for FFR.}
+		\label{alg:training}
+		\begin{algorithmic}[1]
+			\Require Islanded feeder environment with frequency model \eqref{eq:statespace}; shared GraphSAGE encoder $f_\phi$, Gaussian actor $\pi_\theta$, centralized critic $V_\psi$; six phase curriculum $\mathcal{C}$; PPO settings $(\epsilon,\gamma,\lambda,K,B)$
+			\Ensure Trained parameters $(\phi,\theta,\psi)$
+			\State Initialize $(\phi,\theta,\psi)$ and the observation/reward normalizers
+			\For{each curriculum phase $c=1,\dots,6$}
+			\State Set learning rate, entropy weight, and event distribution from $\mathcal{C}_c$
+			\For{each episode}
+			\State Sample topology $\mathcal{G}_t$ and contingency $\Delta P_{\mathrm{imb}}$
+			\State Reset $x\!\leftarrow\!0$
+			\For{$t=1,\dots,T$}
+			\State $z_i \leftarrow f_\phi(\mathcal{G}_t)$ at each host bus, with the COI skip $(\Delta f_t,\dot f_t)$
+			\State Sample $(a^P_i,a^K_i)~\sim~\pi_\theta(\cdot\,|\,z_i)$; form $(\Delta P_{\mathrm{ref}},K_t)$ by \eqref{eq:action_power} and \eqref{eq:action_droop}
+			\State Project $\Delta P_{\mathrm{ref}}$ for nadir safety; step the dynamics; read out the COI \eqref{eq:coi_readout}
+			\State Store $(z,a,\log\pi,V_\psi,r_t)$ with $r_t$ from \eqref{eq:reward}
+			\EndFor
+			\State Compute per agent GAE advantages; update $(\phi,\theta,\psi)$ by the clipped PPO loss
+			\EndFor
+			\EndFor
+			\State \Return $(\phi,\theta,\psi)$
+		\end{algorithmic}
+	\end{algorithm}
+	
+	
+	\subsection{Shared Safety Envelope}
+	\label{sec:method:safety}
+	
+	Frequency security is enforced by an envelope that belongs to the environment rather than to any controller, so the proposed policy and every baseline act inside the same safe set. The envelope rests on four mechanisms: a nonnegative droop parameterization, a Lyapunov stability certificate, a backbone governed RoCoF bound, and a closed form one-step projection on the predicted COI. The first two guarantee asymptotic stability; the last two bound the transient.
+	
+	Stability starts at construction. With $K_{\min}=0$, the action map \eqref{eq:action_droop} keeps the droop gains nonnegative, so $D(K_t)~=~\operatorname{diag}(K_t)\succeq0$ and the realized droop is monotone in frequency \cite{zhang2026vppsafety,alduaij2025partialmonotone}. The lossless swing-energy argument motivates the certificate in \eqref{eq:lyap_V}, while the lossy case is verified numerically through the LMI in \eqref{eq:lmi}. For the swing energy:
+	\begin{equation}
+		V=\tfrac12\Delta\boldsymbol{\omega}^{\!\top}M\Delta\boldsymbol{\omega}
+		+
+		\tfrac12\Delta\boldsymbol{\delta}_{\mathrm{rel}}^{\!\top}\tilde{J}_r^{\mathrm{sync}}\Delta\boldsymbol{\delta}_{\mathrm{rel}},
+		\label{eq:lyap_V}
+	\end{equation}
+	with $M=\operatorname{diag}(2H_g)$ and $\tilde{J}_r^{\mathrm{sync}}$ the synchronizing block in relative coordinates, the lossless limit gives $\dot V~=~-\Delta\boldsymbol{\omega}^{\!\top}D(K_t)\Delta\boldsymbol{\omega}\le0$. As retained resistances make $\tilde{J}_r$ nonsymmetric, we instead certify the lossy $A_f(\mathcal{G}_t,K_t)$ numerically by a Common Lyapunov function $P\succ0$,
+	\begin{equation}
+		A_i^{\!\top}P+PA_i\preceq-\varepsilon I \quad \text{at every vertex } A_i.
+		\label{eq:lmi}
+	\end{equation}
+	Because $A_f$ is affine in $K_t$, the residual $A_i^{\!\top}P+PA_i$ is affine in $K_t$ for any fixed $P$; a single $P\succ0$ satisfying \eqref{eq:lmi} at the box vertices therefore certifies $A_i^{\!\top}P+PA_i\preceq-\varepsilon I$ over the entire gain box by convex combination. The vertex check is necessary, but the common $P$ not vertex Hurwitzness alone, since the set of Hurwitz matrices is itself non-convex supplies the box-wide guarantee. A common $P$ over the held family would give exponential stability under arbitrary switching~\cite{Liberzon2003SwitchingIS}; as that linear matrix inequality is infeasible here, stability is instead certified by an average dwell-time bound $\tau_a^{\star}=\ln\mu/(2\eta)=41.6$~s, where $\eta=0.283$~s$^{-1}$ is the slowest strictly-damped decay rate and $\mu=1.69\times10^{10}$ bounds the inter-mode Lyapunov conditioning over the $96$ frozen-time vertices (all Hurwitz). This is met by orders of magnitude since reconfiguration is event-triggered at the minute timescale.
+	
+	The transient is bounded by the other two mechanisms. The analytic bound $\Delta P_{\mathrm{imb}}/(2H_{\mathrm{sys}})$ is the worst case of a uniform injection scalar model in which the backbone absorbs the imbalance evenly; under the located forcing $B_{\mathrm{net}}(\mathcal{G}_t)$ the disturbance loads the backbone unevenly, so the realized RoCoF can differ from this bound. This first step value is in any case set by the backbone inertia alone and is invariant to the GFL action~\cite{kenyon2021gfmfreqorder}. A dual-rate framework separates the $1~s$ control macro-step from the $100~ms$ simulation micro-step to avoid conflicts. MAPPO and the safety envelope run at the $1~s$ boundary using cached ZOH matrices. Within each $1~s$ interval, control loops react instantly to frequency deviations, providing continuous sub-second damping. The $100~ms$ steps also yield high-resolution data to evaluate peak RoCoF over a $500~ms$ window for IEEE Std 1547 compliance~\cite{8332112}.
+	
+	
+	The nadir is the limit the controller must shape, one step ahead. With the cached ZOH pair 
+	% the next step COI deviation is affine in the reference, With the cached ZOH pair, the next-step COI deviation is affine in the per-GFM reference vector $\Delta \mathbf{P}_{\mathrm{ref},t}$,
+	$(\Phi,M)$, the $\omega$-block row selection $(\cdot)_\omega$, the COI weights $w_g=S_g/\sum_g S_g$, and the input gain $G=\operatorname{diag}(\tfrac{1}{2H})$, the next-step COI deviation is affine in the per-GFM reference vector $\Delta\mathbf{P}_{\mathrm{ref},t}$,
+	
+	\begin{equation}
+		\Delta f^{+}=a+b^{\!\top}\Delta P_{\mathrm{ref,t}},
+		\label{eq:affine_pred}
+	\end{equation}
+	\begin{equation}
+		a=f_0\,w^{\!\top}\!\big[(\Phi x_t)_\omega+M_{\omega\omega}\,c_u\big],
+		\qquad
+		b=f_0\,G\,M_{\omega\omega}^{\!\top}\,w,
+		\label{eq:affine_coeffs}
+	\end{equation}
+	where $M_{\omega\omega}$ is the $\omega$-block of $M$ and $c_u$ collects the reference-independent inputs (the one-step-delayed AGC feedback and the located disturbance forcing). If $\Delta f^{+}\in[-\delta,\delta]$ the action passes unchanged; otherwise it is projected onto the violated half space in closed form,
+	\begin{equation}
+		\Delta P_{\mathrm{ref,t}}\;\leftarrow\;\Delta P_{\mathrm{ref,t}}+b\,\frac{\mp\delta-\Delta f^{+}}{\lVert b\rVert^{2}},
+		\label{eq:nadir_proj}
+	\end{equation}
+	the minimum norm correction satisfying $a+b^{\!\top}\Delta P_{\mathrm{ref}}=\mp\delta$ with $\delta=0.5$~Hz. One linear constraint means no quadratic program is solved in the loop~\cite{tabas2021safefilter}, and the guard acts on the COI because that is the observable on which the controller is rewarded and evaluated.
+	
+	% =====================================================================
+	\section{Case Study}
+	\label{sec:casestudy}
+	
+	
+	
+	%
+	\subsection{Test System and Scenarios}
+	\label{sec:casestudy:system}
+	
+	The controller is evaluated on a modified IEEE 123 bus distribution feeder~\cite{8309383} operated as a $100\%$ inverter based islanded microgrid (see Fig.~\ref{fig:topology}). Device and system parameters are listed in Table~\ref{tab:system}, and the ENTSO-E frequency security thresholds in Table~\ref{tab:fsec_standards}.
+	
+	
+	\begin{figure}[!h]
+		\centering
+		\includegraphics[width=0.9955\linewidth]{img/Topology.pdf}
+		\caption{Islanded IEEE 123 bus feeder with VPP zones \cite{8309383}.}
+		\label{fig:topology}
+	\end{figure}
+	
+	
+	
+	
+	
+	
+	
+	\begin{table}[!h]
+		\caption{System and device parameters.}
+		\label{tab:system}
+		\centering
+		\footnotesize
+		\resizebox{\linewidth}{!}{
+			\begin{tabular}{lll}
+				\toprule
+				Quantity & Symbol(s) & Value \\
+				\midrule
+				Base power, frequency & $S_{\mathrm{base}}, f_0$ & $15.7$\,MW, $50$\,Hz \\
+				GFM-BESSs (VSG / droop) & $n_g, H_g$ & $2$ ($2.0$\,s / $0.5$\,s) \\
+				Aggregate system inertia & $H_{\mathrm{sys}}$ & $1.34$\,s \\
+				GFL agents, number of VPPs & $|\mathcal{A}|, |\mathcal{Z}|$ & 41 agents, 3 VPPs \\
+				Droop ceiling (BESS/V2G/DPV) & $K_{\max}$ & $0.30$ / $0.20$ / $0.15 \cdot P_{\mathrm{rated}}$ \\
+				SoC band (Physical / FFR) & --  & $[0.20, 0.90]$ / $[0.25, 0.85]$ \\
+				Efficiency, V2G response lag & $\eta, T_{\mathrm{v2g}}$ & $0.95$, $0.3$\,s \\
+				Time step, Episode length & $\Delta t$ & $1$\,s / $300$ steps \\
+				\bottomrule
+			\end{tabular}
+		}
+	\end{table}
+	
+	
+	
+	\begin{table}[!t]
+		\caption{Frequency-security thresholds~\cite{entsoe_sogl_2017}, \cite{8332112}.}
+		\label{tab:fsec_standards}
+		\centering
+		% \resizebox{\linewidth}{!}{
+			\begin{tabular}{ll}
+				\toprule
+				Quantity & Value\\
+				\midrule
+				UFLS Stage 1 trip       & $49.0$~Hz       \\
+				Operator alarm / FFR target & $49.5$~Hz   \\
+				UFLS Stage 1 delay      & $300$~ms        \\
+				RoCoF ride-through      & $2.0$~Hz/s      \\
+				FCR full activation     & $\pm 200$~mHz   \\
+				Standard freq.\ range (settling band) & $\pm 50$~mHz \\
+				\bottomrule
+			\end{tabular}
+			% }
+	\end{table}
+	
+	
+	%\newpage
+	Four disturbance classes, each scaled as a fraction of $S_{\mathrm{base}}$, are applied (see Table~\ref{tab:scenarios}). Topology generalization is assessed under a strict zero-shot protocol: the policy is trained on a single fixed topology $G_0$ and evaluated, with no retraining or adaptation, on $24$ reconfigurations $\mathcal{G}_{\mathrm{test}}=\{G_1,\dots,G_{24}\}$ with $G_0\notin\mathcal{G}_{\mathrm{test}}$, generated from $G_0$ by tie switch operations and $N{-}1$ line contingencies. Radial reconfiguration changes only a bounded fraction of edges (Jaccard edge distance up to $\approx\!0.18$), so the protocol stresses structural generalization within the reachable configuration space rather than transfer to arbitrary graphs.
+	
+	
+	
+	\begin{table}[!th]
+		\caption{Contingency scenarios.}
+		\label{tab:scenarios}
+		\centering
+		\footnotesize
+		\resizebox{\linewidth}{!}{
+			\begin{tabular}{llccc}
+				\toprule
+				Sc. & Event       & $\Delta P$ (MW) & \% $S_{\mathrm{base}}$ & Purpose \\
+				\midrule
+				S1  & Load step             	& $-2.5$ 			& $16$ & Moderate          \\
+				S2  & Generation trip       & $-3.9$ 			& $25$ & Severe under freq. \\
+				S3  & Line trip             		&  $-2.4$ 		& $15$ & Topology mutation  \\
+				S4  & High renewable surge  & $+4.7$ 	& $30$ & Over freq. stress  \\
+				\bottomrule
+			\end{tabular}
+		}
+	\end{table}
+	
+	
+	
+	%
+	\subsection{Baselines and Training Protocol}
+	\label{sec:casestudy:training}
+	
+	The proposed controller is compared against five baselines (see Table~\ref{tab:methods}). All learning baselines share the identical environment, observation, action, reward, and safety envelope of Sections~\ref{sec:model} and \ref{sec:method}, so the comparison isolates the architecture rather than the safety set. MLP-MAPPO is the clean encoder ablation, replacing the GraphSAGE encoder by an MLP while holding the rest fixed; graph convolutional neural network (GCNN)-PPO and multi-agent twin delayed deep deterministic policy gradient (MATD3) are recent learning references that differ from the proposed method on more than one axis.
+	
+	
+	
+	
+	
+	\begin{table}[!t]
+		\caption{Baselines and the component isolated by each method.}
+		\label{tab:methods}
+		\centering
+		\footnotesize
+		
+		\resizebox{\linewidth}{!}{%
+			\begin{tabular}{lllll}
+				\toprule
+				\# & Method & Encoder & RL algorithm & Learning architecture \\
+				\midrule
+				1 & GraphSAGE-MAPPO (\emph{ours})
+				& GraphSAGE & PPO & MAPPO (CTDE) \\
+				
+				2 & MLP-MAPPO (ablation)
+				& MLP & PPO & MAPPO (CTDE) \\
+				
+				3 & GCNN-PPO~\cite{guo2024gcnnppo}
+				& Spectral GCN & PPO & Centralized single-agent \\
+				
+				4 & MATD3~\cite{li2025matd3}
+				& MLP & TD3 & Multi-agent CTDE \\
+				
+				5 & Fixed droop
+				& -- & -- & -- \\
+				
+				6 & No FFR
+				& -- & -- & -- \\
+				\bottomrule
+			\end{tabular}%
+		}
+		
+		\vspace{2pt}
+		\parbox{\linewidth}{%
+			\scriptsize
+			\raggedright
+			\textit{Note:} ``--'' indicates not applicable;
+			RL: reinforcement learning;
+			GCN: graph convolutional network;
+			TD3: twin delayed deep deterministic policy gradient.
+		}
+		
+	\end{table}
+	
+	
+	
+	\begin{table}[!t]
+		\caption{Hyperparameters selected using ASHA.}
+		\label{tab:hyperparams}
+		\centering
+		\footnotesize
+		\resizebox{\linewidth}{!}{%
+			\begin{tabular}{lll}
+				\toprule
+				Hyperparameter & Symbol(s) & Value \\
+				\midrule
+				Learning rate
+				& $\alpha$
+				& $3.1\times10^{-5}\rightarrow8\times10^{-6}$ \\
+				
+				Discount factor / GAE parameter
+				& $\gamma,\lambda$
+				& $0.99$, $0.95$ \\
+				
+				PPO clipping parameter
+				& $\epsilon$
+				& $0.2$ \\
+				
+				Entropy coefficient
+				& $c_{\mathrm{ent}}$
+				& $5\times10^{-3}\rightarrow0$ \\
+				
+				Embedding / hidden dimension
+				& $d_{\mathrm{emb}},d_{\mathrm{hid}}$
+				& $128/128$ \\
+				
+				Number of GraphSAGE layers
+				& $L_{\mathrm{GNN}}$
+				& $2$ \\
+				
+				Update epochs / minibatch size
+				& $N_{\mathrm{epoch}},B$
+				& $4/16$ \\
+				
+				Curriculum length / number of phases
+				& $N_{\mathrm{train}},N_{\mathrm{phase}}$
+				& $6000$ episodes / $6$ phases \\
+				\bottomrule
+			\end{tabular}%
+		}
+	\end{table}
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	Training uses a disturbance curriculum that escalates event magnitude and probability from load only events to the full $N{-}1$ mix at $40\,\%$ contingency magnitude. The selected configuration (see Table~\ref{tab:hyperparams}) is shared by every learning baseline with identical capacity, optimizer, curriculum, and budget, so no method enjoys a tuning advantage and each is reported at convergence.
+	
+	
+	%
+	\subsection{Evaluation Protocol}
+	\label{sec:casestudy:metrics}
+	
+	Each controller is evaluated zero-shot on the same $24$ unseen reconfigurations, with the mean and a $95\,\%$ confidence interval reported over three seeds. Performance spans three metric groups: frequency security (nadir, windowed RoCoF, the integral of time-weighted absolute error (ITAE) as the primary settling metric, settling time, and UFLS avoidance rate), service and economics (committed reserve and revenue), and topology generalization (the training to unseen ITAE gap and its spread). The criteria follow the standards of Table~\ref{tab:fsec_standards}: RoCoF is checked against the $2.0$~Hz/s ride-through.
+	%FFR success is recovery into the $\pm50$~mHz band within the UFLS Stage~1 delay. 
+	The proposed versus next best gap on the primary metrics is assessed by a paired Wilcoxon signed rank test.
+	
+	
+	
+	\section{Results and Analysis}
+	\label{sec:results}
+	
+	% ==================================================================
+	\subsection{Frequency Security Performance}
+	\label{ssec:res_stability}
+	% ==================================================================
+	
+	
+	On the training topology $G_0$, Fig.~\ref{fig:freq_grid} overlays the mean frequency trajectories of the six controllers. Because all RL-based methods operate under the same Lyapunov-certified safety envelope, they uniformly hold the post-event nadir and zenith at the alarm thresholds (see Table~\ref{tab:freq_sec}), avoiding any UFLS trip. The sawtooth on the proposed trace highlights the closed-form one-step projection activating at the band edge. Consequently, these comparable frequency bounds confirm that security is strictly enforced by the common safety layer, meaning any subsequent differences in ITAE, settling time, or topology transfer purely reflect the policy quality rather than unequal constraints.
+	
+	
+	\begin{figure}[!th]
+		\centering
+		\includegraphics[width=0.99\linewidth]{img/fig_freq_grid.pdf}
+		\caption{Frequency response on the training feeder $G_0$.}
+		\label{fig:freq_grid}
+	\end{figure}
+	
+	
+	
+	
+	%\begin{table}[!h]
+	%\caption{Frequency security performance under severe events.}
+	%\label{tab:freq_sec}
+	%\centering
+	%% \footnotesize
+	%\resizebox{\linewidth}{!}{
+		%\begin{tabular}{lccccc}
+		%\toprule
+		%Method & \makecell{S2 nadir\\(Hz)} & \makecell{S4 zenith\\(Hz)} & \makecell{Peak RoCoF\\(Hz/s)} & \makecell{RoCoF\\compliant} & \makecell{UFLS\\avoidance} \\
+		%\midrule
+		%GraphSAGE-MAPPO (\emph{ours}) & 49.50 & 50.50 & 1.24 & \checkmark & \checkmark \\
+		%MATD3 / GCNN-PPO / MLP-MAPPO  & 49.50 & 50.50 & 1.15--1.31 & \checkmark & \checkmark \\
+		%Fixed droop                   & 48.75 & 51.51 & 2.23 / 2.69$^{*}$ & $\times$ & $\times$ \\
+		%No FFR                        & 48.42 & 51.91 & 2.61 / 3.15$^{*}$ & $\times$ & $\times$ \\
+		%\bottomrule
+		%\end{tabular}
+		%}
+	%\\[3pt]
+	%\raggedright\footnotesize $^{*}$Reported as S2 / S4. Ride through limit: $2.0$~Hz/s.
+	%\end{table}
+	
+	
+	
+	
+	\begin{table}[!t]
+		\caption{Frequency security performance under severe events.}
+		\label{tab:freq_sec}
+		\centering
+		\footnotesize
+		
+		\resizebox{\linewidth}{!}{%
+			\begin{tabular}{lccccc}
+				\toprule
+				Method
+				& \makecell{S2 nadir\\(Hz)}
+				& \makecell{S4 zenith\\(Hz)}
+				& \makecell{Peak RoCoF\\(Hz/s)}
+				& \makecell{RoCoF\\compliant}
+				& \makecell{UFLS\\avoidance}
+				\\
+				\midrule
+				
+				GraphSAGE-MAPPO (\emph{ours})
+				& 49.50
+				& 50.50
+				& 1.24
+				& \checkmark
+				& \checkmark
+				\\
+				
+				\makecell[l]{MATD3 / GCNN-PPO /\\MLP-MAPPO}
+				& 49.50
+				& 50.50
+				& 1.15--1.31
+				& \checkmark
+				& \checkmark
+				\\
+				
+				Fixed droop
+				& 48.75
+				& 51.51
+				& 2.23 / 2.69$^{*}$
+				& $\times$
+				& $\times$
+				\\
+				
+				No FFR
+				& 48.42
+				& 51.91
+				& 2.61 / 3.15$^{*}$
+				& $\times$
+				& $\times$
+				\\
+				
+				\bottomrule
+			\end{tabular}%
+		}
+		
+		\vspace{3pt}
+		
+		\parbox{\linewidth}{%
+			\raggedright
+			\footnotesize
+			$^{*}$Reported as S2/S4. Ride-through limit: $2.0$~Hz/s.
+		}
+		
+	\end{table}
+	
+	
+	
+	
+	Across the $24$ unseen topologies, Fig.~\ref{fig:radar_overview} scores the six controllers per contingency on five axes (post-event ITAE, nadir or zenith margin, settling speed, reliable reserve delivery, and topology robustness), oriented so that larger is better and normalized by the best in group value; the proposed controller encloses the largest area in every contingency.
+	
+	\begin{figure}[!t]
+		\centering
+		\includegraphics[width=0.98\linewidth]{img/fig1_radar.pdf}
+		\caption{Normalized per scenario performance radar across the $24$ unseen topologies (larger is better).}
+		\label{fig:radar_overview}
+	\end{figure}
+	
+	%Among the safe controllers, the time weighted ITAE separates two control philosophies. The saturating baselines commit reserve at the actuator limit regardless of operating point, pulling the frequency back quickly but leaving a slow, oscillatory recovery; the proposed controller commits selectively. On $G_0$ it attains the lowest ITAE on three of the four contingencies, about $1.4\times$ below the next best learning controller on the load step and generation trip (e.g.\ $153$ versus $213~\mathrm{Hz\cdot s^2}$ on S2), and is within a few percent of the best on the line trip; it returns to the $\pm50$~mHz band in $9$-$14$~s against $17$-$43$~s, with the smallest run to run spread.
+	
+	Among the safe controllers, ITAE distinguishes two control philosophies. The saturating baselines commit reserve at the actuator limit regardless of the operating point, pulling the frequency back quickly but producing a slow, oscillatory recovery, whereas the proposed controller commits reserve selectively. On $G_0$, it achieves the lowest ITAE in three of the four contingencies, approximately $28\%$ lower than that of the next-best learning controller for the load step and generation trip (e.g., $153$ versus $213~\mathrm{Hz\cdot s^2}$ for S2), and remains within a few percent of the best result for the line trip. It returns to the $\pm 50$~mHz band within $9$--$14$~s, compared with $17$--$43$~s for the baselines, and exhibits the smallest run-to-run variability.
+	
+	
+	UFLS avoidance and RoCoF compliance follow the same split (see Table~\ref{tab:freq_sec}): on the IEEE Std 1547 windowed RoCoF every learning controller respects the ride-through limit, while both non learning controls breach it on the severe events. This windowed quantity, unlike the instantaneous RoCoF set by the backbone, reflects the GFL damping over the step, which is what separates the learning controllers here.
+	
+	\begin{figure}[!h]
+		\centering
+		\includegraphics[width=0.75\columnwidth]{img/fig_severity.pdf}
+		\caption{Nadir versus disturbance magnitude over the $2$--$6$~MW severity sweep.}
+		\label{fig:severity}
+	\end{figure}
+	
+	The advantage scales with disturbance severity (see Fig.~\ref{fig:severity}): across the $2$--$6$~MW sweep, all learning controllers hold the nadir flat at the $49.5$~Hz alarm, whereas fixed droop sinks below the $49.0$~Hz UFLS-1 threshold beyond $\sim\!3$~MW and the unregulated case falls steadily toward $45$~Hz. This gap highlights the value of the joint power reference and droop gain action. While the fixed droop baseline relies on a static gain, causing insufficient support during severe events, the proposed policy jointly adapts both active power injection and frequency sensitivity online. The resulting disturbance-dependent reserve allocation keeps the nadir invariant across the entire range, proving that the dual-channel action space enables precise, adaptive state conditioning rather than a rigid single operating point calibration.
+	
+	
+	% ==================================================================
+	\subsection{Topology Generalization}
+	\label{ssec:res_topo}
+	% ==================================================================
+	
+	%Topology generalization, the central claim, is assessed on the post-event ITAE over $24$ unseen topologies (see Fig.~\ref{fig:unseen}). GraphSAGE-MAPPO attains the lowest unseen ITAE ($141.6\pm36.6~\mathrm{Hz\cdot s^2}$), achieving a $1.45$ to $1.75\times$ reduction over learning baselines, $3.7\times$ over fixed droop, and $11.5\times$ over the unregulated case. It generalizes without loss: the unseen mean falls $7.4\,\%$ below the $G_0$ value ($152.8\to141.6$) with the worst single topology rising only $1.4\,\%$, outperforming all baselines across every holdout network (paired Wilcoxon signed rank, $p<10^{-6}$).
+	
+	Topology generalization, the central claim of this work, is assessed using the post-event ITAE across $24$ unseen topologies (see Fig.~\ref{fig:unseen}). GraphSAGE-MAPPO achieves the lowest mean unseen ITAE, $141.6\pm36.6~\mathrm{Hz\cdot s^2}$, representing reductions of $31$--$43\%$ relative to the learning baselines, $73\%$ relative to fixed droop, and $91\%$ relative to the unregulated case. It generalizes without performance loss: the unseen-topology mean is $7.4\%$ lower than the value on $G_0$ ($152.8\to141.6$), while the worst individual topology exhibits an increase of only $1.4\%$. 
+	The proposed controller outperforms all baselines on every holdout network (paired Wilcoxon signed-rank test, $p<10^{-6}$).
+	
+	
+	This performance highlights the synergy between the joint action space and the inductive graph encoder. Unlike topology-blind baselines restricted to single-channel actions or fixed adjacencies (MLP/GCNN), the proposed joint power reference and droop gain coordination allows DERs to scale responses dynamically based on local connectivity, disturbance severity, and headroom. By reconstructing node embeddings directly from the reconfigured grid without retraining, the inductive architecture preserves real-time reserve-routing information, suppressing post-nadir oscillations to minimize ITAE.
+	
+	\begin{figure}[!h]
+		\centering
+		\includegraphics[width=0.85\linewidth, trim=3mm 0mm 0mm 0mm, clip]{img/fig_unseen_itae.pdf}
+		\caption{Post event ITAE on the $24$ unseen feeder topologies (lower is better; bar: unseen mean, whisker: spread across topologies, $\diamond$: training $G_0$).}
+		\label{fig:unseen}
+	\end{figure}
+	
+	% \begin{figure}[!h]
+		% \centering
+		% \includegraphics[width=0.95\columnwidth]{img/fig_unseen_itae.pdf}
+		% \caption{Post event ITAE on the $24$ unseen feeder topologies (log scale; box: IQR, whiskers: min--max, diamond: training $G_0$, dot: unseen mean, label: train to unseen gap).}
+		% \label{fig:unseen}
+		% \end{figure}
+	
+	% ==================================================================
+	\subsection{Ancillary Market Competitiveness}
+	\label{ssec:res_econ}
+	% ==================================================================
+	
+	In least-cost FFR procurement, the per-event DSO cost corresponds to the price at which a controller’s VPP offers the service; thus, a lower cost indicates a more competitive bid~\cite{li2014dlmp}.
+	% The price-taker settlement, distribution locational marginal price, reserve deck, and a value-of-lost-load (VOLL) sweep are detailed in ~\cite{li2014dlmp}.
+	
+	\begin{figure}[!h]
+		\centering
+		\includegraphics[width=0.99\linewidth, trim=7mm 0mm 0mm 0mm, clip]{img/fig_pareto.pdf}
+		%\caption{Per event DSO cost breakdown, averaged over the four contingencies on the $50$~s settlement window: service payments (capacity + activation) vs.\ load shedding penalty.}
+		\caption{Per-event DSO cost breakdown, averaged over the four contingencies within the 50-s settlement window: reserve service payments (capacity and activation) and VOLL-based load-shedding costs.}
+		\label{fig:pareto}
+	\end{figure}
+	
+	Across $24$ unseen topologies, the proposed controller induces the lowest per-event DSO cost on every holdout network, outperforming the next-best compliant baseline in $24/24$ cases (paired Wilcoxon signed rank, $p=1.2\times10^{-7}$). Its mean per-event cost is $10\,\%$ below GCNN-PPO, $13\,\%$ below MATD3, and $55\,\%$ below MLP-MAPPO. At the severe trip S2, all four learning controllers drive energy not served to zero; hence, the gap represents pure reserve service invariant to  $\text{VOLL}\in\{1500,3000,8000\}$~\texteuro/MWh, whereas the non-learning controls incur substantial VOLL-based
+	load-shedding costs (see Fig.~\ref{fig:pareto}). Normalized by handled imbalance energy, this optimal economic ordering holds across all contingencies (see Table~\ref{tab:cost_mwh}). 
+	
+	
+	This economic advantage supports the topology-coupled deliverability model. By conditioning reserve deployment on the active feeder graph, bus voltages, and inverter loading, the proposed framework avoids over-procuring network-inaccessible flexibility and directs physically deliverable reserve toward the disturbance location. The resulting cost reduction therefore reflects improved physical deliverability rather than a market artifact.
+	
+	
+	\begin{table}[!th]
+		\caption{Mean normalized FFR procurement cost (C/MWh) over $N=10$ episodes per scenario
+		}
+		\label{tab:cost_mwh}
+		\centering
+		\footnotesize
+		\resizebox{\linewidth}{!}{
+			\begin{tabular}{lcccc}
+				\toprule
+				Method & S1 & S2 & S3 & S4 \\
+				\midrule
+				\textbf{Ours} & $\mathbf{56.5 \pm 0.1}$ & $\mathbf{37.0 \pm 0.0}$ & $\mathbf{57.2 \pm 0.1}$ & $\mathbf{28.8 \pm 0.1}$ \\
+				GCNN-PPO        & $64.6 \pm 0.3$ & $41.5 \pm 0.3$ & $61.8 \pm 1.1$ & $34.6 \pm 0.5$ \\
+				MATD3           & $64.2 \pm 0.8$ & $42.1 \pm 0.7$ & $69.0 \pm 2.1$ & $34.4 \pm 0.7$ \\
+				MLP-MAPPO       & $127.3 \pm 6.2$ & $78.1 \pm 2.1$ & $128.7 \pm 5.0$ & $81.8 \pm 2.7$ \\
+				\bottomrule
+			\end{tabular}
+		}
+	\end{table}
+	
+	
+	Taken together, the results identify three complementary mechanisms: the safety envelope ensures frequency-security compliance, the joint power-reference and droop-gain action allocates reserve according to disturbance severity and resource availability, and the inductive GraphSAGE encoder preserves topology awareness after feeder reconfiguration. Their combination enables superior frequency performance, zero-shot topology robustness, and the lowest ancillary-service procurement cost.
+	
+	
+	%	\newpage
+	
+	\section{Conclusion}
+	\label{sec:conclusion}
+	
+	% This paper addressed FFR in $100\%$ inverter based islanded microgrids under feeder reconfiguration, where fixed droop gain control and topology blind learning controllers lose effectiveness, and framed the controller as the topology-aware execution layer of a VPP providing FFR as an ancillary service. 
+	This paper addressed FFR in $100\%$ inverter-based islanded microgrids under feeder reconfiguration, framing the controller as the topology-aware execution layer of a VPP providing FFR as an ancillary service. The topology coupled deliverability and frequency model is validated by the gap it exposes: under located forcing the realized COI RoCoF is $2.3$--$3.1$ times lower than the uniform injection scalar bound, confirming that the active graph, not the aggregate inertia alone, governs how strongly a disturbance is felt. The proposed controller, with its joint power and droop action inside a shared safety envelope, holds every learning controller to a unit FFR success rate and full RoCoF compliance, while committing reserve selectively rather than saturating, which yields the lowest integral error of any standards-compliant controller. In zero-shot evaluation across $24$ unseen reconfigurations, the proposed controller achieves the lowest mean post-event ITAE among all standards-compliant controllers, reducing ITAE by $1.14$--$1.75$ times relative to the learning baselines and by $3.7$ times relative to fixed droop. Its performance does not degrade beyond the training topology ($-7.4\%$ relative to $G_0$, with only a $1.4\%$ increase on the worst-performing topology), while an encoder-only ablation attributes this gain to the inductive representation rather than to the cooperative RL stack. 
+	Economically, a VPP operating the proposed controller provides FFR at the lowest per-event procurement cost among all standards-compliant providers under a common administrative tariff, thereby yielding the most competitive offer under least-cost procurement.
+	Future work will validate the proposed control framework on a commercial electromagnetic-transient platform to analysis nonlinear converter dynamics, fast oscillatory interactions.Futhermore hardware-in-the-loop testbed to analysis the effects of communication delays.
+	\bibliographystyle{IEEEtran}
+	\bibliography{Ref}
+	
+	%	\vfill
+	
 \end{document}
+
+

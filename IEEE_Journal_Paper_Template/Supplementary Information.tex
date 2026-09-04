@@ -4,7 +4,9 @@
 \usepackage{cite}
 \usepackage{booktabs}
 \usepackage{textcomp}
-\hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
+\usepackage{xr}
+\externaldocument{main}
+% \hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
 
 % --- Supplementary numbering ---
 \renewcommand{\theequation}{S\arabic{equation}}
@@ -76,7 +78,7 @@ where each $H_g$ is programmable virtual inertia, so $H_{\mathrm{sys}}$ is set b
   \zeta_{t+1}=\operatorname{sat}\!\big(\zeta_t+k_{\mathrm{agc}}\,\Delta f_t\,\Delta t\big),
   \label{eq:agc}
 \end{equation}
-with $k_{\mathrm{agc}}=0.05$~pu/Hz/s and anti-windup saturation at $\pm0.35$~pu. The integral state feeds back as a rating-share correction to the reference channel, $\Delta P_{\mathrm{ref}}^{\mathrm{eff}}=\Delta P_{\mathrm{ref}}-\zeta_t\,\mathbf s$, applied with a one-step delay so that no algebraic loop forms with the read-out (8) of the main paper. Running the secondary loop \emph{concurrently} with the primary response   the textbook two-loop design   rather than freezing it while FFR is active is essential for sustained disturbances (e.g., a renewable surplus): a frozen integrator can leave the frequency parked off-nominal whenever the primary layer alone cannot re-enter the FFR-deactivation band.
+with $k_{\mathrm{agc}}=0.05$~pu/Hz/s and anti-windup saturation at $\pm0.35$~pu. The integral state feeds back as a rating-share correction to the reference channel, $\Delta P_{\mathrm{ref}}^{\mathrm{eff}}=\Delta P_{\mathrm{ref}}-\zeta_t\,\mathbf s$, applied with a one-step delay so that no algebraic loop forms with the read-out (8) of the main paper. Running the secondary loop \emph{concurrently} with the primary response (the textbook two-loop design) rather than freezing it while FFR is active is essential for sustained disturbances (e.g., a renewable surplus): a frozen integrator can leave the frequency parked off-nominal whenever the primary layer alone cannot re-enter the FFR-deactivation band.
 
 \subsection{Worst-Unit Transient Diagnostic}
 The relative-angle block of the state matrix (6) of the main paper lets the per-unit deviations $\Delta f_{g,t}=f_0\,\Delta\omega_{g,t}$ differ during the transient; these are reported only as a spatial diagnostic through the worst-unit excursion
@@ -92,7 +94,7 @@ evaluated within the model's validity band ($\pm5$~Hz), not as the headline metr
 \label{supp:coupling}
 The two action channels of each agent combine into the realized per-DER injection $\Delta P^{\mathrm{ffr}}_{m,t}=\Delta P_m-K_m\,\Delta f_t$ (main paper, Sec.~III-A). The actuator path applies, in order: a per-channel slew limit $|a_t-a_{t-1}|\le0.2$ per fast step ($\le20\,\%$ of rating per second, which keeps step-like setpoint changes inside the $2$~Hz/s ride-through bound while still allowing a full ramp within $\sim\!5$~s); a clip to the device rating and SoC headroom; and the FFR-eligibility gate $K_m=0$ whenever $\mathrm{SoC}_m\notin[0.25,0.85]$ (nested with $0.05$ margin inside the physical band $[0.20,0.90]$, so a committed DER can always deliver a bidirectional response without striking its energy limits).
 
-For the frequency model, the per-DER commands aggregate to the electrically nearest GFM unit $g(m)$   the same mapping the observation builder uses. The reference channel adds in per unit on the system base,
+For the frequency model, the per-DER commands aggregate to the electrically nearest GFM unit $g(m)$, the same mapping the observation builder uses. The reference channel adds in per unit on the system base,
 \begin{equation}
   \Delta P_{\mathrm{ref},g}
    = \frac{1}{S_{\mathrm{base}}}\sum_{m:\,g(m)=g}\Delta P_m ,
@@ -124,10 +126,10 @@ Angle-reference invariance makes the rows of the lossless part of $\tilde J_r$ s
   \label{eq:coi_mode}
 \end{equation}
 ($\tau\!=\!1.5$~s at the backbone gains of Table~I of the main paper), while the remaining $2(n_g-1)$ eigenvalues form inter-machine swing pairs at
-$\omega_i\approx\sqrt{\omega_0\,\lambda_i(\tilde J_r)/2\bar H}$. Because the Kron-reduced synchronizing coefficients of the short, stiff feeder are of order $10^3$--$10^4$~pu, these pairs lie between $\approx\!38$ and $\approx\!345$~Hz for the base topology, with decay rates $\operatorname{Re}\lambda\in[-1.0,-0.36]$~s$^{-1}$ ($\tau\le2.8$~s)   two orders of magnitude above the $1$~s control bandwidth   and they cancel in the rating-weighted read-out (8). Three consequences follow: (i)~the COI trajectory is quasi-first-order, with none of the governor-style oscillatory tail of synchronous-machine SFR models; (ii)~the learned action shapes the recovery through $D(K_t)$ and $\Delta P_{\mathrm{ref}}$ rather than by phase-shaping an oscillatory mode; and (iii)~the COI-level guard of Sec.~\ref{supp:projection} acts on the only mode resolvable   and actionable   at the control step. The inter-machine pairs are excited by located disturbances but remain inside the model's small-signal validity band and are reported only through the worst-unit diagnostic \eqref{eq:worstunit}.
+$\omega_i\approx\sqrt{\omega_0\,\lambda_i(\tilde J_r)/2\bar H}$. Because the Kron-reduced synchronizing coefficients of the short, stiff feeder are of order $10^3$--$10^4$~pu, these pairs lie between $\approx\!38$ and $\approx\!345$~Hz for the base topology, with decay rates $\operatorname{Re}\lambda\in[-1.0,-0.36]$~s$^{-1}$ ($\tau\le2.8$~s), two orders of magnitude above the $1$~s control bandwidth, and they cancel in the rating-weighted read-out (8). Three consequences follow: (i)~the COI trajectory is quasi-first-order, with none of the governor-style oscillatory tail of synchronous-machine SFR models; (ii)~the learned action shapes the recovery through $D(K_t)$ and $\Delta P_{\mathrm{ref}}$ rather than by phase-shaping an oscillatory mode; and (iii)~the COI-level guard of Sec.~\ref{supp:projection} acts on the only mode that is resolvable and actionable at the control step. The inter-machine pairs are excited by located disturbances but remain inside the model's small-signal validity band and are reported only through the worst-unit diagnostic \eqref{eq:worstunit}.
 
 \subsection{Certificates over the Topology--Gain Set}
-\emph{Frozen-time stability.} Because $\mathbf{A}_f$ is affine in the effective gains $K_{\mathrm{eff},i}$ through the damping block $D(K_t)$, the extrema over the admissible gain box $[0,K_i^{\max}]$ occur at its vertices. For each feasible topology $G\in\mathcal{G}^{\mathrm{feas}}$ and each vertex $\mathbf{K}$ of the box we form $\mathbf{A}_f(G,\mathbf{K})$ and verify Hurwitzness. Over the held topology set this yields a finite family $\{\mathbf{A}_f^{(q)}\}$; every member is Hurwitz (Sec.~V-B of the main paper), so every admissible $(G,\mathbf{K})$ configuration is stable.
+\emph{Frozen-time stability.} Because $\mathbf{A}_f$ is affine in the effective gains $K_{\mathrm{eff},i}$ through the damping block $D(K_t)$, the LMI residual $\mathbf{A}_f^{\!\top}\mathbf{P}+\mathbf{P}\,\mathbf{A}_f$ is affine in $K$ for any fixed $\mathbf{P}\succ\mathbf 0$. Verifying the common-$\mathbf{P}$ condition \eqref{eq:clf_lmi} at the $2^{n_K}$ box vertices therefore certifies it over the full box $[0,K_i^{\max}]$ by convex combination, since existence of a common quadratic Lyapunov function at all vertices is equivalent to its existence over the entire gain polytope. For each feasible topology $G\in\mathcal{G}^{\mathrm{feas}}$ and each vertex $\mathbf{K}$ of the box we form $\mathbf{A}_f(G,\mathbf{K})$ and verify Hurwitzness. Over the held topology set this yields a finite family $\{\mathbf{A}_f^{(q)}\}$; every member is Hurwitz (Sec.~V-B of the main paper). The per-vertex Hurwitz test alone is necessary but, since the set of Hurwitz matrices is non-convex, not sufficient for box-wide stability without the shared $\mathbf{P}$.
 
 \emph{Switching stability.} Frozen-time stability is necessary but not sufficient under switching. We first test for a common Lyapunov function (CLF) by the linear matrix inequality
 \begin{equation}
@@ -136,7 +138,7 @@ $\omega_i\approx\sqrt{\omega_0\,\lambda_i(\tilde J_r)/2\bar H}$. Because the Kro
 \preceq-\varepsilon\mathbf{I}\;\;\forall q,
 \label{eq:clf_lmi}
 \end{equation}
-solved as a semidefinite program. When~\eqref{eq:clf_lmi} is infeasible as expected when the topology family is diverse, exponential stability is instead certified by an \emph{average dwell-time} argument: per-mode Lyapunov functions give a switching threshold $\tau_a^{\star}=\ln\mu/(2\eta)$, where $\eta$ is the slowest strictly-damped decay rate and $\mu$ bounds the inter-mode Lyapunov conditioning. Since DSO reconfiguration is event-triggered at the planning timescale (minutes), the realized dwell-time exceeds $\tau_a^{\star}$ by orders of magnitude, so the switched system is exponentially stable. The single near-marginal common-mode (COI) frequency left by the relative-angle formulation is excluded from the strictly-damped subspace and is stabilized by the secondary loop~\eqref{eq:agc}. The numerical certificate (vertex Hurwitz check, CLF test, and dwell-time) is produced by the accompanying \texttt{lyapunov\_certificate} routine.
+solved as a semidefinite program over the vertex family $\{\mathbf{A}_f^{(q)}\}$. The closed loop switches on two timescales: the gains $K_t$ may change every $1$~s control step, whereas topology $G$ changes only on DSO reconfiguration (minutes). When \eqref{eq:clf_lmi} is feasible, $V(x)=x^{\!\top}\mathbf{P}x$ is a common Lyapunov function for the whole family; by the affine-in-$K$ argument above it remains one for every interior gain, so step-wise $K_t$ changes and topology changes are both admissible \emph{arbitrary} switches and exponential stability holds with no dwell-time condition on either. When \eqref{eq:clf_lmi} is infeasible, as expected when the topology family is diverse, we retain a per-topology $\mathbf{P}_G$ certifying the gain box \emph{within} that fixed $G$ (the affine-in-$K$ vertex argument applies for a fixed topology, so continuous $K_t$ variation inside a mode is still covered), and stability across topology modes is certified by an \emph{average dwell-time} argument: per-mode Lyapunov functions give a switching threshold $\tau_a^{\star}=\ln\mu/(2\eta)$, where $\eta$ is the slowest strictly-damped decay rate and $\mu$ bounds the inter-mode Lyapunov conditioning $\lambda_{\max}(\mathbf{P}_{G'})/\lambda_{\min}(\mathbf{P}_G)$. Concretely, the held family is enumerated exhaustively rather than sampled: $|\mathcal{G}^{\mathrm{feas}}|=24$ feasible topologies $\times\,2^{n_{\mathrm{gfm}}}=4$ gain-box vertices ($n_{\mathrm{gfm}}=2$ GFM units, effective gain on $[K_{\mathrm{bb}},K_i^{\max}]$) give $96$ frozen-time matrices, all Hurwitz ($96/96$) with worst spectral abscissa $\lambda_{\max}=-7.29\times10^{-6}\,\mathrm{s^{-1}}$. The common-$\mathbf{P}$ LMI \eqref{eq:clf_lmi} is infeasible over this family, so the average dwell-time branch governs. With slowest strictly-damped rate $\eta=0.283\,\mathrm{s^{-1}}$ and inter-mode conditioning $\mu=1.69\times10^{10}$, the threshold is $\tau_a^{\star}=\ln\mu/(2\eta)=41.6\,\mathrm{s}$. Since DSO reconfiguration is event-triggered at the planning timescale (minutes), the realized dwell-time exceeds $\tau_a^{\star}$ by orders of magnitude, so the switched system is exponentially stable. The single near-marginal common-mode (COI) frequency left by the relative-angle formulation is excluded from the strictly-damped subspace and is stabilized by the secondary loop~\eqref{eq:agc}. The numerical certificate (vertex Hurwitz check, CLF test, and dwell-time) is produced by the accompanying \texttt{lyapunov\_certificate} routine.
 
 % ==================================================================
 \section{Policy-Optimization Loss}
@@ -150,7 +152,7 @@ With the importance ratio $\rho_t$ and the GAE advantage $\hat A_t$ of the main 
        \operatorname{clip}(\rho_t,1-\epsilon,1+\epsilon)\hat{A}_t\big)\right],
   \label{eq:ppo_clip}
 \end{equation}
-with clip range $\epsilon=0.2$; the total loss adds a value-regression term (coefficient $0.5$) and an entropy bonus annealed across the training curriculum.
+with clip range $\epsilon=0.2$; the total loss adds a value-regression term (coefficient $0.5$) and an entropy bonus annealed across the training curriculum. The action executed in the environment and stored in the rollout is the clipped variate $a_t=\operatorname{clip}(\tilde a_t,-1,1)$ with $\tilde a_t\sim\mathcal{N}(\mu_t,\sigma_t^2)$; both the behaviour log-probability $\log\pi_{\theta_{\mathrm{old}}}(a_t)$ and the target $\log\pi_\theta(a_t)$ entering $\rho_t$ are evaluated at this same $a_t$ under the Gaussian density, so the importance ratio is consistent with the executed action. The density-at-boundary approximation incurred when $|\tilde a_t|>1$ is bounded by the empirical saturation rate ($\le2\,\%$).
 
 % ==================================================================
 \section{Closed-Form Nadir Projection}
@@ -177,66 +179,6 @@ where $M_{\omega\omega}$ is the $\omega$-block of $M$ and $c_u$ collects the ref
 the closed-form solution of $\min\lVert\Delta P'-\Delta P_{\mathrm{ref}}\rVert^2$ subject to $a+b^{\!\top}\Delta P'=\mp\delta$. One linear constraint means no quadratic program is solved in the loop; because the predictor reuses the cached $(\Phi,M)$ and the shared forcing resolution, guard and plant evolve under \emph{identical} dynamics, and the layer is applied identically to every learning controller (main paper, Sec.~III-D).
 
 % ==================================================================
-\section{Reward: Explicit Forms and Weights}
-\label{supp:reward}
-% ==================================================================
-Every error term uses the normalization template
-$e=\operatorname{clip}\!\big((|x|-d)/x_{\mathrm{ref}},\,0,\,1\big)$
-with deadband $d$ and event-scaled reference $x_{\mathrm{ref}}$ chosen to match the magnitudes the contingency classes actually produce (so that the penalty gradient does not saturate inside the operating regime). With $\Delta f$ the COI deviation, $f=f_0+\Delta f$, action vector $a$, and per-agent droop vector $K$:
-\begin{align}
-  r^{\Delta f}&=-w_{\Delta f}\,
-    \operatorname{clip}\!\Big(\tfrac{\max(|\Delta f|-d_f,0)}{\Delta f_{\mathrm{ref}}},0,1\Big),
-    \label{eq:r_deltaf}\\
-  r^{\mathrm{nadir}}&=-w_{\mathrm{nad}}\,
-    \operatorname{clip}\!\Big(\tfrac{[f_{\mathrm{th}}-f]_++[f-(2f_0-f_{\mathrm{th}})]_+}{\Delta f_{\mathrm{nad}}},0,1\Big),
-    \label{eq:r_nadir}\\
-  r^{\mathrm{viol}}&=-w_{\mathrm{viol}}\,
-    \operatorname{clip}\!\Big(\tfrac{[\,|\Delta f|-\delta\,]_+}{\delta},0,2\Big),
-    \label{eq:r_viol}\\
-  r^{\mathrm{ffr}}&=+w_{\mathrm{ffr}}\,
-    \operatorname{clip}\!\big(1-|\Delta f|/\delta,\,0,\,1\big),
-    \label{eq:r_ffr}\\
-  r^{\mathrm{eff}}&=-w_{\mathrm{eff}}\,
-    \operatorname{clip}\!\Big(\overline{(a/0.75)^2}
-      +0.3\,\overline{(\Delta a/0.75)^2},0,1\Big),
-    \label{eq:r_eff}\\
-  r^{\mathrm{soc}}&=-w_{\mathrm{soc}}\,
-    \operatorname{clip}\!\Big(\overline{[\,\underline s-\mathrm{SoC}\,]_+^2
-      +[\,\mathrm{SoC}-\bar s\,]_+^2},0,1\Big),
-    \label{eq:r_soc}\\
-  r^{\mathrm{mkt}}&=+w_{\mathrm{mkt}}\,
-    \operatorname{clip}\!\Big(\overline{\tfrac{\pi^{\mathrm{lmp}}}{\pi^{\mathrm{lmp}}_{\mathrm{ref}}}\,a^P}
-      +\overline{\tfrac{\lambda^{\mathrm{ffr}}}{\lambda^{\mathrm{ffr}}_{\mathrm{ref}}}\tfrac{K}{K_{\max}}},-1,1\Big),
-    \label{eq:r_mkt}\\
-  r^{\mathrm{commit}}&=-w_{\mathrm{com}}\,
-    \operatorname{clip}\!\Big(\overline{\big(\Delta K/K_{\max}\big)^2},0,1\Big),
-    \label{eq:r_commit}
-\end{align}
-where $[\cdot]_+=\max(\cdot,0)$, $\overline{(\cdot)}$ averages over agents, $f_{\mathrm{th}}=49.5$~Hz, $\delta=0.5$~Hz, and $(\underline s,\bar s)=(0.20,0.85)$. The RoCoF term carries zero weight: peak RoCoF is $\Delta P_{\mathrm{imb}}/(2H_{\mathrm{sys}})$, set by the grid-forming backbone and provably invariant to the grid-following action at the first step, so a RoCoF gradient would be non-actionable noise for this policy (main paper, Sec.~III-D). Table~\ref{tab:reward_weights} lists the weights and scales. The scalar team reward is the sum of \eqref{eq:r_deltaf}--\eqref{eq:r_commit}, passed through a running return normalizer ($\gamma=0.99$, clipped at $\pm10$).
-
-\begin{table}[!t]
-\caption{Reward weights, deadbands, and normalization references.}
-\label{tab:reward_weights}
-\centering
-\footnotesize
-\begin{tabular}{lcccl}
-\toprule
-Term & Weight & Deadband & Reference & Note\\
-\midrule
-$r^{\Delta f}$       & $0.9$  & $20$~mHz & $3.0$~Hz & symmetric over/under\\
-$r^{\mathrm{nadir}}$ & $0.6$  & --       & $2.5$~Hz & $49.5/50.5$~Hz thresholds\\
-$r^{\mathrm{viol}}$  & $0.4$  & --       & $0.5$~Hz & continuous, cap $2$\\
-$r^{\mathrm{ffr}}$   & $0.4$  & --       & $0.5$~Hz & positive shaping bonus\\
-$r^{\mathrm{eff}}$   & $0.05$ & --       & $0.75$   & $+0.3\times$ smoothness\\
-$r^{\mathrm{soc}}$   & $0.08$ & --       & --       & quadratic outside band\\
-$r^{\mathrm{mkt}}$   & $0.05$ & --       & $100$~\texteuro/MWh, $20$~\texteuro/MW/h & energy + capacity\\
-$r^{\mathrm{commit}}$& $0.06$ & --       & $K_{\max}$ & gain-chatter penalty\\
-RoCoF                & $0$    & --       & --       & backbone-governed\\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The $20$~mHz frequency deadband sits between the ENTSO-E maximum FCR deadband ($10$~mHz) and the typical AGC restoration deadband ($30$~mHz), suppressing nuisance gradients from measurement-scale fluctuations while preserving sensitivity to genuine events.
 
 % ==================================================================
 \section{Training Protocol: Curriculum and Hyperparameter Search}
@@ -265,7 +207,7 @@ F & $1600$ & $0.90$ & $6.3$~MW ($40\,\%$) & $.3/.3/.2/.2$        & $0.25$ & $0$\
 \\[2pt]\footnotesize ls = load step, gt = generation trip, lt = line trip, hr = high-renewable surge.
 \end{table}
 
-Hyperparameters are selected by asynchronous successive halving (ASHA): $12$ sampled configurations, elimination factor $\eta=3$, stage budgets of $25/75/225$ episodes, and up to three random seeds per surviving configuration at each promotion, scored by the evaluation IAE on the training feeder. The selected configuration (Table~V of the main paper) is then trained under the full curriculum; checkpoints from intermediate curriculum phases are never reported.
+Hyperparameters are selected by asynchronous successive halving (ASHA): $12$ sampled configurations, elimination factor $\eta=3$, stage budgets of $25/75/225$ episodes, and up to three random seeds per surviving configuration at each promotion, scored by the evaluation ITAE on the training feeder. The selected configuration (Table~V of the main paper) is then trained under the full curriculum; checkpoints from intermediate curriculum phases are never reported.
 
 % ==================================================================
 \section{Evaluation Metrics and Audit Methodologies}
@@ -273,14 +215,12 @@ Hyperparameters are selected by asynchronous successive halving (ASHA): $12$ sam
 % ==================================================================
 
 \subsection{Frequency-Security Metrics}
-With event time $t_e$, episode length $T$, and COI deviation $\Delta f(t)$,
-\begin{align}
-  \mathrm{IAE}_{\mathrm{tot}}&=\int_{0}^{T}|\Delta f|\,dt,\qquad
-  \mathrm{IAE}_{\mathrm{post}}=\int_{t_e}^{t_e+T_w}|\Delta f|\,dt,\\
-  \mathrm{ITAE}&=\int_{t_e}^{T}(t-t_e)\,|\Delta f|\,dt,
-\end{align}
-with $T_w=50$~s. The windowed $\mathrm{IAE}_{\mathrm{post}}$ rewards fast in-window recovery but is blind to post-window limit cycles; $\mathrm{IAE}_{\mathrm{tot}}$ and ITAE are therefore reported alongside it. The settling time is
-$t_{\mathrm{set}}=\inf\{\tau:\,|\Delta f(t)|\le\varepsilon\ \forall t\ge\tau\}-t_e$ with $\varepsilon=50$~mHz, the ENTSO-E SO~GL standard frequency range. FFR success is the indicator that no \emph{continuous} excursion below the $49.5$~Hz alarm persists longer than $300$~ms (the UFLS Stage-1 relay delay), evaluated on the $0.1$~s sub-step trace. Nadir, zenith, and maximum RoCoF are reported at the control timescale, i.e., on the $1$~s ZOH samples the controller observes, is rewarded on, and is guarded on.
+With event time $t_e$, episode length $T$, and COI deviation $\Delta f(t)$, the primary settling metric is the time-weighted integral error
+\begin{equation}
+  \mathrm{ITAE}=\int_{t_e}^{T}(t-t_e)\,|\Delta f(t)|\,dt,
+\end{equation}
+which weights the deviation by elapsed time and so penalizes the slow, oscillatory post-event tail of a never-settling recovery. The settling time is
+$t_{\mathrm{set}}=\inf\{\tau:\,|\Delta f(t)|\le\varepsilon\ \forall t\ge\tau\}-t_e$ with $\varepsilon=50$~mHz, the ENTSO-E SO~GL standard frequency range. FFR success is the indicator that the \emph{total} time the COI frequency spends below the $49.5$~Hz alarm does not exceed $300$~ms (a conservative UFLS-coordination margin, Sec.~\ref{supp:hierarchy}), evaluated on the $0.1$~s sub-step trace. Nadir, zenith, and maximum RoCoF are reported at the control timescale, i.e., on the $1$~s ZOH samples the controller observes, is rewarded on, and is guarded on.
 
 \subsection{Sub-Step Traces for Figures}
 The ZOH step lands on the quasi-steady value of each fast step and does not resolve the sub-second transient. For figures only, each fast step is re-simulated at micro-step $\Delta t/n_{\mathrm{sub}}$ using the group property $e^{A_f\Delta t}=(e^{A_f\Delta t/n_{\mathrm{sub}}})^{n_{\mathrm{sub}}}$ with the identical input vector; the trace's last sample coincides with the propagated state to round-off, the re-simulation is read-only, and the tabulated metrics remain those of the control timescale. Figure annotations always quote the tabulated (control-timescale) extrema so figures and tables cannot disagree.
@@ -291,6 +231,81 @@ $d_J(G_a,G_b)=1-|E_a\cap E_b|/|E_a\cup E_b|$;
 the $24$-topology hold-out spans $d_J\le0.18$ from the training feeder, so the protocol probes structural generalization within the reachable radial configuration space, not transfer to arbitrary graphs.
 
 \subsection{Per-Event DSO Cost}
-Each event is settled by (15) of the main paper: a capacity payment on the armed reserve $R_{\mathrm{armed}}=K_{\mathrm{peak}}\,\delta$ (the committed droop evaluated at the band edge), an activation payment on the delivered FFR energy, and a value-of-lost-load charge on the energy-not-served of a staged ENTSO-E UFLS model applied to the realized COI trajectory (cumulative shed fractions $5/15/30\,\%$ of load below $49.0/48.5/48.0$~Hz). Prices: $\lambda_{\mathrm{cap}}=50$~\texteuro/MW/h, $\lambda_{\mathrm{act}}=100$~\texteuro/MWh, and $\mathrm{VOLL}=3000$~\texteuro/MWh   the reserve-context (operational) convention rather than the higher reliability-planning value   with a sweep over $\{1500,3000,8000\}$~\texteuro/MWh verifying that the controller ranking is invariant to the VOLL choice.
+\label{supp:dsocost}
+Each event is settled by (15) of the main paper as a deliverability-weighted procurement cost plus an emergency externality,
+\begin{equation}
+  C_{\mathrm{DSO}}
+   = W_{\mathrm{del}}\big(\lambda^{\mathrm{cap}}R_{\mathrm{armed}}T
+     + \lambda^{\mathrm{act}}E_{\mathrm{FFR}}\big)
+   + \mathrm{VOLL}\cdot E_{\mathrm{shed}},
+  \label{eq:dsocost}
+\end{equation}
+with the armed reserve $R_{\mathrm{armed}}=K_{\mathrm{peak}}\,\delta$ (committed droop at the band edge), the delivered FFR energy $E_{\mathrm{FFR}}$, and the energy-not-served $E_{\mathrm{shed}}$ of a staged ENTSO-E UFLS model applied to the realized COI trajectory (cumulative shed fractions $5/15/30\,\%$ of load below $49.0/48.5/48.0$~Hz; Sec.~\ref{supp:hierarchy}). The capacity term prices the \emph{committed} reserve procured ex-ante and the activation term the \emph{delivered} energy: $K_{\mathrm{peak}}$ is the peak committed droop over the event, $R_{\mathrm{armed}}$~[MW]$=K_{\mathrm{peak}}\delta$ with $\delta=0.5$~Hz, and $E_{\mathrm{FFR}}$~[MWh] is the integrated delivered FFR energy. Units balance with $T$ in \emph{hours}, $T=N_{\mathrm{step}}\Delta t/3600$ ($\Delta t=1$~s over the $50$~s window, $T=50/3600$~h), so $\lambda^{\mathrm{cap}}$~[\texteuro/MW/h]$\cdot R_{\mathrm{armed}}\cdot T$ and $\lambda^{\mathrm{act}}$~[\texteuro/MWh]$\cdot E_{\mathrm{FFR}}$ are both in euros. When no droop is armed ($\sum_i K_i=0$, e.g.\ the no-FFR control) we set $W_{\mathrm{del}}=1$ by convention and the reserve terms vanish ($R_{\mathrm{armed}}=0$), leaving only the VOLL externality, so \eqref{eq:wdel} never divides by zero. We report a per-event procurement cost under a fixed administrative tariff, not a cleared auction price.
+
+Energy and FFR reserve are \emph{distinct co-optimized products} and are priced as such, which resolves an apparent inconsistency between the locational pricing of Sec.~\ref{supp:hierarchy} and this settlement. In a $100\,\%$-renewable islanded microgrid the marginal \emph{energy} cost is essentially zero: the Layer-0 SOCP duals give an energy component $\lambda_p^{\mathrm{energy}}=0$ and a load-weighted DLMP of order $10^{-4}$~\texteuro/MWh, dominated by its loss/congestion part. The FFR \emph{reserve} product is therefore priced by an administrative ancillary tariff that sets the cost \emph{level} ($\lambda^{\mathrm{cap}}=50$~\texteuro/MW/h, $\lambda^{\mathrm{act}}=100$~\texteuro/MWh). These settlement tariffs are distinct from the time-varying prices the policy observes during training (capacity drawn from $[8,20]$~\texteuro/MW/h, energy up to $100$~\texteuro/MWh), which the market reward normalizes via $\lambda^{\mathrm{cap}}_{\mathrm{ref}}=20$ and $\lambda^{\mathrm{lmp}}_{\mathrm{ref}}=100$. The locational congestion component $\lambda_p^{\mathrm{cong}}$ of the DLMP then sets the deliverability \emph{shape} through a \emph{heuristic locational deliverability weighting}
+\begin{equation}
+  W_{\mathrm{del}}=\frac{\sum_i w_i\,K_i}{\sum_i K_i},\qquad
+  w_i=\frac{|\lambda_p^{\mathrm{cong}}(b_i)|}{\overline{|\lambda_p^{\mathrm{cong}}|}},
+  \label{eq:wdel}
+\end{equation}
+a commitment-weighted factor over the DER buses $b_i$, normalized by the DER-bus mean so the fleet-average controller stays exactly on the tariff and only the \emph{spatial} distribution of committed droop $K_i$ moves cost: a fleet leaning on congested buses pays more, one on well-connected buses less. The magnitude $|\lambda_p^{\mathrm{cong}}|$ is used because deliverability scarcity scales with the \emph{degree} of congestion at a bus irrespective of its sign; $W_{\mathrm{del}}$ is an explicit heuristic surcharge on this scarcity, not a settlement rule derived from a market-clearing model. The VOLL term is load-side and is left unweighted; $\mathrm{VOLL}=3000$~\texteuro/MWh is the reserve-context (operational) convention rather than the higher reliability-planning value. A sweep over $\{1500,3000,8000\}$~\texteuro/MWh (Table~\ref{tab:voll_sweep}) leaves the ranking unchanged \emph{within the standards-compliant set} (the four learning controllers carry zero shedding, so their totals are VOLL-independent), while only the non-compliant fixed-droop and no-FFR costs scale with VOLL; the proposed controller is cheapest at every level.
+
+Empirically the per-DER weights span $w_i\in[0.52,1.73]$, but the realized fleet factor stays within $W_{\mathrm{del}}\in[0.97,1.00]$ across all methods and scenarios: the controllers do not concentrate droop on congested buses, because the co-optimized PSO placement (\texttt{official\_placement\_v3}) already sites the DERs at electrically well-connected buses. Locational deliverability is thus a second-order ($\le3\,\%$) correction here, and the cost ranking is driven by committed-reserve \emph{volume} and by \emph{avoided shedding}: the externality term dominates for the non-responsive and fixed-droop fleets.
+
+\begin{table}[!h]
+\caption{Mean per-event DSO cost (\texteuro) over the $24$ unseen topologies under the VOLL sweep. The four learning controllers shed no load, so their cost is VOLL-independent; only the non-compliant controls scale with VOLL.}
+\label{tab:voll_sweep}
+\centering
+\footnotesize
+\begin{tabular}{lccc}
+\toprule
+Method & VOLL $1500$ & VOLL $3000$ & VOLL $8000$ \\
+\midrule
+GraphSAGE-MAPPO (\emph{ours}) & \textbf{1.98} & \textbf{1.98} & \textbf{1.98} \\
+GCNN-PPO                      & 2.20 & 2.20 & 2.20 \\
+MATD3                         & 2.26 & 2.26 & 2.26 \\
+MLP-MAPPO                     & 4.44 & 4.44 & 4.44 \\
+\midrule
+Fixed droop$^{\dagger}$       & 4.21 & 6.47 & 14.03 \\
+No FFR$^{\dagger}$            & 244.6 & 489.0 & 1304.0 \\
+\bottomrule
+\end{tabular}
+\\[3pt]
+\raggedright\footnotesize $^{\dagger}$Not standards-compliant (security band breached); shown for reference.
+\end{table}
+% --- end VOLL sweep table ---
+
+% ==================================================================
+\section{Frequency-Control Hierarchy and Grid-Code Alignment}
+\label{supp:hierarchy}
+% ==================================================================
+The frequency-security quantities used throughout the paper are anchored to the standard reserve cascade, summarized in Table~\ref{tab:hierarchy}. After an active-power imbalance the system frequency is contained and then restored by a sequence of progressively slower layers: the synchronous (here \emph{virtual}) inertial response sets the initial RoCoF; Fast Frequency Reserve (FFR) and primary droop (FCR) contain the deviation within seconds; automatic and manual frequency-restoration reserves (aFRR/mFRR) and replacement reserves (RR) return the frequency to nominal over minutes; and under-frequency load shedding (UFLS) is the last-resort emergency layer that acts only once the faster layers have failed. The learned controller of this work operates in the two fastest \emph{controllable} layers (by construction a topology-aware FFR-plus-primary-droop resource), while the inertial floor is fixed by the grid-forming backbone, the restoration layer is modeled as the concurrent secondary loop~\eqref{eq:agc}, and the emergency layer enters only as the UFLS boundary that defines the worst-case cost (Sec.~\ref{supp:metrics}).
+
+\begin{table}[!t]
+\caption{Standard frequency-control cascade and its realization in this work. Activation times are full-activation (worst-case) values.}
+\label{tab:hierarchy}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}l p{2.45cm} p{3.05cm}@{}}
+\toprule
+Layer & Standard trigger / time & Realization here\\
+\midrule
+Inertial & instantaneous; $\mathrm{RoCoF}=\Delta P/2H_{\mathrm{sys}}$ (IEEE~1547-2018 Cat~III ride-through; ENTSO-E CE $1$~Hz/s) & virtual inertia $H_g$, \eqref{eq:hsys}; non-actionable by the GFL action\\
+\addlinespace
+FFR & $0.7$--$1.3$~s to full output at $49.5$/$49.6$/$49.7$~Hz; support $\ge5$/$30$~s (Nordic FFR) & learned $\Delta P^{\mathrm{ffr}}_m=\Delta P_m-K_m\Delta f$ at the $1$~s step, $\le20\,\%$/s slew (Sec.~\ref{supp:coupling})\\
+\addlinespace
+FCR (primary) & $\le30$~s to full activation; droop, deadband $\le10$~mHz (ENTSO-E SO~GL) & $K_{\mathrm{eff}}=K_{\mathrm{bb}}+{}$learned droop, \eqref{eq:kdroop_conv}; COI mode \eqref{eq:coi_mode}\\
+\addlinespace
+aFRR (secondary) & $\le5$~min; integral restoration to $\pm50$~mHz (ENTSO-E SO~GL) & concurrent AGC integrator \eqref{eq:agc}, $k_{\mathrm{agc}}=0.05$\\
+\addlinespace
+mFRR\,/\,RR (tertiary) & $\le12.5$--$15$~min\,/\,$\le30$~min; manual (ENTSO-E EB~GL) & beyond the second-scale episode horizon; not modeled\\
+\addlinespace
+UFLS (emergency) & staged $49.0\!\to\!48.1$~Hz, ${\sim}8$ steps, ${\sim}100$~ms each (ENTSO-E CE); Stage-1 total operating ${\sim}0.3$~s (NERC PRC-006) & staged VOLL shed $5/15/30\,\%$ below $49.0/48.5/48.0$~Hz (Sec.~\ref{supp:metrics})\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three numeric levels recur in the metrics, the reward~\eqref{eq:r_nadir}--\eqref{eq:r_ffr}, and the figure guide lines; they denote \emph{distinct} grid-code events that must not be conflated. (i)~The $\pm50$~mHz band is the ENTSO-E SO~GL \emph{standard frequency range} (Continental Europe) and fixes both the settling tolerance and the neighborhood of the frequency deadband. (ii)~The $49.5$~Hz line is the \emph{alarm}/activation level (the lowest of the three Nordic FFR triggers and the point of full FCR-D activation) and serves as the half-band security margin $\delta=0.5$~Hz in the violation and shaping rewards and in the FFR-success criterion. (iii)~The $49.0$~Hz line is the \emph{first UFLS shed stage} (ENTSO-E CE); only this level carries the value-of-lost-load charge in the per-event DSO cost (Sec.~\ref{supp:metrics}). Consequently, the $300$~ms tolerance in the success indicator is a deliberately conservative UFLS-coordination margin rather than a property of the $49.5$~Hz alarm itself: it equals the NERC PRC-006 Stage-1 total operating time and upper-bounds the ${\sim}100$~ms ENTSO-E CE relay delay that would act at the deeper $49.0$~Hz threshold, so a controller that keeps the $49.5$~Hz alarm clear for all but ${\le}300$~ms provably never reaches the first shed stage. The over-frequency mirror ($50.5$~Hz alarm) applies symmetrically to the high-renewable surge case.
 
 \end{document}

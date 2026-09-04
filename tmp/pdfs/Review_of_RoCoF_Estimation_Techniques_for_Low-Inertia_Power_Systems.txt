@@ -1,0 +1,1359 @@
+
+===== PAGE 1 =====
+Citation: Deng, X.; Mo, R.; Wang, P .;
+Chen, J.; Nan, D.; Liu, M. Review of
+RoCoF Estimation Techniques for
+Low-Inertia Power Systems. Energies
+2023, 16, 3708. https://doi.org/
+10.3390/en16093708
+Academic Editor: Abu-Siada Ahmed
+Received: 23 February 2023
+Revised: 14 April 2023
+Accepted: 24 April 2023
+Published: 26 April 2023
+Copyright: © 2023 by the authors.
+Licensee MDPI, Basel, Switzerland.
+This article is an open access article
+distributed under the terms and
+conditions of the Creative Commons
+Attribution (CC BY) license (https://
+creativecommons.org/licenses/by/
+4.0/).
+energies
+Review
+Review of RoCoF Estimation Techniques for Low-Inertia
+Power Systems
+Xiaoyu Deng 1, Ruo Mo 1, Pengliang Wang 1, Junru Chen 1, Dongliang Nan 2 and Muyang Liu 1,*
+1 School of Electrical Engineering, Xinjiang University, Urumqi 830046, China; xyd@stu.xju.edu.cn (X.D.)
+2 Electric Power Research Institute, State Grid Xinjiang Electric Power Co., Ltd., Urumqi 830011, China
+* Correspondence: muyang.liu@xju.edu.cn; Tel.: +86-13677352908
+Abstract: As the traditional generation is gradually replaced by inverter-based resources, a lack of
+rotational inertia is now a common issue of modern power systems, which leads to an increasingly
+larger rate of change of frequency (RoCoF) following contingencies and may result in frequency
+collapse. As a crucial index of the frequency security and stability of power systems, the accurate
+estimation of the RoCoF can be a foundation for the development of advanced operations and
+control techniques of the future power system. This paper ﬁrstly analyzes the role of the RoCoF
+in typical blackouts occurring in recent years and discusses the physical and numerical nature of
+the RoCoF; then, by introducing the frequency spatial distribution of the power system, the paper
+discusses the concept of the “center” RoCoF that can present the frequency security and stability of
+the entire system. The estimation and prediction techniques of the maximal power system RoCoF
+following a contingency and the existing real-time tracking techniques of the power system RoCoF
+are comprehensively reviewed. Finally, the open questions and related research topics of the RoCoF
+estimation are discussed.
+Keywords: frequency stability; rate of change of frequency (RoCoF); power system stability; phasor
+measurement unit (PMU)
+1. Introduction
+1.1. Motivation and Background
+With the goal to decrease carbon emissions, inverter-based resources (IBRs) including
+wind and solar generation and energy storage systems play increasingly important roles in
+modern power systems around the world [1,2]. With the increasingly high penetration of
+IBRs, a lack of rotational inertia gradually becomes a common issue for power systems [3,4].
+One of the signiﬁcant results is the decreasing frequency stability of power systems. The
+operating frequency of low-inertia IBR-leading systems is vulnerable to any disturbance; the
+rate of change of frequency (RoCoF) will rapidly increase following a contingency, which
+leads to large frequency deviations and even the cascading failure of the system [5–7].
+Severe blackouts occurring in recent years are typical extreme results for unexpected
+large RoCoFs following a contingency, e.g., the “8.9” blackout in Britain in 2019 [ 8]. In
+this context, the maximal RoCoF during the frequency evaluation of a power system has
+become a key index to indicate the frequency security of power systems [9,10], which can
+be used to evaluate the security margin for the potential risk to trigger the unexpected
+frequency protections that can lead to the cascading failure of the system. In modern power
+systems, the node frequency is obtained by local measurement; the corresponding RoCoF,
+therefore, is also local [11,12]. For an interconnected large power system, the long electrical
+distances among the nodes and the uneven inertia distribution lead to complicated spatial
+features of dynamic frequency. It means that the local RoCoF can be improper for use as the
+index of the frequency security of the entire system, as it can be at a signiﬁcantly different
+level [13]. In this context, it is important to ﬁnd a “center” RoCoF that can present the
+stability and security features of the entire system.
+Energies 2023, 16, 3708. https://doi.org/10.3390/en16093708 https://www.mdpi.com/journal/energies
+===== PAGE 2 =====
+Energies 2023, 16, 3708 2 of 19
+With a clear deﬁnition of the power system RoCoF that indicates the frequency security
+of the entire power system, newly developed artiﬁcial intelligence (AI) techniques have
+been applied to predict the maximal RoCoF following the potential contingencies of a
+system based on historical operating datum [14,15].
+Meanwhile, faced with increasing frequency security and stability challenges for
+power systems, modern control strategies of IBRs have been developed to provide inertia
+and frequency support to the grid. To achieve the fast frequency response, RoCoF tends
+to be used as one of the input signals for these modern control techniques, e.g., virtual
+inertia control [16,17]. Moreover, RoCoF can feed to the newly developed protections, e.g.,
+RoCoF relay [18,19]. Therefore, to ensure the smooth operating of the modern controllers
+and protections fed by the RoCoF signal, accurate real-time RoCoF tracking is crucial.
+Considering the mathematical nature of RoCoF, namely, a rate of change of a time-variant
+variable, RoCoF cannot be directly measured but needs to be computed by the internal
+algorithm of measuring devices for the real-time variables of AC systems. The most
+common measurement device that allows to track the RoCoF is the synchrophasor [ 20].
+The accuracy and robustness against the measurement noise of the obtained RoCoF highly
+depend on the estimation techniques. At present, discrete Fourier transform (DFT) is still
+the most widely used phasor estimation technique [21–23]. However, the accuracy of this
+technique is still questionable, especially when phase jump issues occur [24,25]. To further
+increase the accuracy and reliability of RoCoF tracking, correlation phasor algorithms have
+been developed in recent years, which can be roughly divided into the following three
+categories: DFT-based methods, Kalman ﬁlter techniques, and other methods.
+1.2. Contribution
+This paper aims to provide a comprehensive review of RoCoF estimation techniques
+for power systems including related concepts and estimation techniques. The speciﬁc
+contributions of the paper are the following:
+(i) Discussion on the role of the RoCoF in power system cascading failure and under-
+standing the power system RoCoF;
+(ii) Review the estimation and prediction techniques of the maximal RoCoF following
+a contingency;
+(iii) Review the different methods of RoCoF real-time tracking techniques with a discus-
+sion on the advantages and disadvantages as well as the further development of
+existing methods.
+1.3. Oriagnization
+The rest of this paper is organized as follows. Section 2 discusses the typical blackouts
+occurring in recent years, explains the physical and numerical characteristics of power
+system RoCoF, and introduces the concept of “center” RoCoF. In Section 3, the estimation
+and prediction techniques of the maximal RoCoF following a contingency are reviewed,
+and a power system with zero rotational inertia is discussed in depth. Section 4 reviews the
+existing RoCoF real-time tracking techniques. The conclusions and related future research
+topics are provided in Section 5.
+2. Frequency Stability of the Low-Inertia Power System
+This section ﬁrstly discusses the typical blackouts in recent years that resulted from
+a lack of inertia and especially analyzes the features of the RoCoF during the dynamic
+evaluation of the blackouts, and then explains the “role” of the inertia and RoCoF in modern
+power systems. On this basis, the concept of “center” RoCoF is introduced. Table 1 lists the
+nomenclature of parameters in Section 2.
+===== PAGE 3 =====
+Energies 2023, 16, 3708 3 of 19
+Table 1. Section 2 nomenclature.
+Variable Description
+Heq, HG, HV Equivalent inertia constant of the power system, synchronous generator and IBRs
+f 0, fCoI , f Normal frequency, frequency of center of inertia, and inner frequency of the sources
+∆PG
+The change of the output power from the generations providing the frequency
+support to the system
+∆PL The unbalanced active power caused by the contingency
+D The damping factor of the power system
+S The rated power
+NG, NV The number of synchronous machines and IBRs
+fB The vector consisting of the node frequency of the power system
+fG The vector consisting of the equivalent speed of the generation set
+A The parameter matrix of the power system
+Y The admittance matrix of the power system
+h Normalized inertia constants with dimension m× 1
+1n×1, Im Identity matrix with dimension n× 1 and unit matrix with dimension m× m
+2.1. Typical Blackouts in Low-Inertia Systems
+The rotational inertia level of the power system continuously decreases alongside
+the adjustment of the energy composition structure of the power grid [3]. In recent years,
+frequency collapses caused by a lack of inertia have occurred in many countries, which
+largely increases attention to the frequency security and stability of modern power systems.
+Figure 1 summarizes the typical blackouts in low-inertia systems from recent years.
+Energies 2023, 16, x FOR PEER REVIEW 3 of 20 
+ 
+ 
+evaluation of the blackouts, and then explains the “role” of the inertia and RoCoF in mod-
+ern power systems. On this basis, the concept of “center” RoCoF is introduced. Table 1 
+lists the nomenclature of parameters in Section 2. 
+Table 1. Section 2 nomenclature. 
+Variable Description 
+, ,eq G VHH H  Equivalent inertia constant of the power system, synchronous generator 
+and IBRs 
+0 , ,CoIff f  Normal frequency, frequency of center of inertia, and inner frequency of 
+the sources 
+GPΔ  The change of the output power from the generations providing the fre-
+quency support to the system 
+LPΔ  The unbalanced active power caused by the contingency 
+D  The damping factor of the power system 
+S  The rated power 
+,GVNN  The number of synchronous machines and IBRs 
+Bf  The vector consisting of the node frequency of the power system 
+Gf  The vector consisting of the equivalent speed of the generation set 
+A  The parameter matrix of the power system 
+Y  The admittance matrix of the power system 
+h  Normalized inertia constants with dimension m × 1 
+1 ,nm×1I  Identity matrix with dimension n × 1 and unit matrix with dimension 
+mxm 
+2.1. Typical Blackouts in Low-Inertia Systems 
+The rotational inertia level of the power system continuously decreases alongside the 
+adjustment of the energy composition structure of the power grid [3]. In recent years, fre-
+quency collapses caused by a lack of inertia have occurred in many countries, which 
+largely increases attention to the frequency security and stability of modern power sys-
+tems. Figure 1 summarizes the typical blackouts in low-inertia systems from recent years. 
+ 
+Figure 1. Frequency security problems of low-inertia systems. 
+The details for each blackout shown in Figure 1 are the following: 
+(i) British “8.9” blackout: At around 17:00 local time on 9 August 2019, due to a light-
+ning strike, a single-phase grounding short-circuit fault occurred on a transmission line in 
+Figure 1. Frequency security problems of low-inertia systems.
+The details for each blackout shown in Figure 1 are the following:
+(i) British “8.9” blackout: At around 17:00 local time on 9 August 2019, due to a
+lightning strike, a single-phase grounding short-circuit fault occurred on a transmission
+line in the British power system and caused the successive disconnection of the Little
+Barford gas power station and Hornsea offshore wind plant as their frequency protections
+were triggered. The inertia of the British power system at that time was 210 GW ·s [8],
+for the 30% wind penetration. The RoCoF of the British system was recorded at 500 ms
+and 0.135 Hz/s following the contingency [8], which is over the threshold of the RoCoF
+protection of the most distributed sources at 0.125 Hz/s [ 8,26] and thus led to the extra
+345 MW power loss due to the cut-off of the distributed sources. As a result, an under-
+frequency load shedding (UFLS) of the system was triggered, and ﬁnally led to a large-scale
+power outage in England and Wales. The load loss was about 3.2% of the whole British
+system and about 1 million people were affected. During this incident, the unexpectedly
+===== PAGE 4 =====
+Energies 2023, 16, 3708 4 of 19
+large RoCoF resulted in the unexpected trip of the generation units, and therefore, the
+occurrence of UFLS.
+(ii) South Australia “9.28” blackout: On the afternoon of 28 September 2016, local
+time, a severe typhoon and storm hit South Australia and caused the break of six trans-
+mission lines. The voltage drop occurred six times within 2 min at the point of common
+coupling (PCC) of the wind farm at Davenport, which led to the large-scale cut-off of wind
+generations and resulted in the loss of the generation of 445 MW [ 27]. To maintain the
+frequency stability of the state system, there was about 850–900 MW of power imported by
+the Heywood tie line that went beyond its maximal capacity at 600 MW [28]. Finally, the
+state grid was isolated due to the trip of the Heywood tie line and thus the power supply
+of the entire state was interrupted for about 50 h. At the time of the accident, the wind and
+solar power penetration of the South Australia system was 48.36%, and the inertia of the
+system was 3000 MW·s, the lowest level in history. At the beginning of the accident, the
+RoCoF reached 6.1 Hz/s and the frequency nadir was 47 Hz, i.e.,−3 Hz below the nominal
+value [27–29].
+(iii) India “7.30” and “7.31” blackouts: On 30–31 July 2012, the largest power outage
+occurred in India since 2000, which affected 20 Indian states and more than 600 million
+residents. The normal frequency of the Indian power system is 49.5~50.2 Hz [30], which
+allows for relatively large frequency ﬂuctuations compared with the other countries with
+strong power systems. On the day the blackout occurred, 47 transmission lines above
+400 kV were out of work for maintenance, which further weakened the grid. At the
+beginning of this event, the 220 kV transmission line Gwalior–Malanpur I tripped, which led
+to a cascading failure including the disconnection between the western and northern India
+power systems. The northern India power system collapsed after 25 s of the disconnection.
+On the following day, the Rajasthan State generation unit tripped and was followed by the
+trip of the 220 kV Badod Modak line [30,31]. After 2 min, the disconnection of the western
+and eastern Indian power system occurred, which was followed by the collapse of the
+eastern and northern systems. The total installed capacity of the Indian power grid was
+202,979 MW, and the renewable energy penetration rate of the system was 33.66% [31,32].
+The typical low-inertia features resulted in a large RoCoF following the contingency and
+thus led to the above two cascading failures. Frequency deviations over 1.2 Hz were
+observed during the blackout [32].
+According to the above discussion, a relatively low-inertia level and extremely high
+RoCoF was recorded during these events. Therefore, the following subsection discusses
+the “role” of inertia and RoCoF for modern power systems.
+2.2. The “Role” of Inertia and RoCoF for Modern Power Systems
+Power system frequency stability refers to the power system’s ability to maintain a sta-
+ble frequency following a large disturbance that leads to the unbalance between the power
+supply and load demand [3,33]. The collapse of the frequency stability observed in typical
+blackouts is discussed in the above subsection. For a power system that maintains the
+frequency stability following a contingency, its frequency evolution trajectory is shown in
+Figure 2, which can be divided into four stages [34,35]: inertia response, primary frequency
+control (PFC), secondary frequency control (SFC), and tertiary frequency control (TFC).
+As we can see in Figure 2, at the ﬁrst stage of the evolution, the frequency drops
+following the contingency. At this stage, the inertial response dominates the frequency
+dynamics by converting the kinetic energy into electrical energy to depress the frequency
+deviation from the normal value. The larger the inertia, the more the stored kinetic energy
+is, and therefore, the smaller the RoCoF is at this stage [2,36,37]. When the frequency is out
+of the dead band of the turbine governor (TG), the TG acts and the PFC is triggered. With
+the effect of PFC, the frequency starts to recover from the nadir. Note that the stages that are
+dominated by the inertial response and the PFC can be partly overlapped [34], as shown
+in the yellow area of Figure 2. There usually exists a quasi-steady status with obvious
+frequency deviations at the second stage of the frequency evolution due to the limited effect
+===== PAGE 5 =====
+Energies 2023, 16, 3708 5 of 19
+of PFC. Since then, in the following SFC and TFC dominant stages, the frequency slowly
+recovers to the normal value with the RoCoF approaching zero.
+Energies 2023, 16, x FOR PEER REVIEW 5 of 20 
+ 
+ 
+frequency control (PFC), secondary frequency control (SFC), and tertiary frequency con-
+trol (TFC). 
+ 
+Figure 2. Typical frequency evolution of a power system. 
+As we c an se e in F ig ure 2,  at th e f irs t stage of the evolution, the frequency drops 
+following the contingency. At this stage, the inertial response dominates the frequency 
+dynamics by converting the kinetic energy into electrical energy to depress the frequency 
+deviation from the normal value. The larger the inertia, the more the stored kinetic energy 
+is, and therefore, the smaller the RoCoF is at  this stage [2,36,37]. When the frequency is 
+out of the dead band of the turbine governor (TG), the TG acts and the PFC is triggered. 
+With the effect of PFC, the frequency starts to recover from the nadir. Note that the stages 
+that are dominated by the inertial response and the PFC can be partly overlapped [34], as 
+shown in the yellow area of Figure 2. There us ually exists a quasi-steady status with ob-
+vious frequency deviations at the second stage of the frequency evolution due to the lim-
+ited effect of PFC. Since then, in the following SFC and TFC dominant stages, the fre-
+quency slowly recovers to the normal value with the RoCoF approaching zero. 
+According to the above discussion, the RoCoF estimation for the initial response and 
+PFC-dominant stages is interesting. One can introduce the following equation to describe 
+the relationship between the inertia and RoCoF [34,38]: 
+0
+2
+()
+eq CoI
+GL e q
+H df Pt P D fdtf
+=Δ −Δ − Δ  (1) 
+where Δf is the frequency deviation from the normal frequency; eqH  can be computed 
+by Equation (2): 
+,,
+11
+11
+GV
+GV
+NN
+Gi i V j j
+ij
+eq NN
+ij
+ij
+HS H S
+H
+SS
+==
+==
++
+=
++
+
+
+ (2) 
+where HG,i is the equivalent inertia constant of the i-th synchronous generator; Si is the 
+rated power of the i-th synchronous generator; HV,j is the equivalent inertia constant of the 
+j-th IBRs providing virtual inertia to the grid; Sj is the rated power of the j-th IBRs. Equa-
+tion (2) indicates that the inertia of the grid mainly consists of two parts, namely the rota-
+tional inertia from synchronous generator and the virtual inertia from IBRs [34]. It is worth 
+noting that HV,j is usually unknown and time-varying because it depends on the operating 
+state and control method of the IBR. The relevant inertia estimation techniques for power 
+systems with high penetrations of IBRs have therefore been developed in recent years 
+Figure 2. Typical frequency evolution of a power system.
+According to the above discussion, the RoCoF estimation for the initial response and
+PFC-dominant stages is interesting. One can introduce the following equation to describe
+the relationship between the inertia and RoCoF [34,38]:
+2Heq
+f 0
+d fCoI
+dt = ∆PG(t)− ∆PL− Deq∆ f (1)
+where ∆f is the frequency deviation from the normal frequency; Heq can be computed by
+Equation (2):
+Heq =
+NG
+∑
+i=1
+HG,iSi +
+NV
+∑
+j=1
+HV,jSj
+NG
+∑
+i=1
+Si +
+NV
+∑
+j=1
+Sj
+(2)
+where HG,i is the equivalent inertia constant of the i-th synchronous generator; Si is the
+rated power of the i-th synchronous generator; HV ,jis the equivalent inertia constant of
+the j-th IBRs providing virtual inertia to the grid; Sj is the rated power of the j-th IBRs.
+Equation (2) indicates that the inertia of the grid mainly consists of two parts, namely the
+rotational inertia from synchronous generator and the virtual inertia from IBRs [34]. It is
+worth noting that HV ,jis usually unknown and time-varying because it depends on the
+operating state and control method of the IBR. The relevant inertia estimation techniques
+for power systems with high penetrations of IBRs have therefore been developed in recent
+years [34,39,40], which can be the technical foundation to predict the critical value of the
+RoCoF of the power system.
+With the developing interconnections between regional grids, the modern power
+system has an increasingly wider geographical distribution. The inertia level of different
+subsystems can be very different due to the uneven distributions of the synchronous
+generator with large inertia and the IBR that cannot provide inertia support. In this context,
+the frequency event occurring at different places within the power system may be followed
+by the frequency evaluation with very different features, including the RoCoF. Therefore,
+the distribution of the inertia, to some extent, shapes the temporal and spatial characteristics
+of the dynamic frequency.
+2.3. Concept of “Center” RoCoF
+2.3.1. Frequency of CoI and Its Estimation Method
+The real-world power system constantly suffers from the disturbances of the stochas-
+tics of renewable power and load and can be attacked by unpredictable events such as a
+===== PAGE 6 =====
+Energies 2023, 16, 3708 6 of 19
+tripped critical transmission line and unexpected loss of generation, which leads to the
+ever-changing frequency of the system [41]. The dynamic frequency at each node of the
+power system is under the impact of many factors [38,42], e.g., the local inertia level and
+distances from the disturbances, and therefore, can be different from each other. Professor
+F. Milano proposes the following frequency divider formula (FDF) to describe the spatial
+distribution of the power system frequency [43]:
+{ fB = 1 + A(fG− 1)
+A =−(Im{YBB + YB0})−1Im{YBG}
+(3)
+where YBB is the admittance matrix of power grid; YB0 is a diagonal matrix, which takes
+into account the internal impedances of synchronous generators at the generator buses;
+YBG is the admittance matrix at the bus.
+As FDF implies, the dynamic frequency at each node of the power system is differ-
+ent [43,44]. The concept of frequency of center of inertia (CoI) is proposed to present the
+“center” frequency (also abbreviated as system frequency in some reports and papers) of
+the power system [38,45–48]:
+fCoI =
+N
+∑
+i=1
+Heq,i fi
+N
+∑
+i=1
+Heq,i
+(4)
+where Heq,i and fi are the inertia constant and the inner frequency of the i-th sources.
+Reference [46] proposes the following expression to estimate the frequency of the CoI:
+
+
+
+f∗
+CoI = ξTfB + α
+ξT =−hTIm{Y+
+BG}Im{YBB + YB0}
+α = 1− ξT1n,1
+(5)
+where Y+
+BG is the left inverse of YBG, i.e., Y+
+BGYBG = Im; the i-th element of h is hi = Hi/HT
+and HT = ∑m
+j=1 Hj.
+2.3.2. RoCoF of the Frequency of CoI
+With the concept of frequency of CoI, we can deduce the “center” RoCoF that can
+present the frequency security feature of the power system as the time derivative of the
+frequency of CoI. The threshold to trigger the RoCoF protection of the power system in
+some countries, such as Britain [49] and Denmark [49], has been set as a maximal value of
+the system RoCoF.
+3. Estimation and Prediction of the Maximal RoCoF following a Contingency
+According to the above discussion, the maximal RoCoF of the system discussed in
+this section is derived from the frequency of CoI following a contingency. This section
+discusses the estimation and prediction of the maximal RoCoF following a contingency. It
+is worth noting that the maximal RoCoF prediction techniques still need to be improved in
+accuracy and interpretability. Relevant solutions are provided in this section, mainly using
+the method of slope estimation. The magnitude of the maximal RoCoF highly depends on
+the contingency and the inertia level of the system, which is an important index to present
+the frequency security of the power system [49–51]. This section discusses the estimation of
+the maximal RoCoF following an already-occurred event and the prediction of the maximal
+RoCoF following a potential contingency of the system; the speciﬁc classiﬁcation is shown
+in Figure 3. Table 2 lists the nomenclature of parameters in Section 3.
+===== PAGE 7 =====
+Energies 2023, 16, 3708 7 of 19
+Energies 2023, 16, x FOR PEER REVIEW 7 of 20 
+ 
+ 
+some countries, such as Britain [49] and Denmark [49], has been set as a maximal value of 
+the system RoCoF. 
+3. Estimation and Prediction of the Maximal RoCoF following a Contingency 
+According to the above discussion, the ma ximal RoCoF of the system discussed in 
+this section is derived from the frequency of CoI following a contingency. This section 
+discusses the estimation and prediction of the maximal RoCoF following a contingency. 
+It is worth noting that the maximal RoCoF prediction techniques still need to be improved 
+in accuracy and interpretability. Relevant solu tions are provided in this section, mainly 
+using the method of slope estimation. The magnitude of the maximal RoCoF highly de-
+pends on the contingency and the inertia level of the system, which is an important index 
+to present the frequency security of the power system [49–51]. This section discusses the 
+estimation of the maximal RoCoF following an already-occurred event and the prediction 
+of the maximal RoCoF following a potential contingency of the system; the specific classi-
+fication is shown in Figure 3. Table 2 lists the nomenclature of parameters in Section 3. 
+ 
+Figure 3. Taxonomy of offline RoCoF estimation techniques for power systems. 
+Table 2. Section 3 nomenclature. 
+Variable Description 
+f  Averaged system frequency 
+T A short period following the contingency 
+00() , ( )ft ft T +  
+The pre-contingency frequency and the frequency of a short period T 
+following the contingency 
+*RoCoFm  The approximated maximal RoCoF 
+3.1. Maximal RoCoF Estimation 
+The most commonly used estimation method of the maximal RoCoF is calculating 
+the maximal RoCoF from the obtained trajectory of the dynamic frequency following an 
+event. This method can provide the most accurate RoCoF to the Transmission System Op-
+erators (TSOs). The curve fitting technique used to analyze the maximal power system 
+RoCoF is found in reference [52], where a fifth-order polynomial to mimic the frequency 
+response of the power system is proposed and the “analytic” RoCoF function as the first-
+time derivative of the polynomial can be obtained. One can easily deduce the maximal 
+RoCoF according to the obtained RoCoF function. Then, reference [53] assumes a polyno-
+mial to describe the dynamic frequency 
+f  of the power system: 
+() [ 1 s i n ( ) ] tn
+rft k e t ςωσω φ−=+ +  (6) 
+where , ,, , nrk σ ς ωω , and φ  are unknown parameters of f  and t is the time, these pa-
+rameters need to be identified according to the dynamic behavior of the system. Following 
+Figure 3. Taxonomy of ofﬂine RoCoF estimation techniques for power systems.
+Table 2. Section 3 nomenclature.
+Variable Description
+˜f Averaged system frequency
+T A short period following the contingency
+f (t0), f (t0 + T) The pre-contingency frequency and the frequency of a short
+period T following the contingency
+RoCoF∗
+m The approximated maximal RoCoF
+3.1. Maximal RoCoF Estimation
+The most commonly used estimation method of the maximal RoCoF is calculating the
+maximal RoCoF from the obtained trajectory of the dynamic frequency following an event.
+This method can provide the most accurate RoCoF to the Transmission System Operators
+(TSOs). The curve ﬁtting technique used to analyze the maximal power system RoCoF is
+found in reference [52], where a ﬁfth-order polynomial to mimic the frequency response of
+the power system is proposed and the “analytic” RoCoF function as the ﬁrst-time derivative
+of the polynomial can be obtained. One can easily deduce the maximal RoCoF according to
+the obtained RoCoF function. Then, reference [53] assumes a polynomial to describe the
+dynamic frequency˜f of the power system:
+˜f (t) = k[1 + σe−ςωnt sin(ωrt + φ)] (6)
+where k, σ, ς, ωn, ωr, and φ are unknown parameters of˜f and t is the time, these parameters
+need to be identiﬁed according to the dynamic behavior of the system. Following that work,
+reference [54] proposes an adaptive polynomial ﬁtting technique to describe the dynamic
+frequency and also the RoCoF.
+During the frequency evolution following a contingency, however, since the completed
+frequency trajectory is not available, the maximal RoCoF “saw” by the control and operation
+center (recorded as RoCoF∗
+m in the remainder of the paper) of the system is usually the
+approximated value calculated by the data of the frequency obtained within a very short
+period following the contingency [35,52–54]:
+RoCoF∗
+m = f (t0 + T)− f (t0)
+T (7)
+where f (t0) is usually very close to the nominal value. The speciﬁc T for different grid
+codes is listed in Table 3.
+===== PAGE 8 =====
+Energies 2023, 16, 3708 8 of 19
+Table 3. International grid codes for frequency and RoCoF.
+Grid Code T Security Threshold (Normal Frequency)
+IEEE [55] N.A. 0.4 Hz/s (60 Hz)
+Denmark [49,56] 500 ms 2 Hz/s (50 Hz)
+Ireland [49,56] 200 ms 1 Hz/s (50 Hz)
+UK [56] 500 ms 1 Hz/s (50 Hz)
+Germany [49,56] 500 ms 2 Hz/s (50 Hz)
+Australia [49] N.A. No standard for RoCoF (50 Hz)
+USA [49,57] N.A. No standard for RoCoF (60 Hz)
+Table 3 shows the typical approximated maximal RoCoF and their corresponding
+security thresholds from different grid codes [ 49,55–57]. As we can see in Table 3, the
+method to deﬁne theRoCoF∗
+m and its security threshold for several European countries has
+been issued, while there is no speciﬁc rule in the IEEE standards to estimateRoCoF∗
+m but a
+security threshold for the maximal RoCoF is provided. Australian and USA grid codes have
+not listed a clear requirement for RoCoF yet, but the related discussions become increasingly
+broad with the increasingly high penetration of the IBRs in these national grids.
+The security threshold of a system RoCoF has to be small enough to protect the on-grid
+devices under extreme scenarios, while it also has to be large enough to avoid triggering
+unexpected cascading failures. Therefore, the RoCoF threshold in some countries, e.g., the
+UK and Ireland, has been modiﬁed with the developed online devices and increasingly
+high penetration of IBRs in recent years [ 49,56]. Ireland increased the RoCoF threshold
+from 0.5 Hz/s to 1 Hz/s in 2020 [49]. The new settings for RoCoF may be issued with the
+development and application of virtual inertia techniques.
+3.2. Maximal RoCoF Prediction
+With the rapid development of AI techniques in recent years, the applications of AI on
+the stability and security assessment of power systems have become a hot topic [2,14,15].
+One of the typical applications of the AI algorithm on power system analysis is predicting
+the possible behavior of the system via training the proposed algorithm to learn from the
+historical operation datum. In this context, the AI algorithms that can predict the maximal
+RoCoF of the potential contingencies of the power system have been proposed.
+Reference [14] utilizes a deep learning network based on stacked denoising auto
+encoders to predict the indexes of the frequency evolutions following the possible large
+disturbances including the maximal frequency deviation, maximal RoCoF, and quasi-
+steady-state frequency. Reference [15] proposes an online frequency security assessment
+method based on the multi-layer extreme learning machine (ML-ELM). In the process of
+unsupervised training, an automatic encoder algorithm and regularization coefﬁcient are
+utilized to optimize layer by layer, which can accurately predict the maximal RoCoF with a
+relatively small computational burden.
+Although AI techniques are supposed to have a wide application for power system
+analysis, in the current phase, the lack of interpretability raises a common doubt for their
+further development in the power system ﬁeld [39]. A reliable and accurate maximal RoCoF
+prediction AI technique that can actually assist the TSO with satisﬁed interpretability may
+be still on the way.
+3.3. T owards the Power System with Zero Rotational Inertia
+To date, 100% renewable energy systems have been built and can operate safely and
+stably for a long time. For example, many countries have built or are close to building 100%
+renewable energy power systems, including hydro, wind, and solar power sources [1,3,58,59].
+The hydropower included in renewable energy power systems can provide rotational
+inertia to the grid, and at the same time, these kinds of power systems are always equipped
+with synchronous compensators to improve the voltage stability of the power system, which
+===== PAGE 9 =====
+Energies 2023, 16, 3708 9 of 19
+can also provide rotational inertia [1,3]. Therefore, the 100% renewable energy system can
+be regarded as a low-inertia power system rather than a zero rotational inertia system.
+At present, Xinjiang, China, as the energy base of China, has built a typical ultra-
+high proportion new energy power system, including 100% new energy areas with only
+solar, wind power, and energy storage devices, but it has not reached the situation with
+zero rotational inertia, because there is still asynchronous motors existing in the load
+side, providing a small amount of inertia support. Theoretically speaking, if there is no
+asynchronous motor at all on the load side, then the system can be regarded as zero inertia,
+and since the load side is also 100% power electronic equipment, then this system no longer
+needs to maintain a 50/60 Hz nominal frequency, because all equipment is connected
+to the power system via power electronic converters, and even a pure DC system can
+be formed. However, this kind of system does not exist at present because most of the
+electrical equipment is designed to operate normally at the nominal frequency. Even if the
+power supply is 100% power electronization, the system still operates around the nominal
+frequency in order to satisfy the requirement of most power consumption devices. In this
+context, to avoid damaging the load-side electrical equipment, the frequency security and
+stability needs to be ensured by inertial support that depress the frequency ﬂuctuations
+and extremely high RoCoF [3].
+Based on the above discussion, it is necessary to use virtual inertia techniques to
+provide inertia support to suppress the drastic changes in frequency and RoCoF in all the
+real-world power systems now and in the near future [ 60,61]. Considering that virtual
+inertia is uncertain compared with the constant rotational inertia, because virtual inertia is
+a typical control technique of the power electronic converters, the effect of the control can
+be easily affected by the adjustable parameters and the state of the energy sources [60–62].
+Therefore, it will become more challenging to set a reasonable RoCoF security threshold
+and potential RoCoF prediction techniques in the power system with virtual inertia as
+the main inertial support form due to the high uncertainty of the spatial and temporal
+distribution of the virtual inertia.
+4. Real-Time RoCoF Tracking Techniques
+According to the well-known frequency deﬁnition of AC power system given in IEEE
+Std. IEC/IEEE 60255-118-1 [63], the RoCoF can be presented as
+RoCoF =
+.
+f (t) = 1
+2π
+..
+ϑ(t) = 1
+2π
+..
+θ(t) (8)
+where ϑ is the angular position of the signal x(t) = Xm(t) cos(ϑ(t)) [63]; θ is the phase
+difference between the angular position ϑ of the signal x(t) and the phase caused by the
+reference normal frequency. Equation (8) implies that the measurement device that can
+track the dynamic voltage/current phase at a node of the power system, namely the
+synchrophasor, can be used to track the real-time local RoCoF with a proper algorithm;
+however, RoCoF estimation techniques face great challenges in accuracy and robustness.
+This section provides a comprehensive review of the existing real-time RoCoF tracking
+algorithms of synchrophasors, which can be divided into three main categories: (i) DFT-
+based [64–76], (ii) Kalman ﬁlter techniques [77–92], and (iii) other methods [93–100]. The
+details for each category are provided in the subsection. The speciﬁcs are shown in Figure 4.
+Table 4 lists the nomenclature of parameters in Section 4.
+===== PAGE 10 =====
+Energies 2023, 16, 3708 10 of 19
+Energies 2023, 16, x FOR PEER REVIEW 10 of 20 
+ 
+ 
+reference normal frequency. Equation (8) implies that the measurement device that can 
+track the dynamic voltage/current phase at a node of the power system, namely the syn-
+chrophasor, can be used to track the real-time local RoCoF with a proper algorithm; how-
+ever, RoCoF estimation techniques face great challenges in accuracy and robustness. This 
+section provides a comprehensive review of the existing real-time RoCoF tracking algo-
+rithms of synchrophasors, which can be divided into three main categories: (i) DFT-based 
+[64–76], (ii) Kalman filter techniques [77–92], and (iii) other methods [93–100]. The details 
+for each category are provided in the subsection. The specifics are shown in Figure 4. Table 
+4 lists the nomenclature of parameters in Section 4. 
+ 
+Figure 4. Taxonomy of real-time RoCoF tracking techniques. 
+Table 4. Section 4 nomenclature. 
+Variable Description 
+mV  The magnitude of the voltage waveforms 
+f  The signal frequency to be estimated 
+Vφ  The phase angle 
+sT  The sampling interval 
+sf  The sampling frequency 
+x  The vector of state variables 
+z  The vector of measurements 
+u  The control vector 
+A  The state transition matrix 
+B  The control matrix 
+H  The measurement matrix 
+w The column vector of process noise 
+v  The column vector of measurement noise 
+ˆ  Estimated values 
+−  Predicted values 
+T  Transposition of the matrix 
+P  Covariance matrix 
+Q  Covariance of process noise 
+K Kalman gain matrix 
+R Covariance of measurement noise 
+, ,,,L λακ β Adjustable parameters of UKF algorithm 
+,fh  
+Vectors consisting of nonlinear state transition functions and meas-
+urement functions 
+() ( ),mcWW Weights for the mean and covariance, respectively 
+, ,pifKK T  PI filter parameters 
+Figure 4. Taxonomy of real-time RoCoF tracking techniques.
+Table 4. Section 4 nomenclature.
+Variable Description
+Vm The magnitude of the voltage waveforms
+f The signal frequency to be estimated
+φV The phase angle
+Ts The sampling interval
+fs The sampling frequency
+x The vector of state variables
+z The vector of measurements
+u The control vector
+A The state transition matrix
+B The control matrix
+H The measurement matrix
+w The column vector of process noise
+v The column vector of measurement noise
+ˆ□ Estimated values
+□− Predicted values
+□T Transposition of the matrix
+P Covariance matrix
+Q Covariance of process noise
+K Kalman gain matrix
+R Covariance of measurement noise
+L, λ, α, κ, β Adjustable parameters of UKF algorithm
+f, h Vectors consisting of nonlinear state transition functions and
+measurement functions
+W(m), W(c) Weights for the mean and covariance, respectively
+Kp, Ki, Tf PI ﬁlter parameters
+4.1. DFT-Based Methods
+DFT is the most basic and common signal processing method at present. The DFT
+method can be used to calculate the amplitude phase angle, frequency, and RoCoF of the
+input signals collected by synchrophasors [64–68]. The voltage/current waveform of the
+AC power system measured by the synchrophasor can be described as the following:
+V(t) = Vm cos(2π f t + φV) (9)
+DFT refers to transforming a discrete time series with ﬁnite length into a signal in
+frequency domain, by sampling the signal at given intervals. For a periodic signal, N
+points are sampled in each T period, namely, T = NTs. The voltage signal in the frequency
+domain obtained via DFT is given by
+V(k) =
+N−1
+∑
+n=0
+V(n)e−j 2π
+N nk, k = 0, 1, 2 . . .N− 1 (10)
+===== PAGE 11 =====
+Energies 2023, 16, 3708 11 of 19
+where k is the frequency bin index, n is the sample index.
+The dynamic frequency of the system can be estimated by ﬁnding the frequency bin
+index k that corresponds to the largest magnitude in the frequency domain (recorded as
+km). The highest frequency bin represents the fundamental waveform of the signal and its
+frequency can be the coarse estimation as follows [69]:
+fc = km
+fs
+N (11)
+Because of the spectral leakage and fence effect in sampling, DFT may introduce
+obvious errors for the processing of signals with relative rapid variations [69–71]. In this
+context, the improved DFT methods with higher accuracy and robustness against the
+sampling techniques are developed for real-time RoCoF tracking in the power system.
+Reference [71] proposes a windowed DFT which allows the tracking of frequency
+deviation under various power system operation conditions and RoCoF and presents the
+satisﬁed accuracy deﬁned by the IEEE standards.
+The interpolated DFT (IpDFT) is another well-known technique, which estimates
+the synchrophasors by interpolating the DFT spectrum of the signal [72]. The windowed
+interpolation techniques are used to suppress the spectral leakage of DFT methods via
+introducing an appropriate window function for sampling. The interpolated DFT can be
+represented mathematically as follows:
+V(k) =
+N−1
+∑
+n=0
+V(n)e−j 2π
+N n(k+∆k), k = 0, 1, 2 . . .N− 1 (12)
+where ∆k is the interpolation factor and the selection of ∆k is related to the window
+function. In particular, the IpDFT applying windowing function to reduce the spectral
+leakage effects [66,72,73]. References [67,72,74,75] prove that with proper window function,
+the IpDFT can largely reduce the errors resulting from the spectral leakage. The Hanning
+window is better than the traditional rectangular window, with a reduced leakage and
+ﬂuctuation for IpDFT.
+Reference [72] proposes an enhanced IpDFT algorithm for synchronous phasor fre-
+quency estimation that computes RoCoF as the ﬁrst-time derivative of the obtained fre-
+quency passing by a low-pass ﬁlter. The enhanced IpDFT algorithm combines three differ-
+ent methods to reduce the inﬂuence of errors caused by spectrum interference, including
+windowing, DFT interpolation, and iterative solution [76].
+4.2. Kalman Filter T echniques
+The Kalman ﬁlter technique is widely used in the ﬁeld of the power system state
+estimation [77–79]. The real-time RoCoF tracking techniques based on the Kalman ﬁl-
+ter can effectively avoid the impact of harmonics and noise of the input signal fed into
+the synchrophasor through solving the optimal estimation problem of the continuous
+prediction–correction operation [78,80,81]. Kalman ﬁlter techniques require the estab-
+lishment of appropriate state equations and measurement equations that can be solved
+iteratively; the basic formulas of the standard Kalman ﬁlter are shown in (13)–(15) [82,83].
+The state/measurement equations of the Kalman ﬁlter are
+{xk = Axk−1 + Buk−1 + wk−1
+zk = Hxk + vk
+(13)
+where the subscript k represents the k-th iteration.
+The prediction steps of the equations are
+{
+^
+x
+−
+k = A
+^
+xk−1 + Buk−1
+P−
+k = APk−1AT + Q
+(14)
+The update steps of the equations are
+===== PAGE 12 =====
+Energies 2023, 16, 3708 12 of 19
+
+
+
+Kk = P−
+k HT(HP−
+k HT + R)−1
+^
+xk =
+^
+x
+−
+k + Kk(zk− H
+^
+x
+−
+k )
+Pk = (I− KkH)P−
+k
+(15)
+Reference [83] proposes a method based on the standard Kalman ﬁlter in solving the
+frequency and RoCoF as the state variables, the estimation error of the obtained RoCoF is
+below 0.1 Hz/s. Reference [84] uses the wavelet-based signal pre-processing technique to
+remove the noise of the frequency obtained through the wide-area measurement system
+and then estimates the corresponding RoCoF through a Kalman ﬁlter technique similar to
+the method proposed in [83]. Reference [82] proposes a method based on the Smoothed
+Taylor–Kalman ﬁlter (STKF) technique to track the RoCoF; this method is a linear system
+based on the Taylor series expansion and the Kalman ﬁlter. By using the backward ﬁlter
+based on the smoother, the accuracy of STKF on tracking the frequency and RoCoF is much
+improved compared with the classic Kalman ﬁlter.
+References [24,25] show that phase jumps of the input signal resulting from faults
+can lead to an erroneous frequency and RoCoF estimation. To deal with this issue, the
+Extended Kalman ﬁlter (EKF) and Unscented Kalman ﬁlter (UKF) techniques are used
+for the frequency and RoCoF estimation of the power system. UKF always shows a
+higher accuracy and better numerical stability than EKF by introducing the unscented
+transformation (UT) technique to replace the linearization step of EKF [ 85]. The UKF,
+therefore, is the most advanced Kalman ﬁlter technique for the power system frequency
+and RoCoF estimation at present. The basic steps of the UKF algorithm are presented in
+Algorithm 1 [85–87].
+From the basic equation of UKF shown in Algorithm 1, it can be found that UKF is
+consistent with the basic Kalman ﬁlter algorithm, including prediction step and update
+step; UKF, based on UT, abandons the traditional method of linearizing nonlinear functions,
+and uses UT to deal with the nonlinear transfer of mean and covariance, which becomes
+the UKF algorithm. It is worth noting that in the process of selecting sigma points, three
+parameters are very important [88,89]: α determines the distribution state of sigma points,
+usually 0≤ α≤ 1; the speciﬁc value of κ depends on the situation, for the case of Gaus-
+sian distribution, when the state variable is univariate, κ = 2 is selected, and when it is
+multivariate, κ = 3− L is generally used to determine the value of κ; the parameter to be
+adjusted, β, can improve the accuracy of variance. For Gaussian distribution, β = 2 is the
+optimal value.
+Reference [90] proposes an algorithm of interpolated DFT combined with UKF, which
+estimates the frequency and corresponding RoCoF in two steps: ﬁrstly, the frequency
+through the IDFT with the Hanning window is tracked; and then, the UKF method is used
+to observe the system state including RoCoF, and the accuracy meets all IEEE standards
+for RoCoF estimation. References [ 87,91,92] show that the computational complexity of
+the UKF increases dramatically with the larger system size and therefore may not suit the
+real-world power system.
+Several methods to improve the computational efﬁciency and the numerical stability of
+the UKF have been developed, which broaden the applications of UKF on the system with
+high dimension and nonlinearity, including the real-world power system. Reference [87]
+points out that during the iterations of the UKF algorithm to solve the dynamic states of
+the power system, the estimation error covariance P with positive semi-deﬁniteness may
+not exist. Therefore, the
+√
+P in the unscented transformation stage cannot be computed
+properly and the iteration would be terminated without an effective result. Reference [87]
+compares six different methods to cope with this issue, including the ’schol’ algorithm,
+parameter optimization, modifying the covariance matrix (utilized in the step 3 and 6
+in Algorithm 1), modifying the predicted covariance matrix (utilized in the step 3 in
+Algorithm 1), and using the square-root UKF (SR-UKF) form. The results show that the
+effect of the SR-UKF that introduces the guaranteed positive semi-deﬁnite estimation error
+covariance is the best at avoiding this numerical issue. In the implementation of SR-UKF,
+===== PAGE 13 =====
+Energies 2023, 16, 3708 13 of 19
+√
+P is considered instead of P to avoid refactorizing P at each step, and therefore, effectively
+improves the computational efﬁciency and numerical stability of the UKF without the loss
+of any accuracy.
+Algorithm 1: Unscented Kalman Filter
+1. Compute the sigma points:
+χk−1 = [
+^
+xk−1,
+^
+xk−1 + E,
+^
+xk−1− E]
+where E =
+√
+(L + λ)Pk−1
+χ−
+k = f(χk−1)
+2. Predict the state:
+^
+x
+−
+k =
+2L
+∑
+i=0
+W(m)
+i χ−
+i,k
+3. Predict the covariance:
+P−
+k =
+2L
+∑
+i=0
+W(c)
+i [χ−
+i,k−
+^
+x
+−
+k ][χ−
+i,k−
+^
+x
+−
+k ]
+T
++ Q
+where
+
+
+
+W(m)
+0 = λ/(L + λ)
+W(c)
+0 = λ/(L + λ) + (1− α2 + β)
+W(m)
+i = W(c)
+i = 1/2(L + λ)
+4. The propagated sigma points with measurement function:
+Z−
+k = h(χk−1)
+5. The predicted measurement:
+^
+z
+−
+k =
+2L
+∑
+i=0
+W(m)
+i Z−
+i,k
+6. Compute measurement covariance:
+Pzkzk =
+2L
+∑
+i=0
+W(c)
+i [Z−
+i,k−
+^
+z
+−
+k ][Z−
+i,k−
+^
+z
+−
+k ]
+T
++ R
+7. Compute cross-covariance:
+Pxkzk =
+2L
+∑
+i=0
+W(c)
+i [χ−
+i,k-
+^
+x
+−
+k ][Z−
+i,k−
+^
+z
+−
+k ]
+T
+8. The Kalman Gain:
+Kk = PxkzkP-1zkzk
+9. Update the state:
+^
+xk =
+^
+xk + Kk(zk−
+^
+z
+−
+k )
+10. Update the covariance:
+Pk = P−
+k − KkPzkzkKT
+k
+4.3. Other Methods
+Reference [93] proposes an orthogonal phase-locked method for frequency estimation
+that is combined with gradient descent algorithm to model the system. This method tracks
+the rate of change of angular frequency through Equation (16):
+.
+ω=−ρ2 A2 sin(2ψ) + 2ρ2 A2u(t) cos(2ψ) (16)
+where {
+A =
+√
+A2s + A2c
+ψ = φ + tan−1( Ac
+As ) (17)
+where ρ is the coefﬁcient that the advised value is 0.5; u(t) is the input signal; Ac and As
+obtain the optimal parameters through gradient descent algorithm. This orthogonal phase-
+locked method can accurately track the dynamic frequency and the corresponding RoCoF
+with high robustness against the measurement noise and harmonics. In reference [94], the
+power system frequency and RoCoF are obtained by computing the space vector (SV) in a
+reference frame that rotates at the rated angular frequency. Based on [94], reference [95] pro-
+poses a digital phase-locked loop to improve the accuracy of the SV-based RoCoF estimation
+algorithm, by constructing the instantaneous position of a rotating reference frame.
+Reference [96] proposes a least square method based on polynomial curve ﬁtting to
+improve the robustness of RoCoF calculation. Reference [97] designs an accurate RoCoF
+===== PAGE 14 =====
+Energies 2023, 16, 3708 14 of 19
+estimation algorithm combining DFT and least squares method, which solves the inevitable
+RoCoF estimation error caused by noise and disturbance in the real frequency measurement
+through ingenious design. In addition, before using the algorithm, a median ﬁlter is
+designed and applied, and the window size of the algorithm is determined by analyzing
+the historical event data. Simulation results show that the accuracy of this method in
+frequency estimation is far less than that of the IEEE standard (the maximum frequency
+error is 0.005 Hz), and the online/ofﬂine RoCoF estimation is compared and analyzed
+with a time window of 0.3 s, with high accuracy. Reference [98] proposes the generalized
+Taylor weighted least squares (GTWLS) method to track the power system RoCoF. GTWLS
+is an extension of the classical Taylor weighted least squares method, which deduces the
+real-time RoCoF as a function of the real-time frequency deviation. To further improve the
+accuracy of the RoCoF estimation, reference [98] also suggests to combine the GTWLS with
+the IpDFT algorithm.
+Reference [99] proposes an inﬂection point detector technique, which only uses the
+locally measured frequency to estimate the CoI RoCoF and does not mandate PMUs at
+all generator terminals. This method skillfully uses the second derivative of frequency
+to change the characteristics of its symbol. The local frequency curve intersects the CoI
+frequency curve around the inﬂection points of the former. By connecting the inﬂection
+points, we can obtain the approximate estimated value of the CoI frequency, so that the CoI
+RoCoF can be obtained, accordingly. Reference [100] proposes that the CoI frequency and
+RoCoF of the power system can be calculated more accurately by PMU data from multiple
+locations. Firstly, the equivalent inertia constant is obtained by the least squares method,
+and then the CoI frequency is calculated according to Equation (4), and the RoCoF is the
+ﬁrst-time derivative of CoI frequency; the simulation results show that the error can be
+effectively reduced.
+Reference [34] proposes a universal and lightweight PI ﬁlter technique; through the
+output RoCoP of the units, the internal angular frequency of the power supply can be
+estimated only by the deviation between the bus angular frequency measured by PMU
+and the rated angular frequency. Then, RoCoF can be obtained by using the ﬁrst derivative
+of the internal angular frequency of the power supply output by the PI ﬁlter. The control
+block diagram of the PI ﬁlter is shown in Figure 5, and reference [34] suggests that the PI
+ﬁlter with parameters Kp = 50, Ki = 1, and Tf = 0.0001 can effectively track the local RoCoF
+for inertia estimation.
+Energies 2023, 16, x FOR PEER REVIEW 15 of 20 
+ 
+ 
+points, we can obtain the approximate estimated value of the CoI frequency, so that the 
+CoI RoCoF can be obtained, accordingly. Reference [100] proposes that the CoI frequency 
+and RoCoF of the power system can be calculated more accurately by PMU data from 
+multiple locations. Firstly, the equivalent inertia constant is obtained by the least squares 
+method, and then the CoI frequency is calculated according to Equation (4), and the 
+RoCoF is the first-time derivative of CoI fr equency; the simulation results show that the 
+error can be effectively reduced. 
+Reference [34] proposes a universal and lightweight PI filter technique; through the 
+output RoCoP of the units, the internal angular frequency of the power supply can be 
+estimated only by the deviation between the bus angular frequency measured by PMU 
+and the rated angular frequency. Then, RoCoF can be obtained by using the first deriva-
+tive of the internal angular frequency of the power supply output by the PI filter. The 
+control block diagram of the PI filter is shown in Figure 5, and reference [34] suggests that 
+the PI filter with parameters K
+p = 50, Ki = 1, and Tf = 0.0001 can effectively track the local 
+RoCoF for inertia estimation. 
+ 
+Figure 5. The control block diagram of the PI filter. 
+4.4. Discussions 
+Generally speaking, DFT is the most commo n signal processing method for the ex-
+isting synchrophasors utilized in power systems. However, the accuracy of real-time 
+RoCoF tracking with DFT can be very sensitive to the noise and sampling techniques. 
+Improved DFT methods, e.g., IpDFT, can im prove the accuracy of the frequency and 
+RoCoF estimation. Kalman filter techniques are of great interest for the future develop-
+ment of the power system RoCoF estimation due to its high accuracy and robustness 
+against noise and harmonics. Especially, the improved UKF technique has been proven to 
+be feasible and reliable for the power system state estimation. The heavy computational 
+burden, however, still limits the application of  Kalman filter techniques on the real-time 
+RoCoF tracking of the real-world power system. The RoCoF estimation combining the 
+DFT with the Kalman filter can further improve computational efficiency and accuracy. 
+In addition to the above two kinds of tec hniques, new methods for phase lock, e.g., or-
+thogonal phase-locked method and digital phase-locked loop, have also been developed 
+to track power system frequency and RoCoF. In addition, new methods of combining the 
+least squares method with other estimation techniques, such as the combination of DFT 
+and least squares method, and GTWLS techniques, have made good progress in RoCoF 
+estimation, are also considered to further improve the accuracy and robustness of the 
+RoCoF estimation. In addition, the inflection point detector techniques and PI filter are 
+also new methods that have been developed in recent years; the former skillfully uses the 
+second derivative of frequency to change the characteristics of its symbol and realize the 
+accurate estimation of RoCoF, while the latter can also realize the accurate estimation by 
+choosing appropriate parameters. 
+5. Conclusions 
+In low-inertia power systems, the magnitude of the RoCoF can be a crucial index to 
+present the frequency security and stabilit y of the system. Meanwhile, real-time RoCoF 
+Figure 5. The control block diagram of the PI ﬁlter.
+4.4. Discussions
+Generally speaking, DFT is the most common signal processing method for the exist-
+ing synchrophasors utilized in power systems. However, the accuracy of real-time RoCoF
+tracking with DFT can be very sensitive to the noise and sampling techniques. Improved
+DFT methods, e.g., IpDFT, can improve the accuracy of the frequency and RoCoF esti-
+mation. Kalman ﬁlter techniques are of great interest for the future development of the
+power system RoCoF estimation due to its high accuracy and robustness against noise and
+harmonics. Especially, the improved UKF technique has been proven to be feasible and
+reliable for the power system state estimation. The heavy computational burden, however,
+still limits the application of Kalman ﬁlter techniques on the real-time RoCoF tracking of the
+===== PAGE 15 =====
+Energies 2023, 16, 3708 15 of 19
+real-world power system. The RoCoF estimation combining the DFT with the Kalman ﬁlter
+can further improve computational efﬁciency and accuracy. In addition to the above two
+kinds of techniques, new methods for phase lock, e.g., orthogonal phase-locked method
+and digital phase-locked loop, have also been developed to track power system frequency
+and RoCoF. In addition, new methods of combining the least squares method with other
+estimation techniques, such as the combination of DFT and least squares method, and
+GTWLS techniques, have made good progress in RoCoF estimation, are also considered
+to further improve the accuracy and robustness of the RoCoF estimation. In addition, the
+inﬂection point detector techniques and PI ﬁlter are also new methods that have been
+developed in recent years; the former skillfully uses the second derivative of frequency to
+change the characteristics of its symbol and realize the accurate estimation of RoCoF, while
+the latter can also realize the accurate estimation by choosing appropriate parameters.
+5. Conclusions
+In low-inertia power systems, the magnitude of the RoCoF can be a crucial index to
+present the frequency security and stability of the system. Meanwhile, real-time RoCoF
+tracking can be a key foundation for the development of advanced control and protection
+techniques in the low-inertia system. This paper discusses the basic concept and estimation
+techniques of power system RoCoFs. A comprehensive review on the estimation and
+prediction methods of maximal RoCoF following a contingency and the real-time RoCoF
+tracking techniques is provided. The review indicates that with the lack of inertia gradually
+becoming a common and increasingly more severe issue for power systems around the
+world, the research related to the analysis and estimation of the power system RoCoF
+can be increasingly more important. Several potential research topics in related ﬁelds are
+provided; the conclusions are as follows:
+(i) Grid codes and standards for RoCoF: With the increasingly high penetration of IBRs
+and the diversiﬁed inertia support in the future power system including both the rotational
+and virtual inertia, the setting of security threshold for the RoCoF will be further studied in
+order to protect the in-grid devices and avoid potential cascading failure.
+(ii) AI techniques for the RoCoF prediction of the power system: The wide application
+of synchrophasors that can record the dynamic frequency and corresponding RoCoF
+ensures the rich source of training datum for AI techniques to assess the frequency security
+and stability of power systems. According to the review, several studies have already
+been concerned with predicting the maximal RoCoF following the potential contingency
+of the system, and further research on AI techniques is needed in the future to solve the
+problem of poor robustness and interpretability of AI techniques. We can expect further
+development on this topic with the rapid development of AI techniques.
+(iii) Real-time RoCoF tracking algorithm with increased accuracy and reliability: Al-
+though the existing real-time RoCoF tracking algorithms embedded into the synchrophasor
+perform a relatively satisﬁed accuracy, the errors can be induced due to reasons such as the
+phase jump following a fault. These errors may result in an unexcepted fatal issue for the
+power system if the obtained RoCoF is fed to the control or protection. Therefore, further
+research on RoCoF estimation is needed in the future, so as to further improve the accuracy
+and robustness of RoCoF estimation through the fusion of multiple algorithms.
+Author Contributions: Conceptualization, X.D. and R.M.; methodology X.D. and M.L.; resources
+R.M., P .W. and D.N.; writing-original draft preparation X.D.; writing-review and editing X.D. and
+J.C.; supervision M.L. All authors have read and agreed to the published version of the manuscript.
+Funding: This research was funded by [Science Foundation Project of Xinjiang Province and China
+Postdoctoral Science Foundation] grant number [2021D01C088 and 2021M702749].
+Data Availability Statement: Not applicable.
+Conﬂicts of Interest: The authors declare no conﬂict of interest.
+===== PAGE 16 =====
+Energies 2023, 16, 3708 16 of 19
+References
+1. Kroposki, B.; Johnson, B.; Zhang, Y.C.; Gevorgian, V .; Denholm, P .; Hodge, B.M.; Hannegan, B. Achieving a 100% Renewable Grid:
+Operating Electric Power Systems with Extremely High Levels of Variable Renewable Energy.IEEE Power Energy Mag. 2017, 15,
+61–73. [CrossRef]
+2. Liu, M.Y.; Chen, J.R.; Xie, Y.S.; Deng, X.Y.; Milano, F. Least Square Method for the Identiﬁcation of Equivalent Inertia Constant. In
+Proceedings of the 2022 IEEE Power & Energy Society General Meeting (PESGM), Denver, CO, USA, 17–21 July 2022.
+3. Milano, F.; Dörﬂer, F.; Hug, G.; Hill, D.J.; Verbiˇ c, G. Foundations and Challenges of Low-Inertia Systems (Invited Paper). In
+Proceedings of the 2018 Power Systems Computation Conference (PSCC), Dublin, Ireland, 11–15 June 2018.
+4. Winter, W.; Elkington, K.; Bareux, G.; Kostevc, J. Pushing the Limits: Europe’s New Grid: Innovative Tools to Combat Transmission
+Bottlenecks and Reduced Inertia. IEEE Power Energy Mag. 2015, 13, 60–74. [CrossRef]
+5. Panda, R.K.; Mohapatra, A.; Srivastava, S.C. Application of Indirect Adaptive Control Philosophy for Inertia Estimation. In
+Proceedings of the 2019 IEEE PES GTD Grand International Conference and Exposition Asia (GTD Asia), Bangkok, Thailand,
+19–23 March 2019.
+6. Mo, R.; Deng, X.Y.; Liu, M.Y.; Chang, X.Q. Ambient-Measurement-Based Equivalent Inertia Constant Identiﬁcation Via Tikhonov
+Regularization Algorithm. In Proceedings of the 2022 International Conference on Renewable Energies and Smart Technologies
+(REST), Tirana, Albania, 28–29 July 2022.
+7. Nedd, M.; Browell, J.; Bell, K.; Booth, C. Containing a Credible Loss to Within Frequency Stability Limits in a Low-Inertia GB
+Power System. IEEE T rans. Ind. Appl. 2020, 56, 1031–1039. [CrossRef]
+8. Pandey, A.; Kumar, S.; Mohire, S.; Pentayya, P .; Kazi, F. Dynamic Modeling and Cascade Failure Analysis of the Mumbai Grid
+Incident of October 12, 2020. IEEE Access 2022, 10, 43598–43610. [CrossRef]
+9. Frigo, G.; Derviškadi´ c, A.; Zuo, Y.H.; Paolone, M. PMU-Based ROCOF Measurements: Uncertainty Limits and Metrological
+Signiﬁcance in Power System Applications. IEEE T rans. Instrum. Meas. 2019, 68, 3810–3822. [CrossRef]
+10. Albu, M.; Dumitrescu, A.M.; Popovici, R. Rate of change of frequency—A power quality descriptor. In Proceedings of the 2014
+16th International Conference on Harmonics and Quality of Power (ICHQP), Bucharest, Romania, 25–28 May 2014.
+11. Milano, F.; Ortega, Á . A Method for Evaluating Frequency Regulation in an Electrical Grid-Part I: Theory. IEEE T rans. Power Syst.
+2021, 36, 183–193. [CrossRef]
+12. Ortega, Á .; Milano, F. A Method for Evaluating Frequency Regulation in an Electrical Grid-Part II: Applications to Non-
+Synchronous Devices. IEEE T rans. Power Syst. 2021, 36, 194–203. [CrossRef]
+13. Zhao, J.B.; Mili, L.; Milano, F. Robust Frequency Divider for Power System Online Monitoring and Control. T rans. Power Syst.
+2018, 33, 4414–4423. [CrossRef]
+14. Zhao, R.Z.; Wen, Y.F.; Ye, X.; Tang, Q.; Li, W.Y.; Chen, Y.H.; Qu, X.B. Research on Frequency Indicators Evaluation of Disturbance
+Events Based on Improved Stacked Denoising Autoencoders. Proc. CSEE 2019, 39, 4081–4093.
+15. Wen, Y.F.; Zhao, R.Z.; Xiao, Y.Q.; Liu, Z.B. Power system frequency stability assessment based on multi-layer extreme learning
+machine. Autom. Electr. Power Syst. 2019, 43, 133–143.
+16. Hu, Y.L.; Wei, W.; Peng, Y.G.; Lei, J.Y. Fuzzy virtual inertia control for virtual synchronous generator. In Proceedings of the 35th
+Chinese Control Conference, Chengdu, China, 27–29 July 2016.
+17. Maaruf, M.; Ferik, S.E.; Al-Ismail, F.S.; Khalid, M. Robust Optimal Virtual Inertia Control for Microgrid Frequency Regulation
+Considering High Renewable Energy Penetration. In Proceedings of the 1st IEEE International Conference on Renewable Energy
+Research and Applications, Istanbul, Turkey, 18–21 September 2022.
+18. Gupta, P .; Bhatia, R.S.; Jain, D.K. Active ROCOF Relay for Islanding Detection. IEEE T rans. Power Deliver. 2017, 32, 420–429.
+[CrossRef]
+19. Alam, M.R.; Begum, M.T.A.; Muttaqi, K.M. Assessing the Performance of ROCOF Relay for Anti-Islanding Protection of
+Distributed Generation Under Subcritical Region of Power Imbalance. IEEE T rans. Ind. Appl. 2019, 55, 5395–5405. [CrossRef]
+20. IEEE Std C37.118 TM.1-2011 (Revision of IEEE Std C37.118 TM-2005); IEEE Standard for Synchrophasor Measurements for Power
+Systems. IEEE Power & Energy Society: Piscataway, NJ, USA, 2011; pp. 1–61.
+21. Wang, M.H.; Sun, Y.Z. A practical method to improve phasor and power measurement accuracy of DFT algorithm.IEEE T rans.
+Power Deliver. 2006, 21, 1054–1062. [CrossRef]
+22. Yang, R.G.; Xue, H. A Novel Algorithm for Accurate Frequency Measurement Using Transformed Consecutive Points of DFT.
+IEEE T rans. Power Syst. 2008, 23, 1057–1062. [CrossRef]
+23. Castello, P .; Liu, J.Q.; Muscas, C.; Pegoraro, P .A.; Ponci, F.; Monti, A. A Fast and Accurate PMU Algorithm for P+M Class
+Measurement of Synchrophasor and Frequency. IEEE T rans. Instrum. Meas. 2014, 63, 2837–2845. [CrossRef]
+24. Wright, P .S.; Davis, P .N.; Johnstone, K.; Rietveld, G.; Roscoe, A.J. Field Measurement of Frequency and ROCOF in the Presence of
+Phase Steps. IEEE T rans. Instrum. Meas. 2019, 68, 1688–1695. [CrossRef]
+25. Roscoe, A.J.; Dy´ sko, A.; Marshall, B.; Lee, M.; Kirkham, H.; Rietveld, G. The Case for Redeﬁnition of Frequency and ROCOF to
+Account for AC Power System Phase Steps. In Proceedings of the 2017 IEEE International Workshop on Applied Measurements
+for Power Systems (AMPS), Liverpool, UK, 20–22 September 2017.
+26. Li, T.; Li, Y.; Li, S.; Zhang, W. Research on Current-Limiting Control Strategy Suitable for Ground Faults in AC Microgrid.IEEE J.
+Emerg. Sel. T op. Power 2021, 9, 1736–1750. [CrossRef]
+===== PAGE 17 =====
+Energies 2023, 16, 3708 17 of 19
+27. Masood, N.A.; Yan, R.F.; Saha, T.K. Cascading Contingencies in a Renewable Dominated Power System: Risk of Blackouts and
+Its Mitigation. In Proceedings of the 2018 IEEE Power & Energy Society General Meeting (PESGM), Portland, OR, USA, 5–10
+August 2018.
+28. Jamborsalamati, P .; Moghimi, M.; Hossain, M.J.; Taghizadeh, S.; Lu, J.; Konstantinou, G. A Framework for Evaluation of Power
+Grid Resilience Case Study: 2016 South Australian Blackout. In Proceedings of the 2018 IEEE International Conference on
+Environment and Electrical Engineering and 2018 IEEE Industrial and Commercial Power Systems Europe (EEEIC/I&CPS
+Europe), Palermo, Italy, 12–15 June 2018.
+29. Yan, R.F.; Masood, N.A.; Saha, T.K.; Bai, F.F.; Gu, H.J. The Anatomy of the 2016 South Australia Blackout: A Catastrophic Event in
+a High Renewable Network. IEEE T rans. Power Syst. 2018, 33, 5374–5388. [CrossRef]
+30. Lai, L.L.; Zhang, H.T.; Mishra, S.; Ramasubramanian, D.; Lai, C.S.; Xu, F.Y. Lessons learned from July 2012 Indian blackout.
+In Proceedings of the 9th IET International Conference on Advances in Power System Control, Operation and Management
+(APSCOM 2012), Hong Kong, China, 18–21 November 2012.
+31. Rampurkar, V .; Pentayya, P .; Mangalvedekar, H.A.; Kazi, F. Cascading Failure Analysis for Indian Power Grid.IEEE T rans. Smart
+Grid 2016, 7, 1951–1960. [CrossRef]
+32. Suresh, V .; Sutradhar, R.; Mandal, S.; Debnath, K. Near Miss of Blackout in Southern Part of North Eastern Grid of India. In
+Proceedings of the 2020 3rd International Conference on Energy, Power and Environment: Towards Clean Energy Technologies,
+Shillong, Meghalaya, India, 5–7 March 2021.
+33. Hartono, J.; Pramana, P .A.A.; Kusuma, A.A.; Munir, B.S. Power System Inertia Estimation Based on Frequency Measurement.
+In Proceedings of the 2019 Asia Paciﬁc Conference on Research in Industrial and Systems Engineering (APCoRISE), Depok,
+Indonesia, 18–19 April 2019.
+34. Liu, M.Y.; Chen, J.R.; Milano, F. On-Line Inertia Estimation for Synchronous and Non-Synchronous Devices.IEEE T rans. Power
+Syst. 2021, 36, 2693–2701. [CrossRef]
+35. Delkhosh, H.; Seiﬁ, H. Power System Frequency Security Index Considering All Aspects of Frequency Proﬁle.IEEE T rans. Power
+Syst. 2021, 36, 1656–1659. [CrossRef]
+36. Sun, M.; Xie, G.W.; Chen, L.; Liu, Y.M.; Li, X.J.; Min, Y. Study on the Necessity and Role of Inertia in Power System Frequency
+Response. In Proceedings of the 2020 IEEE 4th Conference on Energy Internet and Energy System Integration (EI2), Wuhan,
+China, 30 October–1 November 2020.
+37. Bevrani, H.; Golpîra, H.; Messina, A.R.; Hatziargyriou, N.; Milano, F.; Ise, T. Power system frequency control: An updated review
+of current solutions and new challenges. Electr. Power Syst. Res. 2021, 194, 107114. [CrossRef]
+38. Kundur, P . Power System Stability and Control ; McGraw-Hill: New York, NY, USA, 1994.
+39. Tan, B.D.; Zhao, J.B.; Netto, M.; Krishnan, V .; Terzija, V .; Zhang, Y.C. Power System Inertia Estimation: Review of Methods and
+the Impacts of Converter-Interfaced Generations. Int. J. Elec. Power 2022, 134, 107362. [CrossRef]
+40. Hatziargyriou, N.; Rahmann, C.; Canizares, C.; Hiskens, I.; Pourbeik, P .; Cutsem, T.V . Deﬁnition and Classiﬁcation of Power
+System Stability–Revisited & Extended. IEEE T rans. Power Syst. 2021, 36, 3271–3281.
+41. Wen, J.X.; Bu, S.Q.; Li, F.X.; Du, P .W. Risk assessment and mitigation on area-level RoCoF for operational planning.Energy 2021,
+228, 120632. [CrossRef]
+42. Zhao, J.B.; Tang, Y.; Terzija, V . Robust Online Estimation of Power System Center of Inertia Frequency.IEEE T rans. Power Syst.
+2019, 34, 821–825. [CrossRef]
+43. Milano, F.; Ortega, Á . Frequency divider. IEEE T rans. Power Syst. 2017, 32, 1493–1501.
+44. Ortega, Á .; Milano, F. Frequency Participation Factors. IEEE T rans. Power Syst. 2018, 33, 5563–5571. [CrossRef]
+45. Wen, J.X.; Bu, S.Q.; Zhou, B.W.; Chen, Q.Y.; Yang, H.K. A Fast-Algorithmic Probabilistic Evaluation on Regional Rate of Change of
+Frequency (RoCoF) for Operational Planning of High Renewable Penetrated Power Systems. Energies 2020, 13, 2780. [CrossRef]
+46. Milano, F. Rotor Speed-Free Estimation of the Frequency of the Center of Inertia. IEEE T rans. Power Syst. 2018, 33, 1153–1155.
+[CrossRef]
+47. Sauer, P .W.; Pai, M.A. Power System Dynamics and Stability ; Prentice Hall: Upper Saddle River, NJ, USA, 1998.
+48. Milano, F. Power System Modelling and Scripting ; Springer: London, UK, 2010.
+49. Bašakarad, T.; Holjevac, N.; Kuzle, I.; Ivankovi´ c, I.; Zovko, N. Rocof Importance in Electric Power Systems with High Renewables
+Share: A Simulation Case for Croatia. In Proceedings of the 12th Mediterranean Conference on Power Generation, Transmission,
+Distribution and Energy Conversion (MEDPOWER 2020), Online Conference, 9–12 November 2020.
+50. Doheny, D.; Conlon, M. Investigation into the local nature of rate of change of frequency in electrical power systems. In
+Proceedings of the 2017 52nd International Universities Power Engineering Conference (UPEC), Heraklion, Greece, 28–31
+August 2017.
+51. Ghosh, R.; Tummuru, N.R.; Rajpurohit, B.S.; Monti, A. Virtual Inertia from Renewable Energy Sources: Mathematical Represen-
+tation and Control Strategy. In Proceedings of the 2020 IEEE International Conference on Power Electronics, Smart Grid and
+Renewable Energy (PESGRE2020), Cochin, India, 2–4 January 2020.
+52. Inoue, T.; Taniguchi, H.; Ikeguchi, Y.; Yoshida, K. Estimation of power system inertia constant and capacity of spinning-reserve
+support generators using measured frequency transients. IEEE T rans. Power Syst. 1997, 12, 136–143. [CrossRef]
+53. Du, P .W.; Makarov, Y. Using Disturbance Data to Monitor Primary Frequency Response for Power System Interconnections.IEEE
+T rans. Power Syst. 2014, 29, 1431–1432. [CrossRef]
+===== PAGE 18 =====
+Energies 2023, 16, 3708 18 of 19
+54. Phurailatpam, C.; Rather, Z.H.; Bahrani, B.; Doolla, S. Measurement-Based Estimation of Inertia in AC Microgrids. IEEE T rans.
+Sustain. Energ. 2020, 11, 1975–1984. [CrossRef]
+55. IEEE Std C37.118.1a ™-2014 (Amendment to IEEE Std C37.118.1 ™-2011); IEEE Standard for Synchrophasor Measurements for
+Power Systems. IEEE Power & Energy Society: Piscataway, NJ, USA, 2014; pp. 1–25.
+56. Bründlinger, R. Grid Codes in Europe—Overview on the Current Requirements in European Codes and National Interconnection Standards ;
+AIT Austrian Institute of Technology: Vienna, Austria, 2019.
+57. DGA Consulting. International Review of Frequency Control Adaptation. Australian Energy Market Operator , 14 October 2016.
+58. Khalili, S.; Breyer, C. Review on 100% Renewable Energy System Analyses—A Bibliometric Perspective. IEEE Access 2022, 10,
+125792–125834. [CrossRef]
+59. Jacobson, M.Z.; Krauland, A.K.V .; Burton, Z.F.M.; Coughlin, S.J.; Jaeggli, C.; Nelli, D.; Nelson, A.J.H.; Shu, Y.B.; Smith, M.; Tan, C.;
+et al. Transitioning All Energy in 74 Metropolitan Areas, Including 30 Megacities, to 100% Clean and Renewable Wind, Water,
+and Sunlight (WWS). Energies 2020, 13, 4934. [CrossRef]
+60. Roy, N.K.; Islam, S.; Podder, A.K.; Roy, T.K.; Muyyen, S.M. Virtual Inertia Support in Power Systems for High Penetra-
+tion of Renewables—Overview of Categorization, Comparison, and Evaluation of Control Techniques. IEEE Access 2022, 10,
+129190–129216. [CrossRef]
+61. Zaid, S.A.; Bakeer, A.; Magdy, G.; Albalawi, H.; Kassem, A.M.; El-Shimy, M.E.; AbdelMeguid, H.; Manqarah, B. A New Intelligent
+Fractional-Order Load Frequency Control for Interconnected Modern Power Systems with Virtual Inertia Control. Fractal Fract.
+2023, 7, 62. [CrossRef]
+62. Wang, T.; Jin, M.X.; Li, Y.D.; Wang, J.M.; Wang, Z.P .; Huang, S.L. Adaptive Damping Control Scheme for Wind Grid-Connected
+Power Systems with Virtual Inertia Control. IEEE T rans. Power Syst. 2022, 37, 3902–3912. [CrossRef]
+63. IEC/IEEE 60255-118-1; IEEE/IEC International Standard–Measuring Relays and Protection Equipment–Part 118-1: Synchrophasor
+for Power Systems–Measurements. IEEE: Piscataway, NJ, USA, 2018; pp. 1–78.
+64. Sozanski, K.; Szczesniak, P . Advanced Control Algorithm for Three-Phase Shunt Active Power Filter Using Sliding DFT.Energies
+2023, 16, 1453. [CrossRef]
+65. Bertocco, M.; Frigo, G.; Narduzzi, C.; Muscas, C.; Pegoraro, P .A. Compressive Sensing of a Taylor–Fourier Multifrequency Model
+for Synchrophasor Estimation. IEEE T rans. Instrum. Meas. 2015, 64, 3274–3283. [CrossRef]
+66. Grandke, T. Interpolation Algorithms for Discrete Fourier Transforms of Weighted Signals.IEEE T rans. Instrum. 1983, 32, 350–355.
+[CrossRef]
+67. Belega, D.; Petri, D. Accuracy Analysis of the Multicycle Synchrophasor Estimator Provided by the Interpolated DFT Algorithm.
+IEEE T rans. Instrum. Meas. 2013, 62, 942–953. [CrossRef]
+68. Li, Z.Q.; Zhang, W.F.; Zhuang, Z.Y.; Jin, T. A Novel Synchrophasor Estimation Based on Enhanced All-Phase DFT with Iterative
+Compensation and Its Implementation. Energies 2022, 15, 6964. [CrossRef]
+69. Xu, C.J.; Zhou, L.Y.; Chen, C.; Zhang, Q.Y. A Low Computational Complexity Frequency Estimation Method with High Precision
+of Sinusoid Based on DFT. In Proceedings of the 2017 4th International Conference on Information Science and Control Engineering
+(ICISCE), Changsha, China, 21–23 July 2017.
+70. Castello, P .; Ferrero, R.; Pegoraro, P .A.; Toscani, S. Space Vector Taylor–Fourier Models for Synchrophasor, Frequency, and ROCOF
+Measurements in Three-Phase Systems. IEEE T rans. Instrum. Meas. 2019, 68, 1313–1321. [CrossRef]
+71. Petri, D.; Fontanelli, D.; Macii, D.; Belega, D. A DFT-based synchrophasor, frequency and ROCOF estimation algorithm. In
+Proceedings of the 2013 IEEE International Workshop on Applied Measurements for Power Systems (AMPS), Aachen, Germany,
+25–27 September 2013.
+72. Romano, P .; Paolone, M. Enhanced Interpolated-DFT for Synchrophasor Estimation in FPGAs: Theory, Implementation, and
+Validation of a PMU Prototype. IEEE T rans. Instrum. Meas. 2014, 63, 2824–2836. [CrossRef]
+73. Jain, V .K.; Collins, W.L.; Davis, D.C. High-Accuracy Analog Measurements via Interpolated FFT.IEEE T rans. Instrum. Meas. 1979,
+28, 113–122. [CrossRef]
+74. Belega, D.; Macii, D.; Petri, D. Fast Synchrophasor Estimation by Means of Frequency-Domain and Time-Domain Algorithms.
+IEEE T rans. Instrum. Meas. 2014, 63, 388–401. [CrossRef]
+75. Andria, G.; Savino, M.; Trotta, A. Windows and interpolation algorithms to improve electrical measurement accuracy.IEEE T rans.
+Instrum. Meas. 1989, 38, 856–863. [CrossRef]
+76. Derviškadi´ c, A.; Romano, P .; Paolone, M. Iterative-interpolated DFT for synchrophasor estimation in M-class compliant PMUs. In
+Proceedings of the 2017 IEEE Manchester PowerTech, Manchester, UK, 18–22 June 2017.
+77. Wu, X.H.; Qian, Q.Q.; Bao, Y.Q. Demand Response Using Disturbance Estimation-Based Kalman Filtering for the Frequency
+Control. Energies 2022, 15, 9377. [CrossRef]
+78. Namba, M.; Nishiwaki, T.; Yokokawa, S.; Ohtsuka, K.; Ueki, Y. Identiﬁcation of Parameters for Power System Stability Analysis
+Using Kalman Filter. IEEE T rans. Power Appar. Syst. 1981, PER-1, 37. [CrossRef]
+79. Huang, C.H.; Lee, C.H.; Shih, K.J.; Wang, Y.J. Frequency Estimation of Distorted Power System Signals Using a Robust Algorithm.
+IEEE T rans. Power Deliver. 2008, 23, 41–51. [CrossRef]
+80. Wu, C.C.; Magaña, M.E.; Cotilla-Sánchez, E. Dynamic Frequency and Amplitude Estimation for Three-Phase Unbalanced Power
+Systems Using the Unscented Kalman Filter. IEEE T rans. Instrum. Meas. 2019, 68, 3387–3395. [CrossRef]
+===== PAGE 19 =====
+Energies 2023, 16, 3708 19 of 19
+81. Wan, W.K.; Feng, J.G.; Song, B.; Li, X.X. Huber-Based Robust Unscented Kalman Filter Distributed Drive Electric Vehicle State
+Observation. Energies 2021, 14, 750. [CrossRef]
+82. Fontanelli, D.; Macii, D.; Petri, D. Dynamic synchrophasor estimation using Smoothed Kalman ﬁltering. In Proceedings of the
+2016 IEEE International Instrumentation and Measurement Technology Conference Proceedings, Taipei, Taiwan, 23–26 May 2016.
+83. Gajjar, G.; Soman, S.A. Auto detection of power system events using wide area frequency measurements. In Proceedings of the
+2014 Eighteenth National Power Systems Conference (NPSC), Guwahati, India, 18–20 December 2014.
+84. Shaw, P .; Jena, K.M. A Novel Event Detection and Classiﬁcation Scheme Using Wide-Area Frequency Measurements.IEEE T rans.
+Smart Grid 2021, 12, 2320–2330. [CrossRef]
+85. Wilches-Bernal, F.; Wold, J.; Concepcion, R.; Budai, J. A Method for Correcting Frequency and RoCoF Estimates of Power System
+Signals with Phase Steps. In Proceedings of the 2019 North American Power Symposium (NAPS), Wichita, KS, USA, 13–15
+October 2019.
+86. Szabat, K.; Wróbel, K.; Dró˙zd ˙z, K.; Janiszewski, D.; Pajchrowski, T.; Wójcik, A. A Fuzzy Unscented Kalman Filter in the Adaptive
+Control System of a Drive System with a Flexible Joint. Energies 2020, 13, 2056. [CrossRef]
+87. Qi, J.J.; Sun, K.; Wang, J.H.; Liu, H. Dynamic State Estimation for Multi-Machine Power System by Unscented Kalman Filter with
+Enhanced Numerical Stability. IEEE T rans. Smart Grid 2018, 9, 1184–1196. [CrossRef]
+88. Gao, C.; Sun, J. Dynamic State Estimation for Power System Based on M-UKF Algorithm. In Proceedings of the 2020 IEEE 4th
+Conference on Energy Internet and Energy System Integration (EI2), Wuhan, China, 30 October 2020–1 November 2020.
+89. Zhao, H.Q.; Tian, B.Y. Robust Power System Forecasting-Aided State Estimation with Generalized Maximum Mixture Correntropy
+Unscented Kalman Filter. IEEE T rans. Instrum. Meas. 2022, 71, 9002610. [CrossRef]
+90. Singh, A.K.; Pal, B.C. Rate of Change of Frequency Estimation for Power Systems Using Interpolated DFT and Kalman Filter.
+IEEE T rans. Power Syst. 2019, 34, 2509–2517. [CrossRef]
+91. Ghahremani, E.; Kamwa, I. Online State Estimation of a Synchronous Generator Using Unscented Kalman Filter from Phasor
+Measurements Units. IEEE T rans. Energy Conver.2011, 26, 1099–1108. [CrossRef]
+92. Wang, S.B.; Gao, W.Z.; Meliopoulos, A.P .S. An Alternative Method for Power System Dynamic State Estimation Based on
+Unscented Transform. IEEE T rans. Power Syst. 2012, 27, 942–950. [CrossRef]
+93. Karimi, H.; Karimi-Ghartemani, M.; Iravani, M.R. Estimation of frequency and its rate of change for applications in power
+systems. IEEE T rans. Power Deliver. 2004, 19, 472–480. [CrossRef]
+94. Toscani, S.; Muscas, C.; Pegoraro, P .A. Design and Performance Prediction of Space Vector-Based PMU Algorithms.IEEE T rans.
+Instrum. Meas. 2017, 66, 394–404. [CrossRef]
+95. Ferrero, R.; Pegoraro, P .A.; Toscani, S. A Space Vector Phase-Locked-Loop Approach to Synchrophasor, Frequency and Rocof
+Estimation. In Proceedings of the 2019 IEEE International Instrumentation and Measurement Technology Conference (I2MTC),
+Auckland, New Zealand, 20–23 May 2019.
+96. Yao, W.X.; You, S.T.; Wang, W.K.; Deng, X.D.; Li, Y.C.; Zhan, L.W.; Liu, Y.L. A Fast Load Control System Based on Mobile
+Distribution-Level Phasor Measurement Unit. IEEE T rans. Smart Grid 2020, 11, 895–904. [CrossRef]
+97. Yin, H.; Wu, Y.R.; Qiu, W.; Zeng, C.J.; You, S.T.; Tan, J.; Hoke, J.; Kruse, C.J.; Rockwell, B.W.; Kawamura, K.A.; et al. Precise
+ROCOF estimation algorithm for low inertia power grids. Electr. Pow. Syst. Res. 2022, 209, 107968. [CrossRef]
+98. Belega, D.; Fontanelli, D.; Petri, D. Dynamic Phasor and Frequency Measurements by an Improved Taylor Weighted Least Squares
+Algorithm. IEEE T rans. Instrum. Meas. 2015, 64, 2165–2178. [CrossRef]
+99. Sun, M.Y.; Liu, G.Y.; Popov, M.; Terzija, V . Azizi, S. Underfrequency Load Shedding Using Locally Estimated RoCoF of the Center
+of Inertia. IEEE T rans. Power Syst. 2021, 36, 4212–4222. [CrossRef]
+100. You, S.T.; Li, H.Y.; Liu, S.Y.; Sun, K.Q.; Wang, W.K.; Liu, Y.L. Calculate Center-of-Inertia Frequency and System RoCoF Using
+PMU Data. In Proceedings of the 2021 IEEE Power & Energy Society General Meeting (PESGM), Washington, DC, USA, 26–29
+July 2021.
+Disclaimer/Publisher’s Note: The statements, opinions and data contained in all publications are solely those of the individual
+author(s) and contributor(s) and not of MDPI and/or the editor(s). MDPI and/or the editor(s) disclaim responsibility for any injury to
+people or property resulting from any ideas, methods, instructions or products referred to in the content.

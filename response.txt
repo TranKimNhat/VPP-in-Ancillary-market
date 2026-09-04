@@ -1,0 +1,35 @@
+That's an older layer. Let me find the actual FFR safety envelope and related components.Key findings so far. Now the reward, droop-baseline wiring, MPC correction, and obs builder.Đã điều tra xong. Theo quy tắc proposal-first, dưới đây là **đề xuất chiến lược trả lời từng comment** (vị thế + bằng chứng code + hành động) để anh/chị duyệt trước khi tôi viết response letter đầy đủ.
+
+## Đề xuất khung trả lời (chưa phải bản cuối)
+
+**M1 — Model fidelity.** *Concede scope + delimit.* Plant là LTI Kron-reduced (`freq_dynamics_lti.py`), Jacobian từ pandapower NR mỗi topology; không có current limit trong dynamics. Trả lời: thừa nhận phạm vi small-signal, viện dẫn validity band ±5 Hz + slew 20%/s giữ quỹ đạo trong vùng tuyến tính; cam kết EMT là future work nhưng **cần bổ sung một validation phasor-domain cho S2/S4** (thí nghiệm mới — không thể trả lời suông).
+
+**M2 — Decentralized execution.** *Concede và re-scope.* `build_am_full_feeder_obs()` xây obs 123×20 tập trung mỗi bước — không thể bảo vệ "decentralized execution" theo nghĩa chặt. Trả lời: đổi claim thành "CTDE với system-wide low-rate (1 s) telemetry", thêm đoạn về yêu cầu truyền thông; tùy chọn thêm test độ trễ obs (1-step delay) — dễ chạy.
+
+**M3 — Projection làm thay policy.** *Partial rebut + số liệu mới.* Env đã log `nadir_safety_active`/`nadir_safety_dist` mỗi bước → có thể báo cáo tần suất kích hoạt theo controller/scenario ngay từ log hiện có. Chạy thêm ablation `nadir_safety_enabled=False` cho các learning controllers (flag có sẵn) để chứng minh ITAE gap tồn tại độc lập với envelope. Nhấn mạnh: paper đã thừa nhận nadir do envelope; ITAE/settling mới là metric phân biệt.
+
+**M4 — Envelope với baselines.** *Concede lỗi văn bản.* Code chủ đích tắt projection cho non-learning: `FixedDroopPolicy.nadir_safety = False`, `NoFFRPolicy.nadir_safety = False` (`eval_ffr_topology.py`). Supplementary đúng, main text Sec. III-D sai. Sửa câu chữ + **chạy thêm hàng "Fixed droop + envelope"** (1 dòng config) để so sánh equal-footing.
+
+**M5 — Stability certificate.** *Đây là chỗ mạnh nhất có thể cứu.* `lyapunov_certificate.py` đã cài đúng cấu trúc reviewer đòi: per-topology CLF trên gain box (Level 1b) + augmented AGC (Level 2). Nhưng bảng kết quả hiện tại cho thấy: `commonP` infeasible cả hai mức, và `gain_box_per_topology_feasible_primary = 0/24` (do marginal COI mode); kết quả per-topology **augmented** không được lưu vào bảng. Đề xuất: **re-run certificate** để lấy per-topology gain-box trên hệ augmented (primary+AGC). Nếu 24/24 feasible → câu trả lời sạch: CLF per-topology phủ gain switching 1 s, dwell-time chỉ phủ topology switching. Viết lại Contribution 2 tương ứng.
+
+**M6 — R_ffr không được định nghĩa.** *Concede + định nghĩa lại.* Không có hàm f(·) tường minh; deliverability là chuỗi implicit: SoC-eligibility gate + `power_bounds()` clip + slew + located `B_net(G_t)` + V/S từ power flow lúc bind. Có sẵn công thức dạng min trong `virtual_battery.py` (`min(headroom_power, soc_headroom, inverter_headroom)`) — đưa vào paper làm định nghĩa tường minh của (4), và trả lời thẳng về W_del ≤ 3%: deliverability tác động qua routing B_net, không qua congestion weighting trên feeder này.
+
+**M7 — Cơ chế RoCoF.** *Rebut bằng giải thích mô hình.* K_t vào A_f như damping liên tục trong matrix exponential — droop feedback tác động **liên tục trong** khoảng 1 s; chỉ giá trị gain cập nhật ở 1 s. Windowed RoCoF tính trên hires trace 0.1 s (`windowed_rocof`, cửa sổ 0.5 s) nên phản ánh damping đó. Chỉ cần viết rõ trong paper, không cần thí nghiệm mới.
+
+**M8 — Generalization.** *Concede một phần + số liệu mới.* Thêm: (i) phân bố độ lệch J̃_r/B_net trên 24 topology (script nhỏ, dùng cache có sẵn); (ii) ITAE chuẩn hóa theo No-FFR per-topology để trả lời nghi vấn "unseen < training"; (iii) làm mềm claim theo d_J ≤ 0.18.
+
+**M9 — Baselines.** Fixed droop = mid-box K = 0.5·K_max (`a_k_fixed=0.0`). Trả lời: báo cáo giá trị này + **chạy thêm droop tại vertex K_max** (`a_k_fixed=1.0`, trivial). Baseline MPC: có thể dựng từ `mpc_correction` sẵn có (effort trung bình). Anomaly chi phí MLP-MAPPO: cần đào results để giải thích (over-commitment droop → capacity payment).
+
+**M10 — Reproducibility.** Toàn bộ weights có trong `RewardConfig` (`train_am_mappo.py`): w_violation 0.4, w_nadir 0.6, w_effort 0.05, w_ffr_bonus 0.4, w_soc_pen 0.08, w_commit 0.06, deadband 20 mHz / 0.1 Hz/s. Lưu ý: code có thêm `r_rocof` và `r_tracking` **không có trong eq. (17) của paper** → phải đồng bộ phương trình với code. Thêm bảng weights vào supplementary + sửa "(??)" + data availability.
+
+**M11 — Market claims.** *Concede wording.* λ_cap = 50, λ_act = 100 xác nhận trong `eval_economics.py`; W_del trong `dso_cost_per_event.py`. Hạ giọng claim thành "lowest procurement cost under a common administrative tariff" + chạy sweep tỉ lệ λ_cap/λ_act (script sửa nhỏ).
+
+**M12 — Activation profile.** Đo time-to-full-activation từ hires trace so với Nordic FFR 0.7–1.3 s; lập luận: kênh droop (damping) tác động tức thời, chỉ kênh P-ref bị slew 5 s → cần số liệu minh họa (phân tích nhỏ trên log có sẵn).
+
+## 3 phát hiện cần anh/chị quyết định (ngoài phạm vi comment)
+
+1. **`mpc_correction()` ẩn:** trong `step_fast`, khi |Δf| > 0.1 Hz một lớp MPC (horizon-3, scipy) chỉnh `delta_p_raw` cho **mọi** controller — không được mô tả trong paper. Lựa chọn: (a) công bố như shared inner loop của execution layer, hoặc (b) tắt và chạy lại toàn bộ. Đây là rủi ro integrity lớn nhất nếu reviewer đọc code.
+2. **"Electrically nearest GFM":** `get_gfm_bus_idx()` chọn GFM theo khoảng cách **chỉ số bus** (`|pp_idx − agent_idx|`), không phải khoảng cách điện. Với n_g = 2 ảnh hưởng có thể nhỏ, nhưng chữ trong paper không khớp code.
+3. **Văn bản certificate hiện tại của paper** mô tả CLF như thể feasible ("a single P ≻ 0 … certifies") trong khi bảng số liệu cho thấy infeasible — phải sửa cùng lúc với M5.
+
+Anh/chị duyệt khung này (hoặc chỉnh vị thế từng mục), rồi tôi viết bản response letter đầy đủ theo định dạng point-by-point. Các thí nghiệm đề xuất tôi có thể chuẩn bị script trước, nhưng việc chạy và xác nhận số liệu thuộc quyền anh/chị.

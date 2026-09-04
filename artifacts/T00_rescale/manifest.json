@@ -1,0 +1,11 @@
+{
+  "task": "T00_rescale",
+  "date": "2026-09-03",
+  "git_commit": "e9e977a772b8e443b49e1a0d93e8c539258a6790",
+  "python": "3.13.14",
+  "source_placement": "official_placement_v3.json",
+  "output_placement": "official_placement_v4_rescaled.json",
+  "peak_load_mw": 3.4899999999999998,
+  "ratio": 1.25,
+  "scale_factor": 0.18967391304347825
+}

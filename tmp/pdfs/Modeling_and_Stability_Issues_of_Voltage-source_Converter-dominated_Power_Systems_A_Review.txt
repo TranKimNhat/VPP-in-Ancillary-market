@@ -1,0 +1,2582 @@
+
+===== PAGE 1 =====
+1530 CSEE JOURNAL OF POWER AND ENERGY SYSTEMS, VOL. 8, NO. 6, NOVEMBER 2022
+Modeling and Stability Issues of V oltage-source
+Converter-dominated Power Systems: A Review
+Liansong Xiong, Senior Member, IEEE, Member, CSEE, Xiaokang Liu
+ , Member, IEEE,
+Yonghui Liu, Student Member, IEEE, and Fang Zhuo, Member, IEEE, Member, CSEE
+Abstract—With the substantive increase in the proportion
+of voltage-source converter (VSC)-based equipment, traditional
+power systems that primarily constituted of synchronous gen-
+erators (SGs) gradually evolved into VSC-dominated ones. At
+the same time, there is an urgent need for modeling and
+stability assessment of such systems, since low inertia and
+weak damping features impair the ability of the systems to
+resist random disturbances. Existing works model the system
+dynamic processes from various domains (i.e., time, frequency
+and energy), and analyze/determine the system stability under
+small or large disturbances. Among them, small-signal stability
+assessments mainly adopt the time-domain analysis based on the
+state-space model while frequency-domain methods include the
+impedance model, phase-amplitude dynamics model, and static
+synchronous generator model. Large-signal stability assessments
+mainly exploit the time-domain simulation with detailed models
+(i.e., continuous/discrete-time mixed model with differential-
+difference-algebraic equations), and the energy-domain analysis
+is based on energy function models. This paper presents a
+comprehensive review of existing modeling and stability analysis
+methods for VSC-dominated power systems, including their basic
+principles, key features, application scenarios and development
+tendencies. Key technical issues related to modeling and stability
+analysis are also summarized.
+Index Terms—Dynamic modeling, power system, stability
+analysis, voltage-source converter (VSC).
+I. I NTRODUCTION
+W
+ITH the development of emerging technologies such
+as frequency converters, flexible high-voltage direct-
+current (HVDC) system, renewable energy generation, elec-
+trified transportation, and energy storage system (ESS), the
+proportion of voltage-source converters (VSCs) in the power
+grid has increased rapidly [1], [2], causing the pertinent grid
+to gradually evolve into a VSC-dominated power system (an
+Manuscript received July 29, 2020; revised September 23, 2020; accepted
+October 15, 2020. Date of online publication November 20, 2020; date of
+current version July 2, 2021. This work was supported in part by the National
+Natural Science Foundation of China (51707091), in part by the Key Labora-
+tory of Control of Power Transmission and Conversion (SJTU), Ministry of
+Education (2018AC04), and in part by the State Key Laboratory of Alternate
+Electrical Power System with Renewable Energy Sources (LAPS19008).
+L. Xiong is with the School of Electrical Engineering, Xi’an Jiaotong
+University, Xi’an 710049, China.
+X. Liu (corresponding author, email: xiaokang.liu@polimi.it; ORCID: https:
+//orcid.org/0000-0001-5614-1601) is with the Department of Electronics,
+Information and Bioengineering, Politecnico di Milano, 20133 Milano, Italy.
+Y . Liu and F. Zhuo are with the School of Electrical Engineering, Xi’an
+Jiaotong University, Xi’an 710049, China.
+DOI: 10.17775/CSEEJPES.2020.03590
+example of which is shown in Fig. 1), or, equivalently, into
+a non-synchronous system [3], electronic energy network [4],
+or power-electronic system [5]. Though the bulk application
+of VSCs evidently improves grid performance and enriches
+grid functions, it also introduces additional dynamic stability
+issues.
+DFIG
+PV 
+ω
+SG 
+ESS
+STATCOM
+PMSG
+UPFC
+Interlinking
+Converter
+HVDC
+MTDC
+VSC AC Bus DC Bus
+Fig. 1. An example of VSC dominated power system.
+Traditional power systems are dominated by synchronous
+generators (SGs) that are characterized by large inertia and
+strong damping ability [6], hence the major state variables in
+traditional grids are insusceptible to common disturbances, or
+the oscillation processes caused by them, are damped effec-
+tively and in a timely manner. These traditional power systems
+possess strong robustness as well as stability. However, in
+power systems dominated by VSCs, with their associated low
+inertia and weak damping ability [6], the relatively reduced
+number of SGs weakens the ability of the system to resist
+random disturbances. During a transient event, it is difficult to
+dampen an oscillation component quickly and sufficiently, thus
+the probability of a long-term, drastic oscillation substantially
+endangering the safety and stable operation of the system,
+increases [3].
+At the same time, VSC-dominated power systems exhibit
+a wider range of dynamic processes compared to traditional
+grids. On the one hand, the dynamic model of a converter has
+a significantly higher order than that of an SG, viz., there exist
+system dynamics in multiple timescales, encompassing the AC
+side inductance/capacitance-related electromagnetic timescale
+dynamics, energy conversion process-related electromechani-
+cal timescale dynamics (e.g., SG rotor angle dynamics), as
+2096-0042 © 2020 CSEE
+===== PAGE 2 =====
+XIONG et al.: MODELING AND STABILITY ISSUES OF VOLTAGE-SOURCE CONVERTER-DOMINATED POWER SYSTEMS: A REVIEW 1531
+well as mechanical timescale dynamics [e.g., wind turbine
+(WT) pitch angle adjustment process], and the DC side
+capacitor-related dynamics (along with its control-related is-
+sues) [7]. On the other hand, to effectively regulate the various
+VSC dynamics and ensure the inner, middle, and outer loops of
+the control system are well decoupled, the control loop design
+usually follows the principle of timescale partitioning (viz.,
+the bandwidth ranges of different control loops are clearly
+separated). As a result of the diverse physical processes and
+their controls, as well as of the separation of the response and
+control time constants for dynamic processes, VSC-dominated
+power systems exhibit multi-timescale features (see Fig. 2)
+with oscillation modes ranging from slightly above DC to hun-
+dreds of Hertz and distributed in multiple frequency bands [8]–
+[10]. This leads to increased system susceptibility to wide-
+band interferences [8]; some examples of oscillation issues are
+the series-compensation related oscillation (about 30 Hz) [11]
+and the voltage oscillation in the Texas Power Grid [12], the
+offshore wind power system oscillation in Hamburg, Germany
+(about 80 Hz) [13], the sub synchronous resonance (SSR, 15–
+30 Hz) in Xinjiang power plants of China [14], as well as the
+high frequency resonance problems (100–800 Hz) encountered
+in several countries [8].
+Due to the essentially distinct dynamic features of VSC-
+dominated systems as compared to traditional power grids, it
+is critical that pertinent modeling and stability assessment are
+performed to provide a theoretical basis for control strategy
+research. In existing research studies, the dynamic processes
+of VSC-dominated systems are modeled mainly in time,
+frequency, and energy domains, and the result is used as
+the basis for stability assessment under small or large dis-
+turbances. Among them, the small-signal stability assessment
+mainly adopts the time-domain analysis based on the state-
+space model, and the frequency-domain methods based on the
+impedance model, phase-amplitude dynamics (PAD) model,
+Lightning propagation
+Switching surges
+Wave
+phenomena
+Electromagnetic
+phenomena
+Electromechanical
+phenomena
+Thermodynamic
+phenomena
+Boiler dynamics
+Voltage control
+Governor and load
+frequency control
+Rotor angle dynamics
+Stator transients and
+subsynchronous resonance
+Inverter-based controls
+1 μs
+0.1 ms
+10 ms
+10 −7 10 −5 10 −3 10 −1 10 1 10 3 10 5
+Time (s) 
+Fig. 2. Multi-timescale features of VSC dominated power systems according
+to the IEEE Task Force on stability definitions and characterization of dynamic
+behavior in power systems with high penetration of power electronic interfaced
+technologies.
+and static synchronous generator (SSG) model. The large-
+signal stability assessment mainly exploits the time-domain
+simulation analysis based on the detailed model, and energy-
+domain analysis based on energy function models. A summary
+of major methods in different scenarios is given in Fig. 3.
+This paper aims at providing a comprehensive overview
+of the state-of-the-art methods in dynamic modeling and
+stability analysis of VSC-dominated power systems, including
+their basic principles, key features, application scenarios, and
+development tendencies. Finally, some critical technical issues
+that still need to be resolved are summarized.
+PAD Model 
+Based Methods
+Impedance Model 
+Based Methods
+SSG Model Based 
+Methods
+State Space Model 
+Based Methods
+Energy Function 
+Based Methods
+Dynamic Phasor 
+Model Based Methods
+Graphical Methods
+Numerical Simulation 
+Based Methods
+Sequence Model
+dq0 Model
+Phasor Model
+Small-Signal Modeling and Stability
+Main Methods for Modeling and Stability Issues
+Time-domain Analysis Frequency-domain Analysis Energy-domain Analysis
+Large-Signal Modeling and Stability
+Fig. 3. Main methods for dynamic modeling and stability analysis.
+===== PAGE 3 =====
+1532 CSEE JOURNAL OF POWER AND ENERGY SYSTEMS, VOL. 8, NO. 6, NOVEMBER 2022
+II. S MALL -SIGNAL MODELING AND STABILITY
+A. State-Space Model in Time Domain
+1) Basic Principle
+The state-space model in time domain, also known as
+the eigenvalue analysis, is a classic method for the small-
+signal stability analysis of a power system. Its mathematical
+model [15] is given by
+
+
+
+dx
+dt = f (x, y)
+0 = g (x, y)
+(1)
+where x and y are column vectors of grid state and algebraic
+variables, respectively.
+The general steps of the eigenvalue analysis are as follows:
+a) The steady-state operating point of the power grid is
+obtained via power flow calculation;
+b) (1) is linearized at the steady-state point to yield:
+(
+d∆x
+dt = ˜A∆x + ˜B∆y
+0 = ˜C∆x + ˜D∆y (2)
+where ∆x and ∆y are incremental vectors of state and
+algebraic variables, respectively, and
+˜A =
+
+
+∂f1
+∂x1
+· · · ∂f1
+∂xn
+..
+. ... .
+.
+.
+∂fn
+∂x1
+· · · ∂fn
+∂xn
+
+ , ˜B =
+
+
+∂f1
+∂y1
+· · · ∂f1
+∂yn
+..
+. ... .
+.
+.
+∂fn
+∂y1
+· · · ∂fn
+∂yn
+
+
+˜C =
+
+
+∂g1
+∂x1
+· · · ∂g1
+∂xn
+..
+. ... .
+.
+.
+∂gn
+∂x1
+· · · ∂gn
+∂xn
+
+ , ˜D =
+
+
+∂g1
+∂y1
+· · · ∂g1
+∂yn
+..
+. ... .
+.
+.
+∂gn
+∂y1
+· · · ∂gn
+∂yn
+
+ (3)
+The system small-signal state-space model at the steady
+state operating point can be obtained by simplifying (2) as:
+d∆x
+dt = A∆x (4)
+where A is the state matrix of the system model given by
+A = ˜A − ˜B ˜D−1 ˜C (5)
+c) The system stability is assessed by analyzing the eigen-
+value distribution on the complex plane pertaining to the
+system state matrix A. The system is stable if and only if
+the real parts of all eigenvalues are negative. The system is
+marginally stable and exhibits constant amplitude oscillations
+in the presence of eigenvalue(s) with null real part. If there are
+a pair of negative, conjugated eigenvalues near the imaginary
+axis (i.e., with low damping ratio), the long-term oscillation
+process associated with weakly damped oscillation modes
+is prohibited in practical applications, despite the system
+stability.
+In addition to system stability, the dynamic process fea-
+tures under small disturbances, the encompassing oscillation
+frequency, attenuation factor, oscillation amplitude and phase,
+etc., can be analyzed. The correspondence between the eigen-
+value distribution and typical system dynamics is shown in
+Fig. 4. The system is unstable if any system eigenvalue is
+located on the right half plane (RHP).
+p4
+h6
+h4
+h2
+h5
+h1
+h3
+p5
+p1
+p6
+p*
+4
+p*
+5 p*
+6
+p3
+p2 0
+0
+0
+0
+0
+0
+0
+t
+t
+t
+t
+t
+t
+σ
+jω 
+Fig. 4. Eigenvalue distribution versus typical system dynamics. A raised
+asterisk is used to denote the complex conjugate.
+2) Key Features and Main Applications
+With a mature theoretical foundation for eigenvalue analy-
+sis, root locus analysis, participation analysis, and sensitivity
+analysis [16], the eigenvalue analysis method has been widely
+adopted for small-signal modeling and stability analysis in
+single-, multi-, and system level-VSC dominated systems.
+a) Dynamics Modeling: Focusing on the 3–4 Hz low-
+frequency oscillations of Type-4 wind plant under weak grid
+condition, the simplified small-signal model in [17] only
+uses a first-order delay to replace the VSC current control
+loop and neglects the transmission line dynamics and phase-
+locked loop (PLL). In [18], the small-signal stability of two
+droop-controlled VSCs is analyzed by neglecting the dynamic
+behavior of voltage control loop, parallel inductance, and
+load. In [19], a microgrid with multiple VSCs is investigated
+and a 13-th order VSC model is established by considering
+the model of each VSC in its pertinent dq frame, and by
+also considering the detailed dynamic behavior of each el-
+ement in the system. However, this method does not con-
+sider the dq frame difference among VSC models. In [15],
+a unified dq frame is established to accurately reflect the
+electrical connection among subsystems, and a general state-
+space based modeling method, which is standard for VSC-
+dominated systems, is proposed. This method is also widely
+used for wind/photovoltaic power generation [20], modular
+multi-level converter [21], HVDC system [22], hybrid ESS and
+renewable power generation system [23], and interconnected
+microgrids [24].
+b) Stability Analysis: By using a small-signal VSC
+model, [22] finds that the impact of PLL parameters on the
+behavior of an HVDC system is determined as a function
+of the system strength. In [25], the maximum delayed time
+method based on a small-signal model is proposed to address
+the instability issues caused by time delays during signal trans-
+fer processes. Focusing on low-frequency modes of droop-
+controlled microgrids, the reduced-order model for inter-VSC
+===== PAGE 4 =====
+XIONG et al.: MODELING AND STABILITY ISSUES OF VOLTAGE-SOURCE CONVERTER-DOMINATED POWER SYSTEMS: A REVIEW 1533
+oscillations analysis is proposed in [26] and successfully
+benchmarked against the detailed model and other germane
+models over the full range of operational damping ratios.
+Based on the timescale classification, the voltage dynamics
+and stability issues in each timescale are well elaborated re-
+spectively in [16], and typical sensitivity analysis is introduced
+for investigating the influence of critical parameters on voltage
+stability. The small-signal VSC model is also introduced to
+deal with the stability problems during deep voltage sags [27]
+and symmetrical faults in a weak grid [28], [29]. Small-signal
+analysis reveals that if there is an equilibrium, the WT could
+also be linearly unstable due to the low-voltage ride through
+(LVRT) control [30].
+3) Technical Challenges and Development Tendency
+Despite being mature and widely used, the application of
+state-space model-based time-domain analysis to VSC systems
+is still limited by several technical challenges that require
+further research:
+a) The method only applies to white-box systems with linear
+time-invariant (LTI) feature and fixed structure. The obvious
+nonlinear features of VSC equipment, which may result in
+prominent stability issues, are neglected by the linearization.
+Several emerging modeling methods, encompassing harmonic
+linearization [31], dynamic phasor (DP) modeling [32], [33]
+and harmonic state-space (HSS) model [21], can partially al-
+leviate this limitation and are worthy of in-depth development.
+b) Traditional large-capacity generator sets are being re-
+placed by distributed, small-capacity power supplies, leading
+to an increase in the number of VSCs in the power system, due
+to which, deriving the state-space model is difficult and there
+is a high computational demand. As a result, it is desirable to
+develop efficient modeling and eigenvalue calculation methods
+for large-scale complex power systems. The component con-
+nection method [15], characterized by modularity and scalabil-
+ity, presents a computationally efficient procedure for deriving
+the complete LTI state-space model of multi-VSC systems.
+At the same time, investigation on the efficient eigenvalue
+solution for an ultra-high dimensional state matrix is also
+required, especially for the online computation of the rightmost
+and critical (with least damping ratio) eigenvalues [34]. This
+directly affects the performance of online optimization-based
+power system control [35].
+c) Though it is technically feasible to directly obtain the de-
+tailed model and eigenvalues of a large-scale multi-VSC power
+system, the ultra-high-dimensional model can be difficult to
+interpret intuitively in terms of physical meaning [10]. The
+inevitably complicated mathematical and mechanism analysis
+is not conducive to understanding the evolution of system
+dynamics or the physical mechanism of instability phenom-
+ena [26], thereby restricting its utility in stability controller
+design. This imposes an essential need for investigations on
+complex system simplification and model-order reduction via
+the timescale features [7], the stability classification [16] and
+the aggregation of VSCs with similar characteristics [36].
+B. Impedance Model in Frequency Domain
+1) Basic Principle
+This technique considers the system as a cascaded system
+consisting of a source subsystem and a load subsystem, both
+represented by their frequency-domain port characteristics
+(i.e., output/input impedances or admittances). A principle
+diagram is shown in Fig. 5, where VS(s) is the output voltage
+of the source subsystem when operated alone; VL(s) is the
+input voltage of the load subsystem, and ZS(s) and ZL(s) are
+the output impedance of the source subsystem and the input
+impedance of the load subsystem, respectively.
+Source subsystem Load subsystem
+VS
+ZS
+ZLVL
+I+
+−
++
+−
+Fig. 5. Cascaded system from the perspective of impedance model.
+The impedance model in the frequency domain analyzes the
+cascaded system stability by exploiting the Nyquist criterion
+based on ZS(s) and ZL(s) [37], and the result is used to further
+assess the power system stability [38]. As a prerequisite, this
+method requires the stability of source and load subsystems
+when operated separately, which is usually guaranteed by
+suitable module design.
+The system transfer function is expressed as the ratio of
+VL(s) to VS(s) as
+VL (s)
+VS (s) = 1
+1 + ZS (s)/ZL (s) = 1
+1 + Tm (s) (6)
+where Tm is defined as the system minimum loop gain [39].
+Middlebrook points out that the system stability is deter-
+mined by whether Tm satisfies the Nyquist criterion, i.e.,
+the system is stable if and only if the number of turns that
+Tm is counterclockwise around the (−1, j0) point is zero on
+the complex plane. Furthermore, the separation between the
+Tm trajectory and the (−1, j0) point characterizes the relative
+system stability, which can be represented by the gain margin
+(GM) and phase margin (PM) [see Fig. 6(a)].
+To overcome the complexity issue of the Nyquist criterion,
+the forbidden region notation is adopted, i.e., the system
+stability is assured when Tm is limited within the unit-circle on
+the complex plane, whereas the zone outside is the forbidden
+region of Tm [see Fig. 6(b)]. This approach, known as the
+Middlebrook criterion [40], is formulated to determine the
+cascaded system stability by
+|Tm (s)| =
+
+
+ZS (s)
+ZL (s)
+
+ < 1 (7)
+Owing to the simplification made available by this criterion,
+stability assessment via the impedance model becomes simple
+and practical. Nevertheless, the unit-circle forbidden region-
+based stability criterion is highly conservative [41]. To this
+===== PAGE 5 =====
+1534 CSEE JOURNAL OF POWER AND ENERGY SYSTEMS, VOL. 8, NO. 6, NOVEMBER 2022
+0
+GM 
+PM Re 
+Im 
+0
+1/GM
+PM 
+Re 
+Im 
+0 Re 
+Im 
+(a) (b) (c)
+(−1,0)(−1,0)
+(−1,0)
+Fig. 6. (a) Definition of gain margin and phase margin; (b) Middlebrook criterion and (c) GMPM criterion.
+end, some criteria that are less conservative are proposed [39],
+[42]. Among them, the most representative one is Wildrick’s
+GMPM criterion [see Fig. 6(c)], which foresees system insta-
+bility if the cascaded system yields [42]
+(
+|Tm (s)| =
+ ZS(s)
+ZL(s)
+ ⩾
+
+ 1
+GM
+
+
+180◦ − PM ⩽ ∠Tm (s) ⩽ 180◦ + PM
+(8)
+2) Key Features and Main Applications
+In the 1970s, Middlebrook first adopted the impedance
+model to study the stability issues in DC systems [37].
+Compared with the state space model-based approach, the
+impedance-based approach simplifies the computation process,
+and is more practical. As a matter of fact, this approach
+represents the terminal dynamics by resorting to the ter-
+minal impedance that can be directly obtained by external
+measurement [43]. Furthermore, impedance-based approaches
+do not rely on the inner information (topology and control
+parameters) or analytical model of VSCs [44]. This method
+predicts system stability only through the port impedance in-
+formation, thereby ensuring the intellectual property protection
+of converter products and an unrestricted interconnection be-
+tween different converters. Therefore, impedance model-based
+small-signal stability analysis has become the mainstream in
+converter systems.
+a) Impedance Modeling:
+The impedance model analysis for AC systems is consider-
+ably complicated with respect to DC systems, since unlike a
+DC system that can be modeled as a single-input-single-output
+model, the AC system is in essence a multi-input-multi-output
+(MIMO) system with wide timescale and frequency-coupling
+dynamics [10]. Despite these differences, the AC system
+stability can be analyzed following the common principle,
+i.e., based on a criterion that exploits source subsystem output
+impedance Z and the load subsystem input admittance Y [45].
+Currently, three main definitions of AC system impedance are
+used:
+• The dq-domain impedance Zdq (s) that relates the dq-
+domain voltage and current components [46] as
+∆Ud (s)
+∆Uq (s)
+
+= Zdq (s)
+∆Id (s)
+∆Iq (s)
+
+(9)
+where
+Zdq (s) =
+Zdd (s) Zdq (s)
+Zqd (s) Zqq (s)
+
+(10)
+The d-/q-axis voltages and currents are frequency-domain
+quantities (∆ represents a small disturbance from the
+equilibrium), and are calculated via Park transformation
+using the pertinent time domain quantities. The transfor-
+mation angle θ = ωt and the frequency ω is usually
+obtained by the PLL.
+• The sequence-domain impedance Zpn (s) that relates
+the positive and negative sequence voltage and current
+components [47] as
+∆Up (s + jω)
+∆Un (s − jω)
+
+= Zpn (s)
+∆Ip (s + jω)
+∆In (s − jω)
+
+(11)
+where
+Zpn (s) =
+
+Zpp (s) Zpn (s)
+Znp (s) Znn (s)
+
+(12)
+Here, the positive and negative sequence components are
+denoted as x(s + jω) and x(s − jω) (with x a voltage or
+current quantity) to relate to the dq-axis components. The
+component with frequency ωdq in dq frame is mapped
+to components with frequency ωdq + ω and ωdq − ω in
+the sequence frame, respectively. For example, an AC
+component with a 65 Hz oscillation mode in dq frame
+has a pertinent oscillation component of 115 (15) Hz in
+the positive (negative) sequence.
+• The phasor-domain impedance ZMθ(s) that relates the
+voltage and current amplitudes and phases [48] as
+ ∆U (s)
+U∆θU (s)
+
+= ZMθ (s)
+ ∆I (s)
+I∆θI (s)
+
+(13)
+where
+ZMθ (s) =
+ZMM (s) ZMθ (s)
+ZθM (s) Zθθ (s)
+
+(14)
+U and I are the voltage and current amplitudes, and θU,
+θI are the angles between the voltage and current vectors
+and the d-axis, respectively.
+Different impedance models can be obtained if voltages
+and currents are acquired in different frames. With various
+impedance models, the analysis results should be consistent
+if strict and accurate modeling is performed. Additionally,
+choosing specific coordinate frames facilitates highlighting
+particular physical characteristics of the VSC, as well as
+simplification of the model (e.g., Z and Y can have special
+properties such as symmetry or diagonality) to aid the stability
+analysis and physical mechanism interpretation.
+===== PAGE 6 =====
+XIONG et al.: MODELING AND STABILITY ISSUES OF VOLTAGE-SOURCE CONVERTER-DOMINATED POWER SYSTEMS: A REVIEW 1535
+Impedance models of the same VSC system can be equally
+converted [47], e.g., by expressing the sequence components
+in terms of three-phase AC components
+xp (t)
+xn (t)
+
+=
+1 ej2π/3 e−j2π/3
+1 e−j2π/3 ej2π/3
+
+
+xa (t)
+xb (t)
+xc (t)
+
+ (15)
+the sequence and the dq components can be related as
+xd (s)
+xq (s)
+
+=
+√
+6
+2
+ 1 1
+−j j
+ xp (s + jω)
+xn (s − jω)
+
+(16)
+Therefore, the dq- and sequence-domain impedances yield
+Zpn = T −1
+pn/dqZdqTpn/dq (17)
+where
+Tpn/dq =
+√
+6
+2
+ 1 1
+−j j
+
+(18)
+Similarly, by transformation of the dq-axis components to
+the voltage/current signal x in polar coordinates as
+∆xd (s)
+∆xq (s)
+
+=
+cos θx0 − sin θx0
+sin θx0 cos θx0
+ ∆x (s)
+x∆θx (s)
+
+(19)
+the phasor domain- and dq-impedances can be related by:
+ZMθ = T −1
+Mθ/dqZdqTMθ/dq (20)
+b) Stability Analysis:
+In [49], it is proved that: in order for a general system to be
+stable, both the VSC impedances should not have any RHP
+zeros or poles, i.e., they satisfy the generic impedance-sum
+criterion as given by
+∞X
+i=1
+NRHPi (Zdqi) = 0 (21)
+To simplify the stability criterion, [37] proposes that a VSC
+system can remain stable if the ratio between the source
+block impedance and the load block impedance satisfies the
+Nyquist stability criterion. Since the VSC control strategies
+are usually implemented in dq frame [50], [51], the existing
+works usually define the pertinent VSC system source block
+impedance matrix ZSdq (22) and load block admittance matrix
+YLdq (23) in dq frame, and obtain the necessary and sufficient
+condition for the VSC system stability according to the linear
+system theory, i.e., the roots of (24) are all located on the left
+half complex plane [52].
+ZSdq (s) =
+ZSdd (s) ZSdq (s)
+ZSqd (s) ZSqq (s)
+
+(22)
+YLdq (s) =
+YLdd (s) YLdq (s)
+YLqd (s) YLqq (s)
+
+(23)
+det (I + ZSdq (s) YLdq (s)) = 0 (24)
+It is proposed in [31] that the stability of a VSC system in
+dq frame requires that the matrix ZSdqYLdq satisfies the gen-
+eralized Nyquist criterion (GNC). GNC effectively promotes
+the in-depth research and application for stability analysis of
+the VSC system, which is essentially identified as a MIMO
+impedance model [53], [54]. Considering the complexity of
+GNC [55], the existing literature usually exploits the coupling
+relationship between the dq components to obtain simplified
+criteria, encompassing the singular value criterion, the D
+channel criterion and the norm criteria.
+The singular value criterion foresees the system stability if
+the product of the maximum singular values of ZSdq and YLdq
+is less than 1 at any frequency point [56], i.e.,
+σ (ZSdq (s)) · σ (YLdq (s)) < 1 (25)
+where the singular values of the complex matrix A are defined
+as (with AH the conjugate transpose matrix of A):
+σ (A) =
+q
+λ (AH × A) (26)
+Due to the computational complexity and difficulty of
+obtaining analytical expressions of matrix singular values and
+system parameters, this method is only suitable for stability
+judgement, yet it is hardly used to guide parameter design.
+The D-channel criterion assumes the system q-axis compo-
+nents are small enough to be neglected, besides, the coupling
+between the d- and q-axis components are also negligible.
+Accordingly, only the d-axis impedance of ZSdq and admit-
+tance of YLdq need to be analyzed to determine the system
+stability [57], i.e., the system is stable if:
+|ZSdd (s)| · |YLdd (s)| < 1 (27)
+The D-channel criterion is not a sufficient condition for
+system stability, and is only applicable to specific systems with
+a high-power factor. Analogously, Q-channel impedance can
+be used to determine the system stability [53].
+Among all types of criteria, the norm criteria, though highly
+conservative, are characterized by the simplest calculation and
+thus facilitate system stability analysis and parameter design.
+The norm criteria mainly comprise the G-norm criterion [58],
+∞-norm criterion [59], 1-norm criterion [59], and sum-norm
+criterion [60]. The expressions are:
+∥ZSdq (s)∥G∥YLdq (s)∥G < 1
+4 (28)
+∥ZSdq (s)∥∞∥YLdq (s)∥∞ < 1 (29)
+∥ZSdq (s)∥∞∥YLdq (s)∥1 < 1
+2 (30)
+ 
+∥ZSdq (s)∥G∥YLdq (s)∥sum < 1
+
+∪ 
+∥YLdq (s)∥G∥ZSdq (s)∥sum < 1
+
+(31)
+where the norms of complex matrix A are calculated as:
+∥Am×n∥G = max
+1⩽i⩽m
+1⩽j⩽n
+(|aij|) (32)
+∥Am×n∥∞ = max
+1⩽i⩽m
+
+
+nX
+j=1
+|aij|
+
+ (33)
+∥Am×n∥1 = max
+1⩽j⩽n
+ mX
+i=1
+|aij|
+!
+(34)
+∥Am×n∥sum =
+nX
+j=1
+mX
+i=1
+|aij| (35)
+===== PAGE 7 =====
+1536 CSEE JOURNAL OF POWER AND ENERGY SYSTEMS, VOL. 8, NO. 6, NOVEMBER 2022
+3) Technical Challenges and Development Tendency
+Notwithstanding the incomparable advantages in processing
+black-box systems whose topology, control, and parameters
+are unclear, the impedance-based approaches face several chal-
+lenges that require further investigation and effective solutions.
+a) Impedance Modeling: Currently, the impedance mod-
+els are only capable of analyzing simple systems containing
+a few VSCs [52]. It is crucial to establish modeling theories
+and methods for multi-VSC complex systems [61], e.g., the
+divided small-signal model in [62] provides a new perspective
+for the stability analysis of a multi-VSC system, by separating
+the whole system into several subsystems. For a complex
+multi-VSC system with wide frequency range coupling, one
+major difficulty is the separation of the source subsystem
+from the load subsystem and the establishment of an accurate
+macro-model that reflects the port impedance. For example, for
+unbalanced VSC systems, more frequency coupling terms cor-
+responding to the positive- and negative-sequence components
+need to be considered. Instead of the dual-frequency model in
+(11), the multi-frequency modeling approaches, including the
+HSS model [21], the generalized averaging method [63] and
+the DP model [64], are required to capture the mutual-coupling
+dynamics between those components.
+Besides, since the dynamic process of each coupling loop
+is included in the impedance matrix, and the expressions
+of the matrix entries are often complicated, the physical
+mechanism of the model is usually unclear and analytical
+analysis cannot be performed. The model outcomes are mainly
+numerical values with poor universality, prohibiting the in-
+tuitive understanding of physical processes and principles of
+how each dynamic process (especially the control process)
+affects the overall system stability. Therefore, when analyzing
+the system instability mechanism, it is necessary to investigate
+the impedance model with reasonable order and clear physical
+meaning [65]. In addition to the dq frame, the system modeling
+and stability criteria development can also be based on the po-
+lar frame [48], sequence frame [47] and stationary frame (pha-
+sor domain) [66]. For example, the impedance matrix (14) built
+in polar frame features a symmetric structure [51], simplifying
+the system analysis and facilitating intuitive understanding of
+the system stability. If the coupling terms of impedance matrix
+are small, the influence of off-diagonal elements can also be
+neglected [67]. Besides, aggregation methods are also adopted
+for simplifying the system model [68].
+b) Stability Criteria: The stability boundary and con-
+dition given by the existing impedance-based methods are
+highly conservative [69] and existing stability criteria that
+reduce the computational complexity are all conservative, to
+some extent [59]. In addition, the system stability predictions
+given by different criteria are often opposite [60]. Even when
+correctly assessed, it is difficult to use the stability result
+directly in the system design in terms of structure, control,
+and parameters. These limitations impose a need to develop
+stability criteria characterized by simple and effective imple-
+mentation, low calculation burden, weak conservatism, and
+ability to aid the complex system design [58]. In [59], the
+computational complexity and conservatism of typical stability
+criteria are analyzed and compared.
+To facilitate the analysis of instability mechanism and the
+development of stability control strategies, the connection of
+the pertinent impedance stability criteria with the actual system
+needs to be strengthened from the perspective of physical
+meaning. For example, [70] proposes a method that exploits
+system global impedance and equivalent RLC parameters.
+Based on the resonance point and resonance damping, the
+method is beneficial for revealing the resonance mechanism
+and assessing system stability.
+c) Impedance Measurement: Since the port impedance
+are input information for the impedance-based stability crite-
+ria, their measurement accuracy directly affects the prediction
+result reliability. The port impedance can be obtained by active
+injection of current or voltage and pertinent measurement.
+Hence, the external port characteristics and system models
+can be obtained regardless of the internal information of the
+system. Due to the strong non-linearity of the VSC system,
+the frequency sweep method is currently used to obtain
+the wideband port impedance information [52], however, in
+general, it has a long measurement duration and a large impact
+on the normal operation of the device under test (DUT) [71].
+Commonly used impedance measurement devices include
+the frequency response analyzer (FRA) [72] and harmonic
+current/voltage injection devices [73]. Limited by its output
+power, the FRA can only be applied to impedance measure-
+ment of low power systems. The harmonic injection method
+requires online measurement of the system port impedance
+pertinent to the disturbance at each frequency. With low in-
+jection power, injection signals are not obvious and impedance
+signals are easily overwhelmed by noise [74]. To improve
+the significance of measurement results, the injection power
+can be amplified, however, the equipment cost is increased,
+and notable interference is induced in the DUT operation,
+which would cause imprecise results of the system port
+characteristics. Therefore, it is critical to develop impedance
+measurement methods, standards, and devices aimed at large-
+capacity and multi-VSC system applications [71], especially
+for hardware-free, non-invasive parametric identification [75],
+to minimize the influence of the impedance measurement on
+the DUT.
+In addition, since a boundary needs to be preliminarily
+chosen to separate the source subsystem from the load subsys-
+tem, the port impedance model cannot reflect the interaction
+between the various control loops within the subsystem. Even
+though the interaction processes between the interconnected
+systems are stable, it does not assure stability within the sub-
+system, especially when the working point or topology within
+the subsystem varies as the operating condition changes. In
+this sense, the system boundary, as a prerequisite for deter-
+mining the measurement port, directly affects the accuracy of
+impedance measurement and stability assessment, and thus its
+reasonable selection is of paramount importance and should
+be investigated cautiously.
+C. Small-Signal Modeling and Stability Analysis Alternatives
+1) Phase-Amplitude Dynamics Model
+From the perspective of the internal voltage vector of the
+VSC, the PAD model in [76] describes the features of the
+===== PAGE 8 =====
+XIONG et al.: MODELING AND STABILITY ISSUES OF VOLTAGE-SOURCE CONVERTER-DOMINATED POWER SYSTEMS: A REVIEW 1537
+VSCs through the relationship between the input/output power
+and the internal voltage phase/amplitude, i.e., motion equations
+of phase-amplitude dynamics:
+∆E (s) = GE (s)
+s [∆Qin (s) − ∆Q (s)] (36)
+∆ω (s) = 1
+M s+ D [∆Pin (s) − ∆P (s)] (37)
+where ∆E and ∆ω are the changes in system voltage mag-
+nitude and phase, respectively; GE is the transfer function
+of terminal voltage controller; M and D are the inertia and
+damping coefficients of the equivalent rotor (see Fig. 7),
+respectively; ∆Pin and ∆P are the changes in system active
+power input and output, respectively; and, ∆Qin and ∆Q
+are the changes in system reactive power input and output,
+respectively.
+Q1r 
+Q1r 
+P1r 
+P1r 
+P1P1 Q1
+Q1
+θ1
+E1
+θ2
+E2
+ω2
+ω1
+E1
+. E2
+.
+spring
+rotor
+Rotor
+Rotor 
+Shaft
+Mass
+rotor
+spring
+Load 
+Generator
+Generator
+PAD Equation Load
+PAD Equation
+Spring
+Spring+
+−
++− +
+−
++
+−
+Q2r 
+Q2r 
+P2r 
+P2r 
+P2
+P2
+Q2
+Q2
+Fig. 7. A generic description of phase-amplitude dynamics model.
+The PAD model is a generalized method to describe the
+system dynamic features, reflecting the essential physical
+mechanism of the AC system operation. The electromechani-
+cal motion equation established in [77] describes the inertial
+dynamics of doubly fed induction generator (DFIG)-based
+WTs. The concepts of damping and restoring components
+are developed in [78] to give physical insights into the DC
+voltage stability of the VSC system affected by AC voltage
+control. In [79], the equivalent inertia of the DFIG system is
+estimated and quantified by the phase angle motion equation
+that depicts the relationship between the contributed inertial
+response and the internal voltage. Based on the PAD model,
+a simplified small-signal model is constructed in [5] for
+clearly understanding the physical properties and frequency
+response of a Type 3 WT with df /dt control. The impact
+mechanism of transient control of DFIG system on the first-
+swing stability and electromechanical oscillation of SGs is also
+clearly explained in [80] and [81]. Based on motion equations,
+the interactions among DFIGs [5], VSCs [7], and HVDC
+systems [82] in DC voltage control (DVC) timescale have
+been physically explained. To analyze the effect of system
+behavior on angle and voltage stability, a small-signal DFIG
+model based on the internal voltage motion equation in the
+electromechanical timescale is proposed in [83]. Furthermore,
+the PAD model can also be used to reduce the order of
+the multi-VSC system model [84], to quantitatively analyze
+the interactions between AC and DC networks [76], and to
+effectively develop the frequency regulation scheme [85].
+2) Static Synchronous Generator Model
+Inertia and damping effects of the VSC system are criti-
+cal from the perspective of frequency stability improvement.
+However, researchers have not reached an agreement upon
+the physical mechanism or influential factors of the VSC
+system inertial and damping effects; some works even deduced
+conflicted conclusions. For instance, the mainstream viewpoint
+is that droop control cannot emulate the inertia, yet in [86] it is
+believed that droop control and virtual synchronous generator
+(VSG) control are completely equivalent in terms of inertia
+emulation. Based on that, [6] exploits the electric torque
+analysis and proposes the SSG model suitable for inertia and
+damping analysis of VSC-dominated power systems.
+According to the SSG model, the major difference between
+the VSC system and the rotational SG (RSG) system lies
+merely in the implementation of energy conversion, as shown
+in Fig. 8. Apart from this difference, according to the SSG
+model, the two systems have consistent abstract frameworks
+in terms of physical and control structures [6]. On this basis,
+dynamic analysis methods for the RSG system can be similarly
+adopted in the VSC system. For example, [6] introduces the
+electric torque analysis, and considers that various controls
+function as synchronous torques and/or damping torques. The
+dynamic characteristics of the VSC system are dependent on
+the overall synchronous and damping torques provided by all
+control functions (see Fig. 9), i.e.
+TJ (s) d∆ω (s)
+dt = −TD (s) ∆ω(s) − TS (s) ∆δ(s) (38)
+where TJ, TD, and TS are the equivalent inertia, damping, and
+synchronization coefficients of the VSC system, respectively.
+In view of the electric torque analysis, the left-hand side
+term in (38) describes the system inertia effect, while the right-
+hand side terms describe the damping torque and synchronous
+torque effect on the system, respectively, revealing the damp-
+ing and synchronization ability of each control process with
+respect to frequency dynamics. Hence, from the SSG model
+perspective, TJ(s) in Fig. 9 is considered as the virtual rotor
+of the VSC system; TD(s) and TS(s) are virtual damping
+and synchronous torques imposed on the virtual rotor, and
+the system stability depends on the direction of the resultant
+total torque.
+Since TJ(s), TD(s), and TS(s) are transfer functions whose
+amplitudes and phases vary with different frequencies, e.g., the
+system inertia can be partially negative in a certain frequency
+range due to the control effect [87], the VSC system stability
+needs to be analyzed based on the synthetic torque at a specific
+frequency. If TJ(s) is positive (negative) at a given frequency,
+the system is stable when the total torque is in the first
+(third) quadrant. If the stability is assured in the full frequency
+range, the system is full-frequency-domain stable. Therefore,
+the power angle stability and frequency stability of the power
+system are determined by the combination effect of system
+inertia and damping/synchronous torques at various frequency
+points, and the pertinent stability criterion is written as:
+[TJ (s) · TD (s) > 0] ∩ [TJ (s) · TS (s) > 0] (39)
+===== PAGE 9 =====
+1538 CSEE JOURNAL OF POWER AND ENERGY SYSTEMS, VOL. 8, NO. 6, NOVEMBER 2022
+Prime Mover
+PM Primary Energy
+Conventional Energy
+Electromechanical
+Transient Process
+Synchronous Generator
+SG Power Grid
+Renewable Energy
+Wind SolarBattery
+CoalWater
+Power Electronics
+Converter
+DC/DC
+Converter
+AC/DC
+Converter
+Fluid Machine
+Water
+Turbine
+Steam
+Turbine
+Static Capacitor
+Rotational Rotor
+L-/LCL-type SSG
+Salient-/Shaded-pole RSG
+Pin Pe
+Sensing
+SG Control
+Sensing
+PM Control
+Nuclear
+Energy
+TJ=        ΔPin −ΔPe−DΔxdΔx
+dt 
+x=udc ,ωr
+is
+ic
+idc 
+udc 
+Tm
+Ta Te
+ωr
+Fig. 8. General physical and control structures of a VSC system from the SSG model perspective.
+TS (s)= Σ TSi (s)
+i=1 
+n
+TJ (s)
+1
+TJi (s)
+1=Σ 
+i=1 
+n
++ ∑∑
+∑
+∑
+TD1 (s)
+TD2 (s)
+TDn (s)
+TD (s)= Σ TDi (s)
+i=1 
+n
+PD
+PS
+PM
+−
+−
+1/ TJ1 (s)
+1/ TJ2 (s)
+1/ TJn (s)
+ω θ∫ ∫
+TS1 (s)
+TS2 (s)
+TSn (s)
+Fig. 9. Effect of VSC system control from the electric torque perspective.
+With a clear physical meaning, the SSG model is beneficial
+for analysis and control of the VSC system dynamic features
+from the view of the physical mechanism. [88] further sum-
+marizes the VSC system inertia and damping features under
+common control schemes. By establishing the SSG model, the
+inertia and damping features of a grid-tied ESS with different
+control modes are compared in [89] and the influence of PLL
+is also investigated in [90]. Considering the ESS and the static
+var generator when suppressing the grid power oscillation, the
+ability of VSCs with traditional controls to provide the grid
+with inertia/damping support is affirmed, [91], [92].
+3) Discussion for PAD and SSG Models
+Both, the PAD model and the SSG model, can meet the
+main requirements and are essentially analogous to a real
+physical system, i.e., a rotor’s rotation versus the voltage
+across a capacitor. Power engineers are quite familiar with the
+physical models that are similar to the rotor motion equation
+in RSG; such kinds of methods are conducive to studying the
+modeling, analysis, and control of system dynamic stability
+starting from the physical mechanism. With these approaches,
+the mechanism of system instability can be elaborated from a
+physical perspective.
+The PAD model, SSG model, and impedance model are all
+frequency-domain analysis methods with the main advantage
+of obvious and clear physical meaning. For example, the
+PAD model is completely equivalent to sequence-domain
+impedance [83]. However, it is difficult to extend the PAD
+and SSG models to multi-VSC scenarios. For example, when
+analyzing the frequency and phase dynamics, it is usually
+assumed that the grid voltage amplitude remains unchanged.
+For this reason, the analysis is often performed in the single-
+machine infinite-bus (SMIB) frame [6], [79]. There is a crucial
+need to develop the PAD and SSG models with clear physical
+meaning and feasibility of dynamic analysis for multi-VSC
+systems. In addition, the inertia and damping control method
+aimed at improving system stability can be established, by
+exploiting the clear physical meaning.
+III. L ARGE -SIGNAL MODELING AND STABILITY
+Due to the nonlinearity between the phase difference and
+transmission power in AC grids [93] and the VSC non-linear
+processes (e.g., switching operation, control switching [94],
+saturation limiting [95], etc.), the VSC dominated system
+suffers from the risk of instability in the case of large dis-
+turbances. Though the related study is still in its infancy, it
+is necessary to conduct research on large-signal modeling and
+stability analysis. Typical methods include the unsymmetrical
+fault analysis, bifurcation theory, energy function methods,
+graphical analysis, DP model-based methods, and detailed
+model-based numerical simulation. It is noted that the transient
+===== PAGE 10 =====
+XIONG et al.: MODELING AND STABILITY ISSUES OF VOLTAGE-SOURCE CONVERTER-DOMINATED POWER SYSTEMS: A REVIEW 1539
+stability that is of concern currently is part of large-signal
+stability.
+A. Energy Function Methods in Energy Domain
+1) Basic Principle
+The energy function methods in the energy domain, also
+known as Lyapunov function-based direct methods [96],
+exploit the Lyapunov’s second method for stability and are
+used to analyze the dynamic stability of a system when it is
+subjected to a large disturbance. The methods view the system
+stability from the energy perspective, and the basic principle
+is described as follows [97]:
+If there is an energy function V (x) such that V (x) > 0 if
+x ̸= x0, V (x0) = 0, and ˙V (x) ⩽ 0 in the neighborhood of
+x0, the dynamic system ˙x = f (x) will have a stable operating
+point x0 [98].
+This energy function that verifies these conditions is known
+as a Lyapunov’s function. Besides, by building and comparing
+the transient energy function V and critical transient energy
+Vcr, the system transient stability and its stability margin
+can be evaluated. The system is stable while V ⩽ Vcr,
+and the larger the difference, the greater the stability margin;
+otherwise, the system will lose its stability.
+2) Key Features and Main Applications
+Energy function methods are widely applied in traditional
+power grids as they have the capability to quickly and quan-
+titatively analyze the system stability margin and assess the
+stability in the case of large disturbances. In recent years,
+these methods have also been introduced into the large-signal
+modeling and stability analysis of VSC-dominated power
+systems. By migrating the concepts, tools, and methods of the
+stability analysis of SG-dominated power systems, the power-
+angle curve-based equal area criterion (EAC) is successfully
+applied to the VSC-dominated power systems [6]. By focusing
+on the rotor speed control timescale, the generalized potential
+and kinetic energy of WTs is developed in [20], and the
+transient stability is analyzed by comparing the transient
+energy function versus critical transient energy that is based on
+the developed generalized energies. However, the generalized
+energies lack physical meaning [20], which is inconvenient for
+physically understanding the principle of energy conversion
+in VSCs with controllers and large disturbances. In [96], the
+energy function of the VSG-controlled VSC tied to the infinite
+grid is constructed by defining the virtual rotor kinetic energy,
+the rotor potential energy, the magnetic stored energy and the
+dissipated energy of line impedances. Based on the constructed
+energy function, the detailed procedure for determining the
+critical fault clearance time is successfully obtained. The
+Lyapunov function-based control utilizes local variables as its
+input signals and is successfully implemented on the series
+converter [99]. The large-signal stability of the interconnected
+microgrids is investigated in [100] and minimum stabilizing
+DC voltage criterion is proposed. In [101], [102], the Lya-
+punov function is considered to prove the transient stability
+of large-signal nonlinear models of VSC-based microgrids.
+The general processes for constructing the Lyapunov function
+are presented in [103] and the nonlinear model of islanded
+microgrid is established by employing a Lyapunov method, by
+which the attraction domain of paralleled VSCs is quantified.
+3) Technical Challenges and Development Tendency
+In VSC-dominated systems with their non-linear and
+high-order model, flexibility in control switching, and wide
+timescale range, great challenges are imposed in the applica-
+tion of energy function methods to the large-signal modeling
+and analysis [30].
+a) Energy Function Construction: The biggest advantage
+of energy function methods is the capability of stability
+assessment of nonlinear systems. However, in many engi-
+neering and physical problems, it is quite difficult to find
+an energy function satisfying the classic LaSalle’s invariance
+principle [104]. This difficulty has been a big drawback in the
+application of energy function methods to stability analysis of
+VSC-dominated systems with more realistic models. Hence, it
+is very important to find the general and detailed process to
+construct a candidate energy function for VSC systems.
+b) System Simplification: For complex systems with
+multi-VSC interconnections, it is difficult to construct the
+system energy function based on the detailed model. This is
+unfavorable for analyzing the existence of the system steady-
+state operating point and limits the effective analysis of system
+stability before and after a large disturbance. Therefore, energy
+function methods are mostly used in SMIB system analysis.
+For example, to focus on the nonlinearity of grid synchro-
+nization and the resulting destabilization phenomenon, the
+VSC is often simplified into a low-order nonlinear differential-
+algebraic equations (DAE) model dominated by PLL [105].
+Similarly, for the droop- and VSG-controlled VSCs, the sys-
+tem is often simplified into low-order DAE models dominated
+by droop or swing equations [95], [103]. By constructing the
+quasi-stationary (QS) model of the droop-controlled VSC, [98]
+and [106] obtain the Lyapunov functions of the VSC system
+when considering the dynamics of active and reactive power
+control. In addition, to obtain more accurate results, some
+works also consider the dynamic process of other control
+loops [96].
+c) Instability Mechanism and Stability Improvement: The
+energy function methods are more applicable to low-order
+systems [107], and are attractive and powerful for physically
+understanding the instability mechanism and deriving suitable
+controllers that can counteract a wide variety of disturbances
+in the power system [108]. For instance, EAC-based energy
+function method in [6] is a powerful tool for physically un-
+derstanding the transient response and theoretically analyzing
+the transient stability of VSCs, and has been widely used
+in recent works [96], [103]. Therefore, future development
+should focus on the design-oriented energy function methods,
+which are extremely important for detection algorithms [109],
+controller design [110], threshold determination [95], and
+stability improvement [105] of VSC-dominated systems.
+B. Numerical Simulation in Time Domain
+1) Basic Principle
+Numerical simulation in time domain is most widely used
+and provides the most reliable results. The validity of results
+===== PAGE 11 =====
+1540 CSEE JOURNAL OF POWER AND ENERGY SYSTEMS, VOL. 8, NO. 6, NOVEMBER 2022
+obtained from other methods is usually verified by numerical
+simulations. The general steps are:
+a) The mathematical model reflecting the physical features
+of a VSC-dominated system is established in [111], encom-
+passing
+0 = g (x, y, l, z) (40)
+˙x = f (x, y, l, z) (41)
+˙l = h (x, y, l, z) (42)
+˙z (k + 1) = d {x, y, l, z (k)} (43)
+where x and l are state variable vectors of continuous and
+discrete processes, respectively; y and z are vectors of system
+algebraic and discrete variables, respectively. The algebraic
+equation (40) describes the equilibrium relationship within
+the system, e.g., Kirchhoff’s laws of voltage and current; the
+differential equations (41) and (42) describe short- and long-
+term continuous processes respectively; the iterative, algebraic
+equation (43) describes the discrete processes in the system,
+such as actions of on-load voltage-regulating transformer,
+voltage and current over-limit protection, etc.
+b) The equation array model (40)–(43) is converted into
+a discrete, iterative calculation model suitable for computer
+simulation, and programmed through a high-level language.
+c) Various typical working conditions are selected for nu-
+merical calculation, and the system stability is analyzed and
+determined based on the numerical results.
+2) Key Features and Main Applications
+Time-domain numerical simulation based on a detailed
+model can accurately reflect complex system dynamics in
+the full time- and frequency-domain. It is widely used for
+dynamic analysis and control of VSC-dominated systems, in
+terms of harmonic analysis, controller design, short-circuit
+current calculation, relay protection verification, etc., and the
+simulation result is the baseline for correctness verification of
+all methods [2]. In [112], by numerical simulation, effects of
+different control schemes on the microgrid stability subsequent
+to fault-forced islanding are investigated, and simulation re-
+sults show that the critical clearing time is highly dependent on
+the microgrid control strategy. The voltage support, transient
+stability, and frequency stability are investigated in [113]
+via numerical simulations and the mechanism for loss of
+synchronism of VSC systems caused by inadequate current
+injection is well explained based on the German grid code.
+In [114], the transient stability of the multi-VSG microgrid
+is evaluated by calculating the voltage angle deviations of
+generators.
+As the most significant advantage of numerical simulation,
+regardless of the complexity in terms of system structure and
+dynamic interaction processes, each VSC device, load, and
+control loop can be modeled separately and all such models
+can be merged (e.g., as building blocks by the modular state-
+space model strategy in [115]). Complete models for VSC-
+dominated systems are quite accurate and are frequently found
+in literature. However, the modeling procedure and numerical
+computation becomes fairly burdensome when the number of
+VSCs in a grid is significantly large [116]. QS modeling, as
+an effective solution to this problem [2], [26], makes full use
+of timescale division (pertinent to the multi-timescale features
+in Fig. 2) for different dynamic processes.
+The core idea of the QS model-based analysis is to con-
+centrate on the timescale of interest, and to approximate the
+processes that weakly affect the target timescale processes
+as QS ones represented by algebraic equations [117]. Some
+examples are:
+a) When focusing on a short-term process, it is considered
+that the variables l and z pertinent to the long-term timescale,
+cannot change accordingly. The relevant process is regarded
+as transient equilibrium point, and (42), (43) are rewritten as
+0 = h (x, y, l, z) (44)
+z(k + 1) = z(k) (45)
+The mathematical model at this time reflects the dynamic
+mechanism when the transient equilibrium point is perturbed,
+and is often used for the study of power angle stability.
+b) When focusing on a long-term process, it is considered
+that there is a stable equilibrium point for the short-term
+dynamic process, and it is reached in a sufficiently short time,
+i.e., (41) can be reformulated as an algebraic equation:
+0 = f (x, y, l, z) (46)
+The pertinent model reflects the system dynamic mechanism
+in the long-term timescale, and is often used for the stability
+study of long-term dynamic processes, e.g., long-term voltage
+and frequency stability [117]. Fig. 10 depicts the calculation
+procedure for long-term dynamic stability. The points in the
+figure represent the system transient equilibrium points, i.e.,
+the solutions to (40) and (46). Processes A to A′ and B to
+B′ represent the sudden changes of the equilibrium point,
+describing large disturbances and discrete events such as
+power line switching and relay protection. Curves A′B and
+B′C describe the long-term processes formulated by (42).
+Obviously, QS modeling uses transient equilibrium points
+to replace the system transient processes, and only retains
+equations associated with long-term dynamic processes.
+A′ 
+B′ 
+0 t
+x
+y
+Discrete
+event
+A
+B
+C
+Continuous dynamics 
+Fig. 10. Simulation principle of long-term dynamic processes.
+The QS model of VSC-dominated systems can be obtained
+using the multi-timescale features or stability classification [2],
+i.e., by retaining the main factors that affect the system
+dynamic features of the target timescale and neglecting the
+secondary factors (with QS approximation). In [20], the dy-
+namics of the VSC systems after disturbances are divided
+into AC current control timescale, DVC timescale, and rotor
+speed control timescale. In this manner, the electromagnetic
+===== PAGE 12 =====
+XIONG et al.: MODELING AND STABILITY ISSUES OF VOLTAGE-SOURCE CONVERTER-DOMINATED POWER SYSTEMS: A REVIEW 1541
+timescale classified in traditional power systems is further
+divided into the two former types, while the electromechanical
+dynamics correspond to the rotor speed control timescale.
+In [118], an accurate reduced-order model is proposed for
+modeling VSC-based microgrids.
+In addition to modeling, another critical work is to develop
+algorithms for numerical calculation of the model. For the
+electric system solution, differential-discretization of the nodal
+equations is performed to obtain the component volt-ampere
+relationship and form the nodal conductance matrix [119]. For
+the solution of a control system with strong nonlinear features,
+the nonlinear problems are transformed into linear equations,
+or alternatively, the Newton iterative scheme is formed to
+improve the solution accuracy and numerical stability, by com-
+bining the linear and nonlinear control system equations [120].
+In [121], the numerical oscillation problem is solved by using
+a two-and-a-half-step backward Euler method at the switching
+time. In [122], the new system topology and initial values after
+the switching action are obtained through the utilization of
+extrapolation and backward Euler method, and re-initialization
+is realized. In [123], to enhance the computational efficiency,
+the entire VSC system is partitioned into three parts, i.e.,
+the transient stability subsystem, the electromagnetic transient
+subsystem, and the interface subsystem.
+3) Technical Challenges and Development Tendency
+Fully considering the detailed features of dynamic pro-
+cesses with all time- and frequency-scales can cause huge
+computational burden and unacceptable long time, especially
+when the power network is large in scale, complex to control,
+dispersive in timescale and contains a large number of VSCs
+with various functions. At this time, the calculation speed,
+numerical accuracy, and stability are the main obstacles to the
+application of time-domain simulation [124].
+a) Dynamic Modeling: Using detailed models for all
+components in the system causes not only huge computational
+burden, but also difficulty in use for long-term stability anal-
+ysis and simulation of complex systems. Accordingly, low-
+order models are usually used for numerical simulation, or
+the timescale features are used for hybrid simulations, to
+adequately simplify the calculation process and improve the
+calculation efficiency. Unfortunately, the reduced-order models
+may fail to predict some system instabilities, e.g., [118] finds
+that the network dynamics, despite their fast nature, appear to
+have major influence on stability of slower modes; [125] finds
+that though inner-loop dynamics are relatively fast, they seem
+to have an impact on power loops with slow dynamics, and
+neglecting them can lead to questionable results. Therefore,
+the choice of different timescales and dynamic processes has
+a significant effect on the analysis results, and it is particularly
+important to divide the timescales reasonably. In general,
+current modeling research on the problem is mainly concerned
+with the computational efficiency and model reduction. Future
+work should also value the model-order reduction in terms of
+error quantification as well as applicability [125].
+b) Numerical calculation: Existing numerical simulation
+programs, mostly based on serial timing, have low calculation
+efficiency and require an unacceptably long time in the case
+of a large-scale system. To greatly improve the simulation
+efficiency, possible solutions include adopting a much larger
+time step, the model-order reduction technique, and the use
+of massively paralleled graphics processing units [126]. In
+addition, for a switching system represented by the VSC
+dominated power system, the numerical simulation method
+needs to solve several issues, including the inconsistency
+between the switching action and simulation step and the
+multiple switching problem caused by the fixed step size, the
+problem of synchronous switch operation, and the numerical
+oscillations associated with the trapezoidal method after the
+switching action.
+c) Stability Assessment and Mechanism Comprehension:
+The biggest limitation of numerical simulation is its sole
+applicability to white-box systems whose information, e.g.,
+topology, control, and parameters, are completely known.
+However, unpredictable random disturbances may make it
+difficult to obtain many parameters, and even the system
+topology can constantly change with different working condi-
+tions. Currently, the main approach is to explore all potential
+working conditions and establish fault sets. To this end, it is
+crucial to adopt the practice of traditional systems and propose
+a unified approach to transient stability contingency filtering,
+ranking, and assessment for the VSC-dominated system [127].
+Obviously, the numerical simulation can only be used to obtain
+quantitative results under specific working conditions.
+To obtain the stability boundary, it is necessary to explore
+the calculation for each working condition in the fault sets,
+however, this will cause huge computational burden and re-
+quire long simulation time. In addition, this method is difficult
+to use in the analysis of the instability mechanism [23].
+Therefore, numerical simulation should be combined with
+other methods to perform effective stability assessment and
+for understanding the instability mechanism.
+C. Large-Signal Modeling and Stability Analysis Alternatives
+Apart from the above methods, graphical analysis [100], DP
+methods [128], bifurcation theory [129], and other advanced
+methods [130] are also introduced into large-signal modeling
+and stability analysis of VSC-dominated systems. Among
+these, the graphical and DP methods have fruitful outcomes
+as they have been frequently used recently.
+1) Graphical Methods
+The graphical methods consist of power-angle curves,
+frequency-angle curves, voltage-angle curves, EAC, and phase
+portraits that are mostly used in SMIB systems [100]. In [6],
+the concepts, tools, and methods of transient stability analysis
+of SG-dominated power systems (such as power angle, power-
+angle curves, and EAC) are firstly migrated to investigate the
+dynamic behavior and stability issues of the VSC system;
+the proposed methodology has been widely used in recent
+literature [109], [110], [131]. The frequency-angle curve is
+proposed in [5] for illustrating the effect of grid strength
+on the dynamic performance of the DC voltage control in
+DFIG. The power-angle curves and EAC are exploited to
+analyze large-signal DC voltage stability of the VSC-based
+SMIB system [6]. Similarly, the EAC and phase portrait-
+based methods are also adopted to investigate the large-signal
+synchronization stability of VSC-based SMIB systems under
+===== PAGE 13 =====
+1542 CSEE JOURNAL OF POWER AND ENERGY SYSTEMS, VOL. 8, NO. 6, NOVEMBER 2022
+severe faults [110], [131]. In [94] and [95] it is proposed that
+synchronous instability can occur when the VSC current is sat-
+urated under large disturbances, and the instability mechanism
+is physically explained by using the power-angle curves of
+VSC-based SMIB systems. In [96] and [103], the power-angle
+curve is also adopted to investigate the transient angle stability
+of single- and double-VSC systems. By constructing voltage-
+angle curves, [105], [109], and [110] focus on VSC-based
+SMIB systems and analyze whether equilibrium points are
+present under large disturbances, using power synchronization
+control, droop control, and VSG control. Using the I–V plane,
+the effects of grid voltage, equivalent reactance, and q-axis
+current control gain on the equilibrium of the WT system is
+also physically investigated in [30]. Besides, by establishing
+the P–V curves of VSC-based SMIB systems, the impact of
+system dynamic behavior on short-term voltage stability has
+been well investigated [132]. The mechanisms of voltage-
+frequency-coupled transient instability are investigated by the
+voltage-vector-triangle graphic method [133].
+Obviously, the significant advantage of graphical methods is
+that the physical meaning is intuitive and easy to understand.
+This helps to provide a direct explanation of the physical
+nature behind the destabilization process. However, they are
+only suitable for analyzing low-order (mostly SMIB) systems,
+e.g., the phase portrait is only applicable to behavioral analysis
+of the two-dimensional autonomous system.
+2) DP Model-based Methods
+The frequency decomposition-based DP model, which is
+a time-varying large-signal model between the phasor model
+and detailed model [128], uses several time-varying Fourier
+coefficients (known as dynamic phasors) to continuously ap-
+proximate the system time-varying variables. In [116], it is
+proved that the DP model can accurately predict the stability
+margins of droop-controlled VSCs, while the reduced-order
+small-signal model fails. The DP model for the interfaces of
+VSC and AC grid subsystems is adopted in [123] to improve
+the accuracy and efficiency of hybrid simulations. Based on
+the multi-frequency shift transformation [134], the typical DP
+model is successfully extended to the system-level models
+for a variety of power converters. To analyze the transient
+response of an unbalanced microgrid, the complete system
+DP model is obtained in [135] by combining the DP model
+of each submodule at a time-variable frequency. In [136],
+the DP model of grid-tied VSC shows that the large-signal
+stability of PCC voltage is governed predominantly by the
+dynamics of the load and the PLL, simultaneously. Besides, the
+DP methods are also introduced into the SSR analysis [137]
+and system short-circuit calculations [128]. Obviously, the
+DP model also requires the art of compromise—with more
+frequency components retained, the accuracy of the model
+increases, however, the complexity and computational burden
+of the model increase as well [64].
+IV. D ISCUSSION OF FUTURE DEVELOPMENT TRENDS
+In conclusion, further research works on the following eight
+subjects are expected:
+A. Stability Definition and Classification
+Though the definition and classification of power system
+stability issues have been addressed earlier by several CI-
+GRE and IEEE Task Force reports [117], they fail to reflect
+current industry needs, practices, and understanding of VSC-
+dominated systems in terms of preciseness and completeness,
+e.g., they do not fully encompass practical, VSC-related in-
+stability scenarios [2] such as the harmonic instability [138].
+Furthermore, due to possible contradictions in relevant reports,
+much work remains to be done before consensuses can be
+reached and international standards established. For instance,
+the IEEE PES Task Force on microgrid stability definitions,
+analysis, and modeling released its achievements on sys-
+tem stability including the definition, classification, analysis,
+and examples, in its technical report [2], whereas different
+definition of stability and classification have been recently
+reported by the IEEE Power System Dynamic Performance
+committee [130] (see Fig. 11).
+Consistent use of terminology is required for developing
+system design and operating criteria, standard analytical tools,
+and study procedures. However, due to the lack of standards
+Power system stability
+Resonance stability Converter-driven
+stability Rotor angle stability Voltage stability Frequency stability
+Electrical Torsional Fast
+interaction
+Slow
+interaction Transient Small
+disturbance
+Large
+disturbance
+Small
+disturbance
+Short term Long term Short term Long term
+Fig. 11. Classification of stability for VSC-dominated power systems according to the IEEE Task Force on stability definitions and characterization of
+dynamic behavior in systems with high penetration of power electronic-interfaced technologies.
+===== PAGE 14 =====
+XIONG et al.: MODELING AND STABILITY ISSUES OF VOLTAGE-SOURCE CONVERTER-DOMINATED POWER SYSTEMS: A REVIEW 1543
+in stability definition and classification, different terms have
+emerged for the same stability type. For instance, some
+concepts in existing literature, including grid-synchronization
+stability [53], first-swing stability [80], synchronous instabil-
+ity [94], transient angle stability [103], and synchronization
+stability [105], are all counterparts of angle stability in tradi-
+tional power grids.
+B. Physical Understanding of Instability Mechanism
+A clear understanding of different types of instability and
+how they are interrelated is essential for the satisfactory design
+and operation of power systems. While detailed models are
+available, they are both computationally expensive and not
+transparent enough to provide an insight into the instability
+mechanism or factors, hindering the development of stability
+control strategies based on the physical mechanism. In par-
+ticular, the dynamic process of VSC under fault condition
+often involves saturation limiting and control switching; the
+control strategy (especially the LVRT strategy), if not properly
+designed, is likely to cause deterioration of control perfor-
+mance, over-current/over-voltage faults, and even instability
+issues and disconnection from the grid [30], [133]. Therefore,
+understanding the evolution process, occurrence mechanism,
+influencing laws, and dominant factors of the above physical
+phenomena is of great importance for designing reasonable
+control schemes, limiting thresholds, and switching conditions.
+If mechanism analysis or process anatomy is the aim, a
+reduced-order model should be used as a benchmark for
+developing a simplified model that holds the main physical
+process features, based on which the leading factors for
+instability can be effectively identified and target strategies
+can be developed. Existing literature use stability classification
+and multi-timescale features for model aggregation [36] or
+simplification [84]. It is noted that the model-order reduction
+is focused on particular problems: the reduced-order model for
+one scenario cannot be directly used for another, otherwise a
+significantly lower accuracy is expected [48], [139].
+C. Accurate Prediction of Stability Boundary
+The system structure, parameter, and protection threshold
+designs rely on accurate prediction of the system stability
+boundary, without which a sufficiently large safety and sta-
+bility margin is needed to assure normal system operation
+at the expense of cost-effectiveness. Detailed models should
+be used as the benchmark for modeling and stability analysis
+aimed at accurate predictions. Especially in the case of large
+disturbances when measures (e.g., using protection control,
+saturation limiting, and control switching) are taken to avoid
+the VSC equipment damage, accurate prediction results of
+the nonlinear dynamics for the VSC-dominated system (es-
+sentially characterized by wide timescales and frequency cou-
+pling) [10] can only be obtained with difficulty via quantitative
+analysis, since most reduced-order analytical models can only
+linearize the system without reflecting the above switching
+processes. At this time, the prediction is dependent on the
+continuous-discrete mixed detailed model with multi-timescale
+features jointly given by (40)-(43), which mathematically
+prohibits the deviation of an analytical solution. Therefore, it
+is crucial to develop efficient and stable numerical calculation
+algorithms and corresponding software to achieve accurate
+prediction of the stability boundary.
+D. Multi-Method Integration Based Stability Prediction
+Based on previous discussions, the existing approaches have
+their inherent prerequisites, advantages, limitations and appli-
+cations, as comparatively listed in Table I. The conservative-
+ness associated with different stability criteria varies greatly,
+and the analysis results given by different methods can even
+conflict. Thus, for a complex nonlinear system represented by
+the VSC-dominated large-scale power system, it is currently
+difficult to establish a set of simple, accurate, and versatile
+stability analysis theories, methods, and tools. Based on the
+existing theoretical basis and analysis methods, an intelligent
+expert analysis system should be developed, integrating a
+variety of typical analysis methods, to achieve complementary
+advantages and mutual verification, and to comprehensively
+interpret the system dynamic features and stability mechanism
+from different perspectives.
+E. Design-Oriented Stability Analysis
+Guidance for system design is one of the main functions of
+stability assessment and instability mechanism analysis [95].
+However, existing design methods are usually based on the
+SMIB system. When the VSC is tied to the actual power
+grid, various stability issues may occur due to the complex
+grid structure and variable working conditions. For example,
+several studies show that in the weak grid condition, a stronger
+coupling effect between the coupling loops increases the
+probability of system instability [37]. Therefore, it is necessary
+to carry out research on the stability analysis methods for
+system structure, control, and protection design, which in turn
+affects the system stability and stability margin [94].
+F . Operation-Oriented Stability Analysis
+During operation, the loads in a power system are constantly
+switching; the system topology is constantly changing, and
+the disturbance is difficult to determine. Accordingly, it is
+difficult to match the results based on the white-box model to
+the actual operating condition completely. It is thus necessary
+to derive real-time, online safety and stability analysis meth-
+ods based on measurement data (e.g., real-time measurement
+data based on phasor measurement unit devices). Data-driven
+stability assessment methods for online applications need to
+be developed for complex, multi-VSC large systems that are
+difficult to effectively analyze and evaluate using conventional
+methods.
+G. Benchmarks Development for Typical Stability Issues
+To promote the development of stability analysis and control
+technologies, it is critical to adopt the practice of traditional
+SG-dominated grids in terms of development of representative
+examples and benchmarks for typical stability problems and
+instability phenomena. Detailed information of benchmarks
+(disturbance, topology, control schemes, and pertinent param-
+eters) should be provided for easy access, so that testing,
+comparison, and plan selection of relevant research results
+===== PAGE 15 =====
+1544 CSEE JOURNAL OF POWER AND ENERGY SYSTEMS, VOL. 8, NO. 6, NOVEMBER 2022
+TABLE I
+ADVANTAGES , LIMITATIONS , AND APPLICATIONS OF DIFFERENT APPROACHES FOR SYSTEM MODELING AND STABILITY ANALYSIS
+Method Advantages Limitations Applications
+State-space
+model-based
+methods
+• Mature theories and rich tools for
+modeling & stability analysis.
+• Suitable for single-, multi-, and system
+level-VSC-dominated power systems.
+• Prominent modularity and scalability
+for multi-VSC systems.
+• Only suitable for LTI systems in
+theory.
+• Only suitable for white-box systems. ∗
+• The nonlinear features of VSCs are
+neglected by linearization.
+• Difficult to physically understand the
+instability mechanism.
+• Derive the complete LTI model and
+provide small-signal stability prediction
+for multi-VSC white-box systems.
+• Analyze small-signal dynamic features
+such as oscillation frequency, attenuation
+factor, critical eigenvalues, etc.
+Impedance
+model-based
+methods
+• Suitable for black-box systems.
+• Port impedance for stability prediction
+can be obtained by on-line
+measurement.
+• Unable to predict stability issues of
+inner subsystems.
+• Stability criteria highly conservative.
+• Difficult to physically understand the
+instability mechanism.
+• Subsystem port impedance
+measurement
+• Interaction process analysis of two
+cascaded VSC subsystems.
+• Small-signal stability prediction of
+black-box systems.
+PAD/SSG
+model-based
+methods
+• Low-order model with major behaviors
+and familiar physical concepts.
+• Powerful for physically understanding
+the instability mechanism.
+• Difficult to describe the
+multi-timescale and frequency-coupling
+dynamics.
+• Difficult to be extended to multi-VSC
+scenarios.
+• Modeling mainly concerned with
+dynamic features with clear physical
+meaning.
+• Physically understand the instability
+mechanism of the SMIB system.
+Numerical
+simulation-based
+methods
+• Suitable for single-, multi-, and system
+level VSC-dominated power systems.
+• Detailed features modeled with full
+time- and frequency-scales.
+• Provides the most accurate and
+reliable quantitative results.
+• Unable to model black-box systems
+• Difficult to physically understand the
+instability mechanism.
+• Provide numerical results and stability
+prediction for white-box systems.
+• Model & stability verification of other
+analysis methods for a white-box
+system.
+• Design and verification of system
+parameters and control strategies.
+DP model-based
+methods
+• Suitable for nonlinear & time-varying
+systems.
+• Suitable for large-signal stability
+assessment.
+• Increased model complexity and
+computational burden.
+• Inevitable compromise between
+accuracy and complexity.
+• Modeling of the nonlinear and
+time-varying system.
+• Prediction of large-signal stability for
+low-order (mostly SMIB) VSC systems.
+Energy function
+methods
+• Suitable for large-signal stability
+prediction of nonlinear systems.
+• Powerful for physically understanding
+the instability mechanism.
+• Difficult to find an energy function
+satisfying LaSalle’s Invariance Principle.
+• Difficult to be extended to multi-VSC
+scenarios.
+• Prediction of large-signal stability for
+low-order (mostly SMIB) VSC systems
+• Design suitable system parameters and
+derive powerful control strategies
+counteracting large disturbances.
+Graphical
+methods
+Graphical models mainly concerned
+with behaviors and clear physical
+concepts.
+Only suitable for low-order (mostly
+SMIB) systems.
+Physically comprehend the physical
+process and the instability mechanism.
+* A white-box (black-box) system indicates a system whose topology, control, and parameters are all known (unknown).
+can be based on the same benchmark. In addition, standard
+dynamic or reduced-order models for each type of stability
+phenomenon need to be provided, assuming that the research
+on each type of stability problem has a correspondingly
+reasonable model that is as simple as possible, on the basis of
+accurately reflecting the problem features.
+H. Grid Code Developments for Stability Issues
+Improper grid code requirements can increase the risk of
+system instability [113]. For example, grid frequency stability
+is essentially a type of engineering problem, i.e., if the
+frequency exceeds a certain range, it will cause a series of
+system protection actions to avoid oscillatory or divergent
+destabilization and may even lead to a major power outage that
+must be avoided. With an increasing number of VSCs in power
+systems, the system inertia level and damping capacity grad-
+ually decrease. The indicators in conventional power systems,
+including the frequency nadir, the QS frequency deviation,
+and the rate of change of frequency, can thus easily exceed
+the thresholds and cause relay actions. This makes threshold
+selection of stability issues related to the grid code require-
+ments of paramount importance. For system operation safety
+and stability, it is necessary to study the system structure,
+control strategy, as well as software and hardware protection
+system design specifications based on the general conclusions
+given by stability analysis, and formulate specific provisions
+on protection thresholds, triggering conditions, and switching
+logic for key physical parameters.
+V. C ONCLUSION
+VSC-based equipment has been rapidly applied in mod-
+ern power systems, gradually leading to the rise of VSC-
+dominated power systems. Due to several features of the
+models, including high order, strong coupling, various con-
+trols, multiple coupling paths and saturation processes, and
+significant switching nonlinearity, many traditional modeling
+and stability analysis methods, tools, models, and conclusions
+are no longer fully applicable. This paper summarizes the
+current research status and key technical issues in terms of
+dynamic modeling and stability analysis for VSC-dominated
+systems, and discusses the main challenges and future research
+directions in this field.
+To conclude, the state-space model-based time domain
+analysis is particularly suitable for small-signal stability issues
+of large power systems. It is the most widely used and mature
+stability analysis method, however, it is only applicable to
+small-signal stability analysis in LTI systems. The impedance
+model-based frequency-domain stability analysis is favorable
+===== PAGE 16 =====
+XIONG et al.: MODELING AND STABILITY ISSUES OF VOLTAGE-SOURCE CONVERTER-DOMINATED POWER SYSTEMS: A REVIEW 1545
+for cascaded systems, however, the port impedance measure-
+ment of the large power system needs to be improved, and
+its predicted stability boundary is relatively conservative. The
+main advantages of the PAD and SSG model-based frequency-
+domain methods encompass the obvious physical meaning,
+which helps in analyzing the system instability mechanism,
+and the compatibility of core concepts and methods with con-
+ventional power grids, which helps in better understanding the
+dynamic stability problems and solutions of VSC-dominated
+systems. Though the conclusions derived from large-signal
+stability analysis have wider applicability, there is a lack of
+effective and unified large-signal modeling methods and stabil-
+ity criteria. Among a few techniques, the main energy function
+methods currently used for single VSC design and analysis can
+quickly and quantitatively analyze the system stability margin
+and are suitable for large-signal stability analysis, although it
+is difficult to build energy functions for complex systems. The
+detailed model-based numerical simulation has the significant
+advantage of accurate and reliable results, however, it is
+inconvenient for interpreting the system instability mechanism.
+Besides, this method, is mainly applied to the analysis and
+calculation of specific white-box systems, and it is difficult to
+obtain general conclusions.
+With joint efforts of worldwide experts, fruitful theoret-
+ical and practical results have been obtained. Nevertheless,
+there are still many theoretical and engineering problems to
+be investigated in depth, including stability definition and
+classification, physical understanding of the instability mech-
+anism, precise stability boundary prediction, multi-method
+integration-based intelligent analysis, design- and operation-
+oriented stability analysis, as well as benchmark and grid code
+development for typical stability issues.
+REFERENCES
+[1] A. Bindra, “Projecting the evolution of power electronics: Highlights
+from FEPPCON VIII,” IEEE Power Electronics Magazine, vol. 3, no.
+1, pp. 32–44, Mar. 2016.
+[2] M. Farrokhabadi, C. A. Ca ˜nizares, J. W. Simpson-Porco, E. Nasr,
+L. L. Fan, P. A. Mendoza-Araya, R. Tonkoski, U. Tamrakar, N.
+Hatziargyriou, D. Lagos, R. W. Wies, M. Paolone, M. Liserre, L.
+Meegahapola, M. Kabalan, A. H. Hajimiragha, D. Peralta, M. A.
+Elizondo, K. P. Schneider, F. K. Tuffner, and J. Reilly, “Microgrid
+stability definitions, analysis, and examples,” IEEE Transactions on
+Power Systems, vol. 35, no. 1, pp. 13–29, Jan. 2020.
+[3] J. O’Sullivan, A. Rogers, D. Flynn, P. Smith, A. Mullane, and M.
+O’Malley, “Studying the maximum instantaneous non-synchronous
+generation in an island system—Frequency stability challenges in
+Ireland,” IEEE Transactions on Power Systems , vol. 29, no. 6, pp.
+2943–2951, Nov. 2014.
+[4] D. Boroyevich, I. Cvetkovic, R. Burgos, and D. Dong, “Intergrid: A
+future electronic energy network?,” IEEE Journal of Emerging and
+Selected Topics in Power Electronics , vol. 1, no. 3, pp. 127–138, Sep.
+2013.
+[5] J. B. Hu, H. Yuan, and X. M. Yuan, “Modeling of DFIG-based WTs for
+small-signal stability analysis in DVC timescale in power electronized
+power systems,” IEEE Transactions on Energy Conversion, vol. 32, no.
+3, pp. 1151–1165, Sept. 2017.
+[6] L. S. Xiong, F. Zhuo, F. Wang, X. K. Liu, Y . Chen, M. H. Zhu,
+and H. Yi, “Static synchronous generator model: A new perspective
+to investigate dynamic characteristics and stability issues of grid-tied
+PWM inverter,” IEEE Transactions on Power Electronics, vol. 31, no.
+9, pp. 6264–6280, Sept. 2016.
+[7] H. Yuan, X. M. Yuan, and J. B. Hu, “Modeling of grid-connected VSCs
+for power system small-signal stability analysis in DC-link voltage
+control timescale,” IEEE Transactions on Power Systems, vol. 32, no.
+5, pp. 3981–3991, Sept. 2017.
+[8] Y . N. Chi, B. J. Tang, J. B. Hu, X. S. Tian, H. Y . Tang, Y . Li, S. J. Sun,
+L. Shi, and L. Shuai, “Overview of mechanism and mitigation measures
+on multi-frequency oscillation caused by large-scale integration of wind
+power,”CSEE Journal of Power and Energy Systems, vol. 5, no. 4, pp.
+433–443, Dec. 2019.
+[9] Y . B. Wang, X. F. Wang, Z. Chen, and F. Blaabjerg, “Small-signal
+stability analysis of inverter-fed power systems using component con-
+nection method,” IEEE Transactions on Smart Grid, vol. 9, no. 5, pp.
+5301–5310, Sept. 2018.
+[10] X. F. Wang and F. Blaabjerg, “Harmonic stability in power electronic-
+based power systems: Concept, modeling, and analysis,” IEEE Trans-
+actions on Smart Grid, vol. 10, no. 3, pp. 2858–2870, May 2019.
+[11] M. Sahni, B. Badrzadeh, D. Muthumuni, Y . Cheng, H. Yin, S. H.
+Huang, and Y . Zhou, “Sub-synchronous interaction in wind power
+plants-part II: An ERCOT case study,” in Proceedings of 2012 IEEE
+Power and Energy Society General Meeting, 2012, pp. 1–9.
+[12] S. H. Huang, J. Schmall, J. Conto, J. Adams, Y . Zhang, and C. Carter,
+“V oltage control challenges on weak grids with high penetration of
+wind generation: ERCOT experience,” in Proceedings of 2012 IEEE
+Power and Energy Society General Meeting, 2012, pp. 1–7.
+[13] C. Buchhagen, C. Rauscher, A. Menze, and J. Jung, “BorWin1-
+First experiences with harmonic interactions in converter dominated
+grids,” in Proceedings of International ETG Congress 2015; Die
+Energiewende - Blueprints for the New Energy Age, 2015, pp. 1–7.
+[14] H. K. Liu, X. R. Xie, J. B. He, T. Xu, Z. Yu, C. Wang, and C. Y . Zhang,
+“Subsynchronous interaction between direct-drive PMSG based wind
+farms and weak AC networks,” IEEE Transactions on Power Systems,
+vol. 32, no. 6, pp. 4708–4720, Nov. 2017.
+[15] N. Pogaku, M. Prodanovic, and T. C. Green, “Modeling, analysis and
+testing of autonomous operation of an inverter-based microgrid,” IEEE
+Transactions on Power Electronics, vol. 22, no. 2, pp. 613–625, Mar.
+2007.
+[16] M. Q. Zhao, X. M. Yuan, J. B. Hu, and Y . B. Yan, “V oltage dynamics
+of current control time-scale in a VSC-connected weak grid,” IEEE
+Transactions on Power Systems, vol. 31, no. 4, pp. 2925–2937, Jul.
+2016.
+[17] L. F. Fan, “Modeling type-4 wind in weak grids,” IEEE Transactions
+on Sustainable Energy, vol. 10, no. 2, pp. 853–864, Apr. 2019.
+[18] E. A. A. Coelho, P. C. Cortizo, and P. F. D. Garcia, “Small-signal
+stability for parallel-connected inverters in stand-alone AC supply
+systems,” IEEE Transactions on Industry Applications, vol. 38, no.
+2, pp. 533–542, Mar./Apr. 2002.
+[19] Y . A. I. Mohamed and E. F. El-Saadany, “Adaptive decentralized droop
+controller to preserve power sharing stability of paralleled inverters
+in distributed generation microgrids,” IEEE Transactions on Power
+Electronics, vol. 23, no. 6, pp. 2806–2816, Nov. 2008.
+[20] W. Q. Y . Tang, J. B. Hu, Y . Z. Chang, and F. Liu, “Modeling of DFIG-
+based wind turbine for power system transient response analysis in
+rotor speed control timescale,” IEEE Transactions on Power Systems,
+vol. 33, no. 6, pp. 6795–6805, Nov. 2018.
+[21] J. Lyu, X. Zhang, X. Cai, and M. Molinas, “Harmonic state-space based
+small-signal impedance modeling of a modular multilevel converter
+with consideration of internal harmonic dynamics,” IEEE Transactions
+on Power Electronics, vol. 34, no. 3, pp. 2134–2148, Mar. 2019.
+[22] J. Z. Zhou, H. Ding, S. T. Fan, Y . Zhang, and A. M. Gole, “Impact
+of short-circuit ratio and phase-locked-loop parameters on the small-
+signal behavior of a VSC-HVDC converter,” IEEE Transactions on
+Power Delivery, vol. 29, no. 5, pp. 2287–2296, Oct. 2014.
+[23] D. J. Lee and L. Wang, “Small-signal stability analysis of an au-
+tonomous hybrid renewable energy power generation/energy storage
+system part I: Time-domain simulations,”IEEE Transactions on Energy
+Conversion, vol. 23, no. 1, pp. 311–320, Mar. 2008.
+[24] M. Naderi, Y . Khayat, Q. Shafiee, T. Dragicevic, H. Bevrani, and
+F. Blaabjerg, “Interconnected autonomous ac microgrids via back-to-
+back converters—Part I: Small-signal modeling,” IEEE Transactions
+on Power Electronics, vol. 35, no. 5, pp. 4728–4740, May 2020.
+[25] C. Y . Dong, H. J. Jia, Q. W. Xu, J. F. Xiao, Y . Xu, P. F. Tu, P. F.
+Lin, X. M. Li, and P. Wang, “Time-delay stability analysis for hybrid
+energy storage system with hierarchical control in DC microgrids,”
+IEEE Transactions on Smart Grid, vol. 9, no. 6, pp. 6633–6645, Nov.
+2018.
+[26] I. P. Nikolakakos, H. H. Zeineldin, M. S. El-Moursi, and J. L. Kirtley,
+“Reduced-order model for inter-inverter oscillations in islanded droop-
+controlled microgrids,” IEEE Transactions on Smart Grid, vol. 9, no.
+5, pp. 4953–4963, Sept. 2018.
+===== PAGE 17 =====
+1546 CSEE JOURNAL OF POWER AND ENERGY SYSTEMS, VOL. 8, NO. 6, NOVEMBER 2022
+[27] X. W. Wang, J. Yao, J. X. Pei, P. Sun, H. L. Zhang, and R. K.
+Liu, “Analysis and damping control of small-signal oscillations for
+VSC connected to weak AC grid during LVRT,” IEEE Transactions on
+Energy Conversion, vol. 34, no. 3, pp. 1667–1676, Sept. 2019.
+[28] R. K. Liu, J. Yao, X. W. Wang, P. Sun, and J. B. Hu, “Dynamic stability
+analysis and improved LVRT schemes of DFIG-based wind turbines
+during a symmetrical fault in a weak grid,” IEEE Transactions on
+Power Electronics, vol. 35, no. 1, pp. 303–318, Jan. 2020.
+[29] J. B. Hu, B. Wang, W. S. Wang, H. Y . Tang, Y . N. Chi, and Q. Hu,
+“Small signal dynamics of DFIG-based wind turbines during riding
+through symmetrical faults in weak AC grid,” IEEE Transactions on
+Energy Conversion, vol. 32, no. 2, pp. 720–730, Jun. 2017.
+[30] H. Yuan, H. H. Xin, L. B. Huang, Z. Wang, and D. WU, “Stability
+analysis and enhancement of type-4 wind turbines connected to very
+weak grids under severe voltage sags,” IEEE Transactions on Energy
+Conversion, vol. 34, no. 2, pp. 838–848, Jun. 2019.
+[31] J. Sun, “Small-signal methods for AC distributed power systems–a
+review,”IEEE Transactions on Power Electronics, vol. 24, no. 11, pp.
+2545–2554, Nov. 2009.
+[32] ¨O. C. Sakinci and J. Beerten, “Generalized dynamic phasor modeling
+of the MMC for small-signal stability analysis,” IEEE Transactions on
+Power Delivery, vol. 34, no. 3, pp. 991–1000, Jun. 2019.
+[33] Z. X. Miao, L. Piyasinghe, J. Khazaei, and L. L. Fan, “Dynamic
+phasor-based modeling of unbalanced radial distribution systems,”
+IEEE Transactions on Power Systems, vol. 30, no. 6, pp. 3102–3109,
+Nov. 2015.
+[34] C. T. Li, Y . P. Chen, T. Ding, Z. C. Du, and F. X. Li, “A sparse and low-
+order implementation for discretization-based Eigen-analysis of power
+systems with time-delays,” IEEE Transactions on Power Systems, vol.
+34, no. 6, pp. 5091–5094, Nov. 2019.
+[35] Y . W. Li, D. M. Vilathgamuwa, and P. C. Loh, “Design, analysis, and
+real-time testing of a controller for multibus microgrid system,” IEEE
+Transactions on Power Electronics, vol. 19, no. 5, pp. 1195–1204, Sept.
+2004.
+[36] S. H. Liao, X. M. Zha, X. Z. Li, M. Huang, J. J. Sun, J. Pan, and
+J. M. Guerrero, “A novel dynamic aggregation modeling method of
+grid-connected inverters: Application in small-signal analysis,” IEEE
+Transactions on Sustainable Energy, vol. 10, no. 3, pp. 1554–1564,
+Jul. 2019.
+[37] J. Sun, “Impedance-based stability criterion for grid-connected invert-
+ers,” IEEE Transactions on Power Electronics, vol. 26, no. 11, pp.
+3075–3078, Nov. 2011.
+[38] X. F. Wang, L. Harnefors, and F. Blaabjerg, “Unified impedance model
+of grid-connected voltage-source converters,” IEEE Transactions on
+Power Electronics, vol. 33, no. 2, pp. 1775–1787, Feb. 2018.
+[39] J. J. Liu, X. G. Feng, F. C. Lee, and D. Borojevich, “Stability
+margin monitoring for DC distributed power systems via perturbation
+approaches,” IEEE Transactions on Power Electronics, vol. 18, no. 6,
+pp. 1254–1261, Nov. 2003.
+[40] F. C. Liu, J. J. Liu, H. D. Zhang, and D. H, Xue, “Stability issues of
+Z + Z type cascade system in hybrid energy storage system (HESS),”
+IEEE Transactions on Power Electronics, vol. 29, no. 11, pp. 5846–
+5859, Nov. 2014.
+[41] S. Vesti, T. Suntio, J. A. Oliver, R. Prieto, and J. A. Cobos, “Impedance-
+based stability and transient-performance assessment applying maxi-
+mum peak criteria,” IEEE Transactions on Power Electronics, vol. 28,
+no. 5, pp. 2099–2104, May 2013.
+[42] C. M. Wildrick, F. C. Lee, B. H. Cho, and B. Choi, “A method of
+defining the load impedance specification for a stable distributed power
+system,” IEEE Transactions on Power Electronics, vol. 10, no. 3, pp.
+280–285, May 1995.
+[43] J. Huang, K. A. Corzine, and M. Belkhayat, “Small-signal impedance
+measurement of power-electronics-based AC power systems using line-
+to-line current injection,” IEEE Transactions on Power Electronics, vol.
+24, no. 2, pp. 445–455, Feb. 2009.
+[44] V . Valdivia, A. L ´azaro, A. Barrado, P. Zumel, C. Fern ´andez, and
+M. Sanz, “Impedance identification procedure of three-phase balanced
+voltage source inverters based on transient response measurements,”
+IEEE Transactions on Power Electronics, vol. 26, no. 12, pp. 3810–
+3816, Dec. 2011.
+[45] Z. Liu, J. J. Liu, X. Y . Hou, Q. Y . Dou, D. H. Xue, and T.
+Liu, “Output impedance modeling and stability prediction of three-
+phase paralleled inverters with master–slave sharing scheme based on
+terminal characteristics of individual inverters,” IEEE Transactions on
+Power Electronics, vol. 31, no. 7, pp. 5306–5320, Jul. 2016.
+[46] B. Wen, D. Boroyevich, R. Burgos, P. Mattavelli, and Z. Y . Shen,
+“Small-signal stability analysis of three-phase AC systems in the
+presence of constant power loads based on measured d-q frame
+impedances,” IEEE Transactions on Power Electronics, vol. 30, no.
+10, pp. 5952–5963, Oct. 2015.
+[47] A. Rygg, M. Molinas, C. Zhang, and X. Cai, “A modified sequence-
+domain impedance definition and its equivalence to the dq-domain
+impedance definition for the stability analysis of AC power electronic
+systems,” IEEE Journal of Emerging and Selected Topics in Power
+Electronics, vol. 4, no. 4, pp. 1383–1396, Dec. 2016.
+[48] S. Shah and L. Parsa, “Impedance modeling of three-phase voltage
+source converters in DQ, sequence, and phasor domains,” IEEE Trans-
+actions on Energy Conversion, vol. 32, no. 3, pp. 1139–1150, Sept.
+2017.
+[49] Q. C. Zhong and X. Zhang, “Impedance-sum stability criterion for
+power electronic systems with two converters/sources,” IEEE Access,
+vol. 7, pp. 21254–21265, Jan. 2019.
+[50] C. Li, R. Burgos, B. Wen, Y . Tang, and D. Boroyevich, “Stability anal-
+ysis of power systems with multiple STATCOMs in close proximity,”
+IEEE Transactions on Power Electronics, vol. 35, no. 3, pp. 2268–2283,
+Mar. 2020.
+[51] L. Y . Xu, H. H. Xin, L. B. Huang, H. Yuan, P. Ju, and D. Wu, “Sym-
+metric admittance modeling for stability analysis of grid-connected
+converters,” IEEE Transactions on Energy Conversion, vol. 35, no. 1,
+pp. 434–444, Mar. 2020.
+[52] S. K. Wang, Z. Liu, J. J. Liu, D. Boroyevich, and R. Burgos, “Small-
+signal modeling and stability prediction of parallel droop-controlled
+inverters based on terminal characteristics of individual inverters,”
+IEEE Transactions on Power Electronics, vol. 35, no. 1, pp. 1045–
+1063, Jan. 2020.
+[53] B. Wen, D. Dong, D. Boroyevich, R. Burgos, P. Mattavelli, and Z.
+Y . Shen, “Impedance-based analysis of grid-synchronization stability
+for three-phase paralleled converters,” IEEE Transactions on Power
+Electronics, vol. 31, no. 1, pp. 26–38, Jan. 2016.
+[54] T. Roinila, T. Messo, and E. Santi, “MIMO-identification techniques
+for rapid impedance-based stability assessment of three-phase systems
+in DQ domain,” IEEE Transactions on Power Electronics, vol. 33, no.
+5, pp. 4015–4022, May 2018.
+[55] B. Wen, D. Boroyevich, R. Burgos, P. Mattavelli, and Z. Y , Shen,
+“Inverse Nyquist stability criterion for grid-tied inverters,”IEEE Trans-
+actions on Power Electronics, vol. 32, no. 2, pp. 1548–1556, Feb. 2017.
+[56] S. Chandrasekaran, D. Borojevic, and D. K. Lindner, “Input filter inter-
+action in three phase AC-DC converters,” in 30th Annual IEEE Power
+Electronics Specialists Conference. Record. (Cat. No.99CH36321), vol.
+2, 1999, pp. 987–992.
+[57] H. C. Mao, D. Boroyevich, and F. C. Y . Lee, “Novel reduced-order
+small-signal model of a three-phase PWM rectifier and its application
+in control design and system analysis,” IEEE Transactions on Power
+Electronics, vol. 13, no. 3, pp. 511–521, May 1998.
+[58] M. Belkhayat, “Stability criteria for AC power systems with regulated
+loads,” Ph.D. dissertation, Purdue University, West Lafayette, IN, USA,
+1997.
+[59] Z. Liu, J. J. Liu, W. H. Bao, and Y . L. Zhao, “Infinity-norm of
+impedance-based stability criterion for three-phase AC distributed
+power systems with constant power loads,” IEEE Transactions on
+Power Electronics, vol. 30, no. 6, pp. 3030–3043, Jun. 2015.
+[60] F. C. Liu, J. J. Liu, H. D. Zhang, D. H. Xue, and Z. Liu, “G-norm
+and sum-norm based stability criterion for three-phase AC cascade
+systems,” Proceedings of CSEE, vol. 34, no. 24, pp. 4092–4100, Aug.
+2014.
+[61] C. Zhang, M. Molinas, A. Rygg, and X. Cai, “Impedance-based anal-
+ysis of interconnected power electronics systems: Impedance network
+modeling and comparative studies of stability criteria,” IEEE Journal
+of Emerging and Selected Topics in Power Electronics, vol. 8, no. 3,
+pp. 2520–2533, Sept. 2020.
+[62] Z. K. Shuai, Y . Li, W. M. Wu, C. M. Tu, A. Luo, and Z. J. Shen,
+“Divided DQ small-signal model: A new perspective for the stability
+analysis of three-phase grid-tied inverters,” IEEE Transactions on
+Industrial Electronics, vol. 66, no. 8, pp. 6493–6504, Aug. 2019.
+[63] S. R. Sanders, J. M. Noworolski, X. Z. Liu, and G. C. Verghese,
+“Generalized averaging method for power conversion circuits,” IEEE
+Transactions on Power Electronics, vol. 6, no. 2, pp. 251–259, Apr.
+1991.
+[64] L. Fu, S. Y . Xiong, C. Y . Pan, S. Bai, Z. Y . He, R. K. Mai, and X. P.
+Li, “A multiple frequency Taylor model-based dynamic synchrophasor
+estimation algorithm,” IEEE Transactions on Smart Grid, vol. 10, no.
+6, pp. 6870–6882, Nov. 2019.
+[65] W. Dong, H. H. Xin, D. Wu, and L. B. Huang, “Small signal
+stability analysis of multi-infeed power electronic systems based on
+===== PAGE 18 =====
+XIONG et al.: MODELING AND STABILITY ISSUES OF VOLTAGE-SOURCE CONVERTER-DOMINATED POWER SYSTEMS: A REVIEW 1547
+grid strength assessment,” IEEE Transactions on Power Systems, vol.
+34, no. 2, pp. 1393–1403, Mar. 2019.
+[66] M. K. Bakhshizadeh, X. F. Wang, F. Blaabjerg, J. Hjerrild, ŁKocewiak,
+C. L. Bak, and B. Hesselbæk, “Couplings in phase domain impedance
+modeling of grid-connected converters,” IEEE Transactions on Power
+Electronics, vol. 31, no. 10, pp. 6792–6796, Oct. 2016.
+[67] M. Cespedes and J. Sun, “Impedance modeling and analysis of grid-
+connected voltage-source converters,” IEEE Transactions on Power
+Electronics, vol. 29, no. 3, pp. 1254–1261, Mar. 2014.
+[68] H. K. Liu, X. R. Xie, and W. Liu, “An oscillatory stability criterion
+based on the unified dq-frame impedance network model for power
+systems with high-penetration renewables,” IEEE Transactions on
+Power Systems, vol. 33, no. 3, pp. 3472–3485, May 2018.
+[69] J. W. He and Y . W. Li, “Analysis, design, and implementation of virtual
+impedance for power electronics interfaced distributed generation,”
+IEEE Transactions on Industry Applications, vol. 47, no. 6, pp. 2525–
+2538, Nov./Dec. 2011.
+[70] H. K. Liu, X. R. Xie, C. Y . Zhang, Y . Li, H. Liu, and Y . H. Hu,
+“Quantitative SSR analysis of series-compensated DFIG-based wind
+farms using aggregated RLC circuit model,” IEEE Transactions on
+Power Systems, vol. 32, no. 1, pp. 474–483, Jan. 2017.
+[71] X. L. Yue, Z. Fang, F. Wang, Z. H. Zhang, and H. T. Shi, “A
+novel adaptive frequency injection method for power electronic system
+impedance measurement,” IEEE Transactions on Power Electronics,
+vol. 29, no. 12, pp. 6700–6711, Dec. 2014.
+[72] J. L. Liu, X. Du, Y . Shi, and H. M. Tai, “Impedance measurement of
+three-phase inverter in the stationary frame using frequency response
+analyzer,” IEEE Transactions on Power Electronics, vol. 35, no. 9, pp.
+9390–9401, Sept. 2020.
+[73] Z. Liu, I. Cvetkovic, Z. Y . Shen, D. Boroyevich, R. Burgos, and J.
+J. Liu, “Imbalance mechanism and balancing control of DC voltages
+in a transformerless series injector based on paralleled H-bridge con-
+verters for AC impedance measurement,” IEEE Transactions on Power
+Electronics, vol. 34, no. 8, pp. 8175–8189, Aug. 2019.
+[74] T. Roinila, M. Vilkko, and J. Sun, “Online grid impedance measurement
+using discrete-interval binary sequence injection,” IEEE Journal of
+Emerging and Selected Topics in Power Electronics, vol. 2, no. 4, pp.
+985–993, Dec. 2014.
+[75] A. Riccobono, M. Mirz, and A. Monti, “Noninvasive online parametric
+identification of three-phase AC power impedances to assess the
+stability of grid-tied power electronic inverters in LV networks,” IEEE
+Journal of Emerging and Selected Topics in Power Electronics, vol. 6,
+no. 2, pp. 629–647, Jun. 2018.
+[76] J. Lu, X. M. Yuan, J. B. Hu, M. Q. Zhang, and H. Yuan, “Motion
+equation modeling of LCC-HVDC stations for analyzing DC and AC
+network interactions,” IEEE Transactions on Power Delivery , vol. 35,
+no. 3, pp. 1563–1574, Jun. 2020.
+[77] S. Wang, J. B. Hu, X. M. Yuan, and L. Sun, “On inertial dynamics
+of virtual-synchronous-controlled DFIG-based wind turbines,” IEEE
+Transactions on Energy Conversion, vol. 30, no. 4, pp. 1691–1702,
+Dec. 2015.
+[78] Y . H. Huang, X. M. Yuan, J. B. Hu, P. Zhou, and D. Wang, “DC-bus
+voltage control stability affected by AC-bus voltage control in VSCs
+connected to weak AC grids,” IEEE Journal of Emerging and Selected
+Topics in Power Electronics, vol. 4, no. 2, pp. 445–458, Jun. 2016.
+[79] W. He, X. M. Yuan, and J. B. Hu, “Inertia provision and estimation of
+PLL-based DFIG wind turbines,”IEEE Transactions on Power Systems,
+vol. 32, no. 1, pp. 510–521, Jan. 2017.
+[80] J. Ying, X. M. Yuan, and J. B. Hu, “Inertia characteristic of DFIG-
+based WT under transient control and its impact on the first-swing
+stability of SGs,” IEEE Transactions on Energy Conversion, vol. 32,
+no. 4, pp. 1502–1511, Dec. 2017.
+[81] J. Ying, X. M. Yuan, J. B. Hu, and W. He, “Impact of inertia control
+of DFIG-based WT on electromechanical oscillation damping of SG,”
+IEEE Transactions on Power Systems, vol. 33, no. 3, pp. 3450–3459,
+May 2018.
+[82] W. N. Zheng, J. B. Hu, and X. M. Yuan, “Modeling of VSCs
+considering input and output active power dynamics for multi-terminal
+HVDC interaction analysis in DC voltage control timescale,” IEEE
+Transactions on Energy Conversion, vol. 34, no. 4, pp. 2008–2018,
+Dec. 2019.
+[83] M. Q. Zhao, X. M. Yuan, and J. B. Hu, “Modeling of DFIG wind
+turbine based on internal voltage motion equation in power systems
+phase-amplitude dynamics analysis,” IEEE Transactions on Power
+Systems, vol. 33, no. 2, pp. 1484–1495, Mar. 2018.
+[84] S. Li, Y . B. Yan, and X. M. Yuan, “SISO equivalent of MIMO VSC-
+dominated power systems for voltage amplitude and phase dynamic
+analyses in current control timescale,” IEEE Transactions on Energy
+Conversion, vol. 34, no. 3, pp. 1454–1465, Sept. 2019.
+[85] M. Q. Zhang, X. M. Yuan, and J. B. Hu, “Inertia and primary frequency
+provisions of PLL-synchronized VSC HVDC when attached to islanded
+AC system,” IEEE Transactions on Power Systems, vol. 33, no. 4, pp.
+4179–4188, Jul. 2018.
+[86] S. D’Arco and J. A. Suul, “Equivalence of virtual synchronous ma-
+chines and frequency-droops for converter-based microgrids,” IEEE
+Transactions on Smart Grid, vol. 5, no. 1, pp. 394–395, Jan. 2014.
+[87] J. Alipoor, Y . Miura, and T. Ise, “Distributed generation grid integration
+using virtual synchronous generator with adoptive virtual inertia,” in
+Proceedings of 2013 IEEE Energy Conversion Congress and Exposi-
+tion, Denver, CO, USA, 2013, pp. 4546–4552.
+[88] S. L. Tan, H. Geng, G. Yang, H. Wang, and F. Blaabjerg, “Modeling
+framework of voltage-source converters based on equivalence with
+synchronous generator,” Journal of Modern Power Systems and Clean
+Energy, vol. 6, no. 6, pp. 1291–1305, Nov. 2018.
+[89] L. C. Xiu, L. S. Xiong, P. Yang, and Z. L. Kang, “Inertial and damping
+characteristics of DC distributed power systems based on frequency
+droop control,” Energies, vol. 11, no. 9, pp. 1–14, Sept. 2018.
+[90] S. L. Tan, H. Geng, and G. Yang, “Phillips-Heffron model for current-
+controlled power electronic generation unit,” Journal of Modern Power
+Systems and Clean Energy, vol. 6, no. 3, pp. 582–594, May 2018.
+[91] L. S. Xiong, Z. Xu, and L. C. Xiu, “Energy storage system control for
+electromechanical oscillation mitigation and its impact on inertia and
+damping of power system,” in Proceedings of 2018 IEEE 4th Southern
+Power Electronics Conference (SPEC), 2018, pp. 1–5.
+[92] L. S. Xiong and D. J. Wang, “Research on suppression mechanism of
+STATCOM on power oscillations,” in Proceedings of 2017 IEEE 3rd
+International Future Energy Electronics Conference and ECCE Asia
+(IFEEC 2017 - ECCE Asia), 2017, pp. 806–811.
+[93] H. Wu and X. F. Wang, “A mode-adaptive power-angle control method
+for transient stability enhancement of virtual synchronous generators,”
+IEEE Journal of Emerging and Selected Topics in Power Electronics,
+vol. 8, no. 2, pp. 1034–1049, Jun. 2020.
+[94] H. H. Xin, L. B. Huang, L. Q. Zhang, Z. Wang, and J. B. Hu,
+“Synchronous instability mechanism of P-f droop-controlled voltage
+source converter caused by current saturation,” IEEE Transactions on
+Power Systems, vol. 31, no. 6, pp. 5206–5207, Nov. 2016.
+[95] L. B. Huang, H. H. Xin, Z. Wang, L. Q. Zhang, K. Y . Wu, and
+J. B. Hu, “Transient stability analysis and control design of droop-
+controlled voltage source converters considering current limitation,”
+IEEE Transactions on Smart Grid, vol. 10, no. 1, pp. 578–591, Jan.
+2019.
+[96] Z. K. Shuai, C. Shen, X. Liu, Z. Y . Li, and Z. J. Shen, “Transient angle
+stability of virtual synchronous generators using Lyapunov’s direct
+method,” IEEE Transactions on Smart Grid, vol. 10, no. 4, pp. 4648–
+4661, Jul. 2019.
+[97] M. Kabalan, P. Singh, and D. Niebur, “Large signal Lyapunov-based
+stability studies in microgrids: A review,” IEEE Transactions on Smart
+Grid, vol. 8, no. 5, pp. 2287–2295, Sept. 2017.
+[98] J. Renedo, A. Garc ´ıa-Cerrada, and L. Rouco, “Reactive-power coor-
+dination in VSC-HVDC multi-terminal systems for transient stability
+improvement,” IEEE Transactions on Power Systems, vol. 32, no. 5,
+pp. 3758–3767, Sept. 2017.
+[99] M. Ghandhari, G. Andersson, and I. A. Hiskens, “Control Lyapunov
+functions for controllable series devices,” IEEE Transactions on Power
+Systems, vol. 16, no. 4, pp. 689–694, Nov. 2001.
+[100] M. Naderi, Y . Khayat, Q. Shafiee, T. Dragi ˇcevi´c, H. Bevrani, and F.
+Blaabjerg, “Interconnected autonomous ac microgrids via back-to-back
+Converters—Part II: Stability analysis,” IEEE Transactions on Power
+Electronics, vol. 35, no. 11, pp. 11801–11812, Nov. 2020.
+[101] Y . Zhang and L. Xie, “A transient stability assessment framework in
+power electronic-interfaced distribution systems,” IEEE Transactions
+on Power Systems, vol. 31, no. 6, pp. 5106–5114, Nov. 2016.
+[102] M. Kabalan, P. Singh, and D. Niebur, “A design and optimization tool
+for inverter-based microgrids using large-signal nonlinear analysis,”
+IEEE Transactions on Smart Grid, vol. 10, no. 4, pp. 4566–4576, Jul.
+2019.
+[103] H. J. Cheng, Z. K. Shuai, C. Shen, X. Liu, Z. Y . Li, and Z. J.
+Shen, “Transient angle stability of paralleled synchronous and virtual
+synchronous generators in islanded microgrids,” IEEE Transactions on
+Power Electronics, vol. 35, no. 8, pp. 8751–8765, Aug. 2020.
+[104] N. G. Bretas and L. F. C. Alberto, “Lyapunov function for power sys-
+tems with transfer conductances: Extension of the invariance principle,”
+IEEE Transactions on Power Systems, vol. 18, no. 2, pp. 769–777, May.
+2003.
+===== PAGE 19 =====
+1548 CSEE JOURNAL OF POWER AND ENERGY SYSTEMS, VOL. 8, NO. 6, NOVEMBER 2022
+[105] S. K. Ma, H. Geng, L. Liu, G. Yang, and B. C. Pal, “Grid-
+synchronization stability improvement of large scale wind farm during
+severe grid fault,” IEEE Transactions on Power Systems, vol. 33, no.
+1, pp. 216–226, Jan. 2018.
+[106] J. Renedo, A. Garcıa-Cerrada, and L. Rouco, “Active power control
+strategies for transient stability enhancement of AC/DC grids with
+VSC-HVDC multi-terminal systems,” IEEE Transactions on Power
+Systems, vol. 31, no. 6, pp. 4595–4604, Nov. 2016.
+[107] T. L. Vu and K. Turitsyn, “Lyapunov functions family approach to
+transient stability assessment,” IEEE Transactions on Power Systems,
+vol. 31, no. 2, pp. 1269–1277, Mar. 2016.
+[108] J. Alipoor, Y . Miura, and T. Ise, “Power system stabilization using
+virtual synchronous generator with alternating moment of inertia,”
+IEEE Journal of Emerging and Selected Topics in Power Electronics,
+vol. 3, no. 2, pp. 451–458, Jun. 2015.
+[109] H. Wu and X. F. Wang, “Design-oriented transient stability analysis of
+PLL-synchronized voltage-source converters,” IEEE Transactions on
+Power Electronics, vol. 35, no. 4, pp. 3573–3589, Apr. 2020.
+[110] D. H. Pan, X. F. Wang, F. C. Liu, and R. L. Shi, “Transient stability of
+voltage-source converters with grid-forming control: A design-oriented
+study,” IEEE Journal of Emerging and Selected Topics in Power
+Electronics, vol. 8, no. 2, pp. 1019–1033, Jun. 2020.
+[111] Y . Z. Chang, J. B. Hu, and X. M. Yuan, “Mechanism analysis of
+DFIG-based wind turbine’s fault current during LVRT with equivalent
+inductances,” IEEE Journal of Emerging and Selected Topics in Power
+Electronics, vol. 8, no. 2, pp. 1515–1527, Jun. 2020.
+[112] A. H. K. Alaboudy, H. H. Zeineldin, and J. Kirtley, “Microgrid stabil-
+ity characterization subsequent to fault-triggered islanding incidents,”
+IEEE Transactions on Power Delivery, vol. 27, no. 2, pp. 658–669,
+Apr. 2012.
+[113] B. Weise, “Impact of K-factor and active current reduction during fault-
+ride-through of generating units connected via voltage-sourced convert-
+ers on power system stability,” IET Renewable Power Generation, vol.
+9, no. 1, pp. 25–36, Jan. 2015.
+[114] J. Alipoor, Y . Miura, and T. Ise, “Stability assessment and optimization
+methods for microgrid with multiple VSG units,” IEEE Transactions
+on Smart Grid, vol. 9, no. 2, pp. 1462–1471, Mar. 2018.
+[115] D. S. Yang and X. F. Wang, “Unified modular state-space modeling
+of grid-connected voltage-source converters,” IEEE Transactions on
+Power Electronics, vol. 35, no. 9, pp. 9700–9715, Sept. 2020.
+[116] X. Q. Guo, Z. G. Lu, B. C. Wang, X. F. Sun, L. Wang, and J. M.
+Guerrero, “Dynamic phasors-based modeling and stability analysis of
+droop-controlled inverters for microgrid applications,” IEEE Transac-
+tions on Smart Grid, vol. 5, no. 6, pp. 2980–2987, Nov. 2014.
+[117] P. Kundur, J. Paserba, V . Ajjarapu, G. Andersson, A. Bose, C.
+Canizares, N. Hatziargyriou, D. Hill, A. Stankovic, C. Taylor, T.
+Van Cutsem, and V . Vittal, “Definition and classification of power
+system stability IEEE/CIGRE joint task force on stability terms and
+definitions,” IEEE Transactions on Power Systems, vol. 19, no. 3, pp.
+1387–1401, Aug. 2004.
+[118] P. V orobev, P. H. Huang, M. Al Hosani, J. L. Kirtley, and K. Tu-
+ritsyn, “High-fidelity model order reduction for microgrids stability
+assessment,” IEEE Transactions on Power Systems, vol. 33, no. 1, pp.
+874–887, Jan. 2018.
+[119] J. Mahseredjian, V . Dinavahi, and J. A. Martinez, “Simulation tools
+for electromagnetic transients in power systems: Overview and chal-
+lenges,” IEEE Transactions on Power Delivery , vol. 24, no. 3, pp.
+1657–1669, Jul. 2009.
+[120] J. Mahseredjian, L. Dube, M. Zou, S. Dennetiere, G. Joos, “Simultane-
+ous solution of control system equations in EMTP,” IEEE Transactions
+on Power Systems, vol. 21, no. 1, pp. 117–124, Feb. 2006.
+[121] J. R. Marti and J. Lin, “Suppression of numerical oscillations in the
+EMTP power systems,” IEEE Transactions on Power Systems, vol. 4,
+no. 2, pp. 739–747, May 1989.
+[122] M. Zou, J. Mahseredjian, G. Joos, B. Delourme, and L. G ´erin-Lajoie,
+“Interpolation and reinitialization in time-domain simulation of power
+electronic circuits,” Electric Power Systems Research, vol. 76, no. 8,
+pp. 688–694, May 2006.
+[123] D. W. Shu, X. R. Xie, V . Dinavahi, C. P. Zhang, X. H. Ye, and Q. R.
+Jiang, “Dynamic phasor based interface model for EMT and transient
+stability hybrid simulations,” IEEE Transactions on Power Systems,
+vol. 33, no. 4, pp. 3930–3939, Jul. 2018.
+[124] J. H. Jeon, J. Y . Kim, H. M. Kim, S. K. Kim, C. Cho, J. M. Kim, J. B.
+Ahn, and K. Y . Nam, “Development of hardware in-the-loop simulation
+system for testing operation and control functions of microgrid,” IEEE
+Transactions on Power Electronics, vol. 25, no. 12, pp. 2919–2929,
+Dec. 2010.
+[125] H. R. Yu, J. H. Su, H. N. Wang, Y . D. Wang, and Y . Shi, “Modelling
+method and applicability analysis of a reduced-order inverter model
+for microgrid applications,” IET Power Electronics, vol. 13, no. 12,
+pp. 2638–2650, Sept. 2020.
+[126] D. W. Shu, Y . D. Wei, V . Dinavahi, K. Wang, Z. Yan, and X. Q. Li,
+“Cosimulation of shifted-frequency/dynamic phasor and electromag-
+netic transient models of hybrid LCC-MMC DC grids on integrated
+CPU–GPUs,” IEEE Transactions on Industrial Electronics, vol. 67,
+no. 8, pp. 6517–6530, Aug. 2020.
+[127] D. Ernst, D. Ruiz-Vega, M. Pavella, P. M. Hirsch, and D. Sobajic, “A
+unified approach to transient stability contingency filtering, ranking and
+assessment,” IEEE Transactions on Power Systems, vol. 16, no. 3, pp.
+435–443, Aug. 2001.
+[128] S. Chandrasekar and R. Gokaraju, “Dynamic phasor modeling of type 3
+DFIG wind generators (including SSCI phenomenon) for short-circuit
+calculations,” IEEE Transactions on Power Delivery, vol. 30, no. 2, pp.
+887–897, Apr. 2015.
+[129] Z. K. Shuai, Y . Hu, Y . L. Peng, C. M. Tu, and Z. J. Shen, “Dynamic
+stability analysis of synchronverter-dominated microgrid based on
+bifurcation theory,” IEEE Transactions on Industrial Electronics, vol.
+64, no. 9, pp. 7467–7477, Sept. 2017.
+[130] N. Hatziargyriou, J. Milanovic´, C. Rahmann, V . Ajjarapu, C.
+Ca˜nizares, I. Erlich, D. Hill, I. Hiskens, I. Kamwa, B. Pal, P. Pourbeik,
+J. Sanchez-Gasca, A. Stankovi ´c, T. Van Cutsem, V . Vittal, and C.
+V ournas, “Stability definitions and characterization of dynamic behav-
+ior in systems with high penetration of power electronic interfaced
+technologies,” IEEE Power & Energy Society, Piscataway, NJ, USA,
+2020, pp. 42.
+[131] M. G. Taul, X. F. Wang, P. Davari, and F. Blaabjerg, “An overview
+of assessment methods for synchronization stability of grid-connected
+converters under severe symmetrical grid faults,” IEEE Transactions
+on Power Electronics, vol. 34, no. 10, pp. 9655–9670, Oct. 2019.
+[132] K. Kawabe and K. Tanaka, “Impact of dynamic behavior of photo-
+voltaic power generation systems on short-term voltage stability,”IEEE
+Transactions on Power Systems, vol. 30, no. 6, pp. 3416–3424, Nov.
+2015.
+[133] J. X. Pei, J. Yao, R. K. Liu, D. Y . Zeng, P. Sun, H. L. Zhang, and Y . Liu,
+“Characteristic analysis and risk assessment for voltage–frequency cou-
+pled transient instability of large-scale grid-connected renewable energy
+plants during LVRT,”IEEE Transactions on Industrial Electronics, vol.
+67, no. 7, pp. 5515–5530, Jul. 2020.
+[134] J. Xu, K. Y . Wang, G. J. Li, W. J. Ji, X. C. Jiang, and H. Zhang,
+“System-level dynamic phasor models of hybrid AC/DC microgrids
+suitable for real-time simulation and small signal analysis,” IET Gen-
+eration Transmission & Distribution, vol. 12, no. 15, pp. 3607–3617,
+Apr. 2018.
+[135] Z. K. Shuai, Y . L. Peng, J. M. Guerrero, Y . Li, and Z. J. Shen,
+“Transient response analysis of inverter-based microgrids under unbal-
+anced conditions using a dynamic phasor model,” IEEE Transactions
+on Industrial Electronics, vol. 66, no. 4, pp. 2868–2879, Apr. 2019.
+[136] D. Venkatramanan and V . John, “Dynamic phasor modeling and
+stability analysis of SRF-PLL-based grid-tie inverter under islanded
+conditions,” IEEE Transactions on Industry Applications, vol. 56, no.
+2, pp. 1953–1965, Mar./Apr. 2020.
+[137] M. C. Chudasama and A. M. Kulkarni, “Dynamic phasor analysis of
+SSR mitigation schemes based on passive phase imbalance,” IEEE
+Transactions on Power Systems, vol. 26, no. 3, pp. 1668–1676, Aug.
+2011.
+[138] J. B. Kwon, X. F. Wang, F. Blaabjerg, C. L. Bak, A. R. Wood, and
+N. R. Watson, “Harmonic instability analysis of a single-phase grid-
+connected converter using a harmonic state-space modeling method,”
+IEEE Transactions on Industry Applications, vol. 52, no. 5, pp. 4188–
+4200, Sept./Oct. 2016.
+[139] Y . J. Gu, N. Bottrell, and T. C. Green, “Reduced-order models for
+representing converters in power system studies,” IEEE Transactions
+on Power Electronics, vol. 33, no. 4, pp. 3644–3654, Apr. 2018.
+===== PAGE 20 =====
+XIONG et al.: MODELING AND STABILITY ISSUES OF VOLTAGE-SOURCE CONVERTER-DOMINATED POWER SYSTEMS: A REVIEW 1549
+Liansong Xiong received the B.S., M.S., and Ph.D.
+degrees in Electrical Engineering from Xi’an Jiao-
+tong University (XJTU), Xi’an, China, in 2009,
+2012, and 2016, respectively. Since 2014, he has
+been with the School of E-learning, XJTU, as a
+part-time Faculty Member. In 2016, he joined the
+School of Automation, Nanjing Institute of Tech-
+nology (NJIT), Nanjing, China, introduced in High-
+Level Academic Talent Plan of NJIT. From 2017
+to 2019, he joined the Department of Electrical
+Engineering, The Hong Kong Polytechnic University
+(PolyU), Hong Kong, China, as a Research Associate. He is currently an
+Associate Professor with the School of Electrical Engineering, XJTU, China.
+He is the first author of 16 articles indexed by SCI and more than 20
+articles indexed by Ei. His current research interests include power quality,
+multilevel converter, renewable energy generation, and power system stability.
+He is a Senior Member of IEEE and the China Electrotechnical Society,
+and a Member of the China Power Supply Society (CPSS) and the China
+Society for Electrical Engineering. He has served as the Guest Associate
+Editor for the Frontiers in Energy Research, the Program Co-Chair of the 3rd
+Asia Energy and Electrical Engineering Symposium (AEEES 2021), and the
+Technical Program Committee Member of IEEE Workshop on Wide Bandgap
+Power Devices and Applications in Asia (WiPDA-Asia 2018). He received
+the Best Conference Paper Award once in the international conference and
+the Excellent Paper Award seven times in domestic conferences. He was
+honored with the Outstanding Graduates of XJTU in 2015, the First Prize
+of CPSS Scientific and Technological Progress Award in 2021, the ICPES
+Young Scientist Award in 2020, the Best Paper Award of Shaanxi Province in
+2020, and the Excellent Doctoral Dissertation of XJTU and Shaanxi Province
+in 2018.
+Xiaokang Liu received the Double M.Sc. degrees in
+Electrical Engineering from Xi’an Jiaotong Univer-
+sity, Xi’an, China, and Politecnico di Milano, Milan,
+Italy, in 2016, and the Ph.D. degree (summa cum
+laude) in electrical engineering from Politecnico di
+Milano, in 2021.
+He is currently an Assistant Professor with the
+Department of Electronics, Information, and Bio-
+engineering, Politecnico di Milano. His research in-
+terests include electromagnetic compatibility, power
+electronics, and signal integrity.
+Dr. Liu was a recipient of the International Union of Radio Science
+Young Scientist Award, in 2021, and the 2021 Richard B. Schulz Best EMC
+Transactions Paper Award.
+Y onghui Liu received the B.S. degree in Electrical
+Engineering from Harbin Institute of Technology,
+Harbin, China, in 2013 and the M.S. degree in Elec-
+trical Engineering from Xi’an Jiaotong University,
+Xi’an, China, in 2016. She is currently working
+toward the Ph.D. degree in Electrical Engineering
+in Xi’an Jiaotong University, Xi’an, China. Her re-
+search interests include modeling and control of con-
+verters, renewable energy integration, VSC-HVDC
+and wireless power transfer.
+Fang Zhuo received the B.S. degree in Automatic
+Control, and the M.S. and Ph.D. degrees in Au-
+tomation and Electrical Engineering, from Xi’an Jiao
+Tong University (XJTU), Xi’an, China, in 1984,
+1989, and 2001, respectively. He was an associate
+professor at XJTU in 1996, and a full professor
+in power electronics and drives in 2004. Then,
+he worked as a supervisor of Ph.D. students. His
+research interests include power electronics, power
+quality, active power filter, reactive power compensa-
+tion, and inverters for distributed power generation.
+He received four provincial- and ministerial-level science and technology
+advancement awards. Moreover, he owns four patents. He is a Member of
+the China Electro Technical Society, Automation Society, and Power Supply
+Society. He is also the Power Quality Professional Chairman of the Power
+Supply Society in China.

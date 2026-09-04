@@ -1,0 +1,11 @@
+# T2 inputs -- mirrors the constants in experiments/t02_soc.py
+droop_r_pu: 0.05
+f_nom_hz: 60.0
+x_int_pu: 0.1
+soc_min: 0.1
+soc_taper: 0.2
+hold_times_h: [0.0833, 0.2500, 0.5000]
+dp_grid_mw: [0.5, 1.0, 2.0, 3.0, 5.0, 8.0]
+soc_grid: [0.1, ..., 1.0] step 0.025
+gfm_deployment: 6gfm
+topology: G0

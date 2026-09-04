@@ -1,0 +1,16 @@
+field,value
+n_topologies,24
+n_gain_vertices,4
+n_matrices_total,96
+solver,CVXPY/SCS
+lmi_strict_margin_eps,0.001
+frozen_min_stability_margin_primary,7.295e-06
+frozen_min_stability_margin_augmented,1.075e-05
+commonP_primary_feasible,False
+commonP_augmented_feasible,False
+gain_box_per_topology_feasible_primary,0/24
+decay_rate_eta_per_s,0.2828
+mu_inter_mode_conditioning,1.686e+10
+required_dwell_time_s,41.63
+realized_min_dwell_time_s,300
+saturation_delay_in_model,NO (AGC anti-windup clip + 1-step delay excluded; linear regime only)

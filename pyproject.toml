@@ -1,0 +1,51 @@
+[project]
+name = "vpp-microgrid"
+version = "0.1.0"
+description = "Frequency-security validity limits of reduced models in 100% IBR islanded microgrids"
+readme = "README.md"
+requires-python = ">=3.13"
+
+# Versions pinned to what the pre-2026-09-02 environment actually ran, so results
+# stay reproducible; pandapower is hard-pinned because IEEE123bus.py is written
+# against its 3.4 API.
+dependencies = [
+    "pandapower==3.4.0",
+    "matpowercaseframes>=2.0.3",
+    "numpy>=2.3",
+    "scipy>=1.16",
+    "pandas>=2.3",
+    "networkx>=3.6",
+    "matplotlib>=3.10",
+    "xlrd>=2.0.2",          # feeder123 .xls parsing
+    "pyyaml>=6.0",
+    "tqdm>=4.67",
+    "cvxpy>=1.8",           # src/opt/l0_reconfig.py
+    "pyomo>=6.10",          # src/layer0_dso/reconfiguration.py
+    "sympy>=1.14",
+    "andes>=2.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.408",
+    "pytest>=9.0",
+]
+
+# Only needed to run anything under archive/ (the cut MAPPO branch). Kept out of
+# the default install: torch+cu128 alone is several GB and nothing on the active
+# path imports it. Restore with:  uv sync --group mappo
+mappo = [
+    "torch>=2.11",
+    "gymnasium>=1.2",
+    "stable-baselines3>=2.7",
+]
+
+# The repo is a flat layout (`src/`, `experiments/`, `tests/` as plain directories,
+# no __init__.py at the top and no build backend), so nothing puts the root on
+# sys.path. The pre-2026-09-02 environment got it from a stale `pip install -e .`
+# whose egg-link did not survive the venv rebuild -- `import src...` then failed at
+# collection for every test. Declaring it here is the fix that does not depend on
+# an install having happened.
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

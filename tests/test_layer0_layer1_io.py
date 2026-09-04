@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src.env.IEEE123bus import build_ieee123_net
@@ -95,7 +96,72 @@ def test_layer1_vpp_mode_dual_output(tmp_path: Path) -> None:
     long_df = pd.read_csv(out_path)
     legacy_df = pd.read_csv(out_legacy)
 
-    assert {"day", "hour", "zone_id", "vpp_id", "vpp_bus_count", "P_ref", "R_commit"}.issubset(long_df.columns)
+    assert {"day", "hour", "zone_id", "vpp_id", "vpp_bus_count", "P_ref", "R_commit", "Q_ref", "lambda_q_expected"}.issubset(long_df.columns)
     assert set(long_df["vpp_id"].unique()) == {"vpp_1a", "vpp_1b", "vpp_2a"}
     assert long_df["vpp_bus_count"].ge(0).all()
+
+    zone1_a = long_df[long_df["vpp_id"] == "vpp_1a"].sort_values("hour")
+    zone1_b = long_df[long_df["vpp_id"] == "vpp_1b"].sort_values("hour")
+    assert np.allclose(zone1_a["P_ref"].to_numpy(dtype=float), zone1_b["P_ref"].to_numpy(dtype=float))
+    assert np.allclose(zone1_a["R_commit"].to_numpy(dtype=float), zone1_b["R_commit"].to_numpy(dtype=float))
+    assert np.allclose(zone1_a["Q_ref"].to_numpy(dtype=float), zone1_b["Q_ref"].to_numpy(dtype=float))
+
+    total_from_long = long_df.groupby("hour", as_index=False)[["P_ref", "R_commit"]].sum().sort_values("hour")
+    total_from_legacy = legacy_df.sort_values("hour")
+    assert np.allclose(total_from_long["P_ref"].to_numpy(dtype=float), total_from_legacy["P_ref"].to_numpy(dtype=float))
+    assert np.allclose(total_from_long["R_commit"].to_numpy(dtype=float), total_from_legacy["R_commit"].to_numpy(dtype=float))
+
     assert {"hour", "P_ref", "R_commit"}.issubset(legacy_df.columns)
+
+
+def test_layer1_vpp_mode_bus_weighted_split(tmp_path: Path) -> None:
+    layer0_csv = tmp_path / "layer0_zone_prices.csv"
+    rows = []
+    for day in ["offpeak", "median", "peak"]:
+        for hour in range(4):
+            rows.append({"day": day, "hour": hour, "zone_id": "1", "energy_price": 30.0 + hour, "reserve_price": 2.0})
+    pd.DataFrame(rows).to_csv(layer0_csv, index=False)
+
+    vpp_to_zone_csv = tmp_path / "vpp_to_zone.csv"
+    pd.DataFrame({"vpp_id": ["vpp_small", "vpp_large"], "zone_id": ["1", "1"]}).to_csv(vpp_to_zone_csv, index=False)
+
+    bus_to_vpp_csv = tmp_path / "bus_to_vpp.csv"
+    pd.DataFrame(
+        {
+            "bus": [1, 2, 3, 4],
+            "vpp_id": ["vpp_small", "vpp_large", "vpp_large", "vpp_large"],
+        }
+    ).to_csv(bus_to_vpp_csv, index=False)
+
+    out_long = tmp_path / "layer1_vpp_long.csv"
+    cfg = Layer1Config(
+        input_csv=layer0_csv,
+        output_csv=out_long,
+        weights={"offpeak": 0.5, "median": 0.3, "peak": 0.2},
+        sign="inject",
+        wasserstein_radius=0.02,
+        degradation_cost=1.0,
+        vpp_mode=True,
+        mapping_vpp_to_zone_csv=vpp_to_zone_csv,
+        mapping_bus_to_vpp_csv=bus_to_vpp_csv,
+    )
+    run_layer1(cfg)
+
+    long_df = pd.read_csv(out_long)
+    small = long_df[long_df["vpp_id"] == "vpp_small"].sort_values("hour")
+    large = long_df[long_df["vpp_id"] == "vpp_large"].sort_values("hour")
+
+    ratio_p = np.divide(large["P_ref"].to_numpy(dtype=float), np.maximum(np.abs(small["P_ref"].to_numpy(dtype=float)), 1e-9))
+    ratio_r = np.divide(large["R_commit"].to_numpy(dtype=float), np.maximum(np.abs(small["R_commit"].to_numpy(dtype=float)), 1e-9))
+    ratio_q = np.divide(large["Q_ref"].to_numpy(dtype=float), np.maximum(np.abs(small["Q_ref"].to_numpy(dtype=float)), 1e-9))
+
+    nz_p = np.abs(small["P_ref"].to_numpy(dtype=float)) > 1e-6
+    nz_r = np.abs(small["R_commit"].to_numpy(dtype=float)) > 1e-6
+    nz_q = np.abs(small["Q_ref"].to_numpy(dtype=float)) > 1e-6
+
+    if nz_p.any():
+        assert np.allclose(ratio_p[nz_p], 3.0, atol=1e-6)
+    if nz_r.any():
+        assert np.allclose(ratio_r[nz_r], 3.0, atol=1e-6)
+    if nz_q.any():
+        assert np.allclose(ratio_q[nz_q], 3.0, atol=1e-6)

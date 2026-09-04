@@ -30,20 +30,20 @@ def test_matpower_publish_counts_baseline() -> None:
     net = _build_matpower_publish_net(convert_switches=True)
 
     assert len(net.bus) == 123
-    assert len(net.line) == 114
-    assert len(net.load) == 87
-    assert len(net.sgen) == 31
+    assert len(net.line) == 118
+    assert len(net.load) == 85
+    assert len(net.sgen) == 28
     assert len(net.switch) == 5
-    assert len(net.ext_grid) == 1
+    assert len(net.ext_grid) == 5
 
 
 def test_publish_mode_slack_bus_is_114() -> None:
     net = _build_matpower_publish_net(convert_switches=True)
 
-    assert len(net.ext_grid) == 1
-    slack_bus_idx = int(net.ext_grid.iloc[0]["bus"])
-    slack_bus_name = str(net.bus.at[slack_bus_idx, "name"])
-    assert slack_bus_name == "114"
+    assert len(net.ext_grid) == 5
+    slack_bus_names = {str(net.bus.at[int(row["bus"]), "name"]) for _, row in net.ext_grid.iterrows()}
+    assert "114" in slack_bus_names
+    assert slack_bus_names == {"114", "60", "67", "36", "101"}
 
 
 def test_near_zero_branches_present_when_not_converted() -> None:

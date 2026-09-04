@@ -1,0 +1,24 @@
+vpp_1:
+  bess_mw: 3.5
+  bess_mwh: 7.0
+  v2g_mw: 6.0
+  pv_mw: 1.8
+  S_agg: 7.01
+  bess_eta: 0.95
+  deg_cost: 0.02
+vpp_2:
+  bess_mw: 3.5
+  bess_mwh: 7.0
+  v2g_mw: 6.0
+  pv_mw: 1.8
+  S_agg: 7.01
+  bess_eta: 0.95
+  deg_cost: 0.02
+vpp_3:
+  bess_mw: 2.019
+  bess_mwh: 4.038
+  v2g_mw: 2.076
+  pv_mw: 1.8
+  S_agg: 5.17
+  bess_eta: 0.95
+  deg_cost: 0.02

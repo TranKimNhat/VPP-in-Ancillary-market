@@ -1,0 +1,1271 @@
+
+===== PAGE 1 =====
+3456 IEEE SYSTEMS JOURNAL, VOL. 17, NO. 3, SEPTEMBER 2023
+Interactive Power to Frequency Dynamics Between
+Grid-Forming Inverters and Synchronous Generators
+in Power Electronics-Dominated Power Systems
+Rick Wallace Kenyon , Member , IEEE, Amirhossein Sajadi , Senior Member , IEEE,
+Matt Bossart , Student Member , IEEE, Anderson Hoke , Senior Member , IEEE,
+and Bri-Mathias Hodge , Senior Member , IEEE
+Abstract—With increased attention on grid-forming inverters as
+a power system stabilizing device during high shares of inverter-
+based resource operations, there is a present need for a transparent
+and methodical investigation of the inverted and direct power
+to frequency control capabilities and impacts of these devices on
+emerging power systems. Here, analysis of the frequency dynamics
+of the droop-controlled grid-forming inverter and the synchronous
+generator illuminates the inverted active power-frequency rela-
+tionship and the frequency response order reduction, forming the
+basis for novel, nonlinear frequency control approaches. Device-
+level electromagnetic transient domain simulations corroborate the
+order-reduction ﬁndings, establish that a properly designed dc-side
+system has a negligible impact on power transfer and will not
+impede frequency regulation, and conﬁrm the primary frequency
+response improvement with nonlinear control. Simulations of the 9-
+and 39-bus test systems validate the order reduction and associated
+decoupling of the nadir and rate of change of frequency in larger
+networks. Oscillatory mode analysis conﬁrms the grid-forming
+beneﬁt of increased damping; decreased damping is observed at
+shares above 80%, but not at 100%. Finally, simulations on a
+validated Maui power system model with a 96% of inverter-based
+resources model yield a trend toward a ﬁrst-order response.
+Index Terms —Frequency response, nonlinear control, oscil-
+latory modes, synchronous generators (SGs), grid-forming
+inverters.
+I. I NTRODUCTION
+T
+HE integration of renewable energy resources into power
+systems is primarily accomplished with power electronic
+inverters [i.e., inverter-based resources (IBRs)], the majority
+of which have hitherto employed grid-following (GFL) control
+strategies that rely on an established voltage and frequency at the
+point of interconnection to be explicitly tracked with a phase-
+locked loop (PLL) for operation [1]. It is well documented that
+instability can occur for high penetrations of GFL inverters [2],
+[3]; operating with 100% GFL inverters is infeasible. As a result,
+Manuscript received 9 May 2022; revised 17 November 2022 and 31 January
+2023; accepted 3 March 2023. Date of publication 4 April 2023; date of current
+version 30 August 2023. (Corresponding author: Bri-Mathias Hodge.)
+The authors are with the University of Colorado Boulder, Boulder,
+CO 80309-0401 USA, the Renewable and Sustainable Energy Institute,
+and also with the National Renewable Energy Laboratory, Golden, CO
+80401 USA (e-mail: rike4641@colorado.edu; Amir.Sajadi@colorado.edu;
+matthew.bossart@colorado.edu; andy.hoke@nrel.gov; BriMathias.Hodge@
+colorado.edu).
+Digital Object Identiﬁer 10.1109/JSYST.2023.3257284
+attention has shifted to grid-forming (GFM) control, where the
+IBR establishes a local voltage phasor with synchronization
+objectives [4], such as frequency droop [5], and the output
+frequency of the device is a direct controller action related to
+delivered active power; a similar relationship is often established
+for voltage and reactive power[6]. The focus of this article is the
+interaction of these GFM devices with synchronous generators
+(SGs) that have an immediate inertial response to active power
+differentials dictated by physics, as opposed to control design,
+followed by the slower governor response that manages the
+power transfer.
+High shares of IBRs introduce a broad set of challenges to
+power systems that have been highlighted in the contemporary
+literature [1], [7], [8]; however, the focus of this work is restricted
+to the problem of frequency stability. Recent publications on the
+challenges of frequency stability in low inertia power systems
+have pointed toward the potential of GFM inverters to mitigate
+these stability challenges [9], [10], [11], [12], [13], [14], [15],
+[16]. The authors of [9], [10], [11] have extensively studied the
+small-signal stability of power systems with integrated GFMs
+by developing high-ﬁdelity differential-algebraic models; fre-
+quently, nonzero, minimum SG quantities are declared nec-
+essary to preserve system stability, while the opportunity for
+novel frequency regulation with GFMs is often neglected. The
+feasibility of operating bulk power systems with 100% GFM-
+based generation has been demonstrated computationally in the
+electro-magnetic transient (EMT) [12], [16], and phasor [13],
+domains, which encourages these devices as a solution to the
+aforementioned 100% GFL infeasibility. Tayyebi et al. [12]
+investigated the dynamic interactions between GFMs and SGs,
+but restricted the approach to GFMs augmenting the SG-driven
+inertial frequency response. Some studies have begun to identify
+the dampinglike contribution of droop controlled GFM inverters
+to frequency dynamics [4], [12], [13], [14], but once again these
+view GFM impacts in the context of SG-dominated frequency
+dynamics.
+This review of the literature suggests that GFMs are pri-
+marily viewed through the lens of SG-driven frequency dy-
+namics, and that there is a present need for an in-depth, side
+by side investigation of the power to frequency dynamics of
+these two devices. This article aims to address this deﬁcit with
+a fundamental discussion on the inverted operation of GFM
+inverters (i.e., frequency is calculated and established based
+on a controller-speciﬁed active power delivery relationship), as
+compared to the reactive primary frequency control of SGs. To
+1937-9234 © 2023 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 2 =====
+KENYON et al.: INTERACTIVE POWER TO FREQUENCY DYNAMICS BETWEEN GRID-FORMING INVERTERS 3457
+Fig. 1. Research methodology employed, with analysis and simulation indi-
+cated.
+this end, the foundational active power transfer dynamics of
+GFMs and SGs are analyzed to establish the inverted operation
+and order reduction, which leads to the presentation of novel
+nonlinear frequency control. With the analysis predicated on
+inverter energy conversion on the order of ac-side delivery, the
+dc-side dynamics are studied with device level EMT simulations
+that additionally corroborate the inverted operation and reduced
+order frequency dynamics. Furthermore, simulations on large
+test networks, and on a validated model of the Maui island of
+Hawaii power system, corroborate these order reductions and
+uncover an unusual oscillatory phenomenon at very low inertia
+levels. The trajectory of this research is presented in in Fig. 1,
+which shows the general methodology applied and the natural
+progression of the document.
+The three primary contributions of this work as follows.
+1) Contribution 1: Mathematical analysis of the power to
+frequency dynamics of the SG and GFM devices estab-
+lishes the inverted active power relationship and order
+reduction, which supports the presentation of a set of novel
+nonlinear frequency droop concepts for GFM devices (see
+Section II).
+2) Contribution 2: It is shown with device-level EMT simu-
+lations of full order models of the dc- and ac-side systems
+(Section III) that a properly designed dc-side subsystem
+has a negligible impact on the active power transfer of
+GFM devices and will not impede frequency regulation
+(see Section IV -A3).
+3) Contribution 3: EMT simulations at the device level
+conﬁrm the analytic conclusions of contribution 1 (see
+Section IV -A), while simulations at the network level with
+the IEEE 9- and 39-bus test systems (see Section IV -B)
+demonstrate the decoupling of the nadir and rate of change
+of frequency with GFM devices. This is a departure from
+the traditional understanding of frequency dynamics [17],
+[18], as a result of the network-wide transition toward
+ﬁrst-order dynamics. Simulations on a validated model
+of the Maui power system demonstrate the trajectory to
+a ﬁrst-order response in a real-world power system with
+96% share of IBRs (see Section V).
+The work contained in this document highlights the authors’
+view that the presence of IBRs with creative controller applica-
+tion can redeﬁne the foundations of frequency dynamics in future
+power systems. The remainder of the document now proceeds
+as laid out in the research methodology from Fig. 1.
+II. D EVICE POWER TO FREQUENCY DYNAMICS AND ANAL YSIS
+Each generation device, i.e., converter, converts a precon-
+verter active power (pm), such as electrochemical energy from
+a battery for the GFM, or mechanical energy primed by steam,
+water, or combustion gases for the SG, into ac electrical energy
+(pe); from here on this is referred to as theactive power through-
+put process. Suppose pm and pe relate for each device, where
+the second subscript (either G or I ) indicates the applicable
+device (i.e., G → SG, and I → GFM ). Each type of converter
+stores a quantity of energy, either as kinetic energy for the SG,
+Eint,G = 1
+2Iω2
+mech, with I and ωbeing the moment of inertia
+and shaft rotational velocity, respectively, or within the GFM
+primarily as electrical capacitive storage, Eint,I = 1
+2CDCV 2
+DC ,
+withCDC andVDC being the dc link capacitance and capacitor
+voltage, respectively. Generally, Eint,G >> Eint,I [19].N o t e
+that in a lossless system, conservation of energy requires that
+˙E ̸=0 ifpm ̸= pe.1
+A. Grid F orming Inverter
+A variety of GFM control strategies have been presented in
+the literature, such as droop [5], multiloop droop [14], virtual
+synchronous machine [20], virtual oscillator control [21], and
+matching control [22]. Generally, they all achieve a similar
+objective with the construction of a voltage and frequency at
+the point of interconnection with dynamics associated via a
+power export relationship. Here, the device of focus is the
+multiloop droop control GFM (henceforth, GFM now explicitly
+means this droop control). The virtual synchronous machine
+establishes higher order dynamics equitable to SGs by design;
+it is not investigated because the interest is the contrast of varied
+frequency responses. The others generally emulate droop control
+outside of transients.
+Preconverter power (pm,I ) is supplied to the converter via a
+dc voltage source in the form of electrical or electrochemical
+energy. A critical assumption in this study is the availability
+of energy and power via a battery energy storage system. 2 The
+limited power availability condition is outside the scope of this
+work; however, GFM backed battery energy storage systems
+dispatched with available headroom are a likely future operating
+condition. Electrical active power ( pe,I ) is fed to the electrical
+network, with the power to frequency dynamics being directly
+controlled as the following:
+˙δI = ωset +Mp(pset −pm,I) (1)
+whereδI is the GFM phase angle, ωn is the frequency set point
+(e.g., 60 Hz in North America),Mp is the frequency droop value,
+andpset is the initial active power set point.
+The distinction between GFM preconverter power (pm,I ) and
+electrical power (pe,I ) is made to create the comparison analogy;
+physically, these values are differentiated by a low-pass ﬁlter
+(LPF) in this particular GFM control design. The assumption that
+pm,I is readily available within the LPF risetime is shown valid
+with an appropriately designed dc-side system in Section IV -A3
+with EMT simulations. The LPF dynamical relation between
+pm,I andpe,I is as follows:
+˙pm,I = 2π(pe,I −pm,I)
+τI
+(2)
+1dot notation indicates time derivative; ˙x = d
+dt x.
+2Other sources of dispatchable power exist for the GFM, such as curtailed
+photovoltaic output.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 3 =====
+3458 IEEE SYSTEMS JOURNAL, VOL. 17, NO. 3, SEPTEMBER 2023
+whereτI is the ﬁlter time constant. The work in [9] found a limit
+of 5ωI,fil >ωn, which indicates that ωI,fil should be greater
+than 75 rd/s in a 60 Hz system, and therefore τI ≤0.08 s.
+B. Synchronous Generator
+In modeling the SG, three distinct components are
+considered—the machine, the exciter, and the governor/turbine.
+Here, the converter is understood to be the set of all three
+elements combined. In this section, only the machine and gover-
+nor/turbine dynamics are investigated. The rotational mechanics
+of the SG are dictated by the swing equation, as shown in the
+following, with the damping component withheld for simplicity:
+˙δG = ωG −ωs (3)
+˙ωG = 1
+M (pm,G −pe,G) (4)
+whereδG is the SG phase angle, ωG is the SG rotor speed, ωs is
+the synchronous speed (equivalent toω0 for a two pole machine),
+M = 2H
+ωs
+withH the inertia time constant of the machine,pm,G
+is the preconverter mechanical power supplied by the turbine
+primed by gas, hydro, or steam, and pe,G is the electrical power
+delivered to the grid.
+The dynamics of pm,G are dictated by the governor, with a
+multitude of various implementations in contemporary practice.
+However, these dynamics can be broadly described by a dom-
+inant ﬁrst-order ﬁlter element, as expressed in the following:
+˙pm,G = RD
+−1 (ωo −ωG)−(pm,G −pm,G,o)
+τG
+(5)
+where RD is the droop setting of the device (including a factor
+of2π),pm,G,o is the preconverter power set point, and τG is the
+governor response time. The value of τG can vary substantially
+depending on type and model, but is generally not less than
+0.5 s [19].
+C. Device Comparison With Order Reduction
+The active power throughput processes of the GFM (with
+variables of interest pm,I , ωI , and pm,I ) and SG ( pm,G, ωG,
+and pe,G) are fundamentally different and these disparate pro-
+cesses heavily inﬂuence the frequency response characteristics
+of the respective devices. In this section, these relationships are
+analyzed and contrasted.
+By the control design in (2), pm,I has a ﬁrst-order relation
+to pe,I ; i.e., pm,I evolves based only on deviations in pe,I .F o l -
+lowing,δI evolves according to (1). Therefore, GFM frequency
+is a function of the preconverter power; the device meets the
+increase in power demand (pe,I ), and then adjusts the frequency
+according to the droop relation (recall the assumption of suf-
+ﬁcient head room). A GFM does not require local frequency
+deviations in order for pm,I to evolve. With the SG, pm,G is
+af u n c t i o no fωG (5), a relation that is the inverse of the GFM
+pm,I –ωI relationship. That is, the governor of the SG modulates
+pm,G as a function of ωG, as opposed to the GFM where
+ωI is changed only after pm,I is matched to the deﬁcit. With
+droop control, the GFM frequency is changed to accomplish
+power sharing and synchronization in a fashion similar to the
+Newtonian action of the SG and subsequent governor action; but,
+the underlying active power throughput power process yields an
+inverted relationship between frequency and power differentials
+as compared to the SG. Simply, it can be said that with respect
+to frequency, whereas the SG is a reactive device, the GFM is a
+proactive device.
+A further note can be made regarding thepm–pe relation order
+of the two devices. With the SG active power throughput process,
+(4) is substituted within the derivative of (5) to produce
+¨pm,G = −RD
+−1 ˙ωG −˙pm,G
+τG
+(6)
+= −(RDM)−1 (pm,G −pe,G)−˙pm,G
+τG
+(7)
+which exhibits that pm,G has a second-order relation to pe,G,
+contrasting with the ﬁrst-order dynamics relating pm,I andpe,I
+of the GFM.
+Now, the singular perturbation theory mathematical tech-
+nique [23], which separates varying timescale dynamical sys-
+tems, is applied to the active power-frequency dynamics analysis
+of the GFM and SG to discern the respective relationships be-
+tweenpm andω. Note that both(2) and (5), the power conversion
+dynamical equations for the GFM and SG, respectively, are
+ﬁrst-order differential equations, with time constants τI and
+τG, respectively. There is, in general, an order of magnitude
+of separation between these values; i.e., τI << τG. Therefore,
+where the time scale of interest is the settling of frequency
+dynamics associated with the SG, using the foundations of sin-
+gular perturbation analysis, the follow relation can be established
+˙pm,I ≈0; thus, according to (2),pm,I ≈pe,I .
+Due to the relatively slower response of the SG governor,
+immediately following a disturbance the difference between
+pm,G,o and pm,G is negligible; i.e., pm,G,o ≈pm,G. Applying
+these approximations, the frequency dynamics relevant before
+substantial SG governor action of the GFM (1) and SG (3)
+and (4) can be reformulated. The approximated GFM frequency
+dynamics are given in the following:
+˙δI = MP(pm,I,o −pe,I)
+∝−pe,I (8)
+where ∝ is the proportional operator. The approximated SG
+frequency dynamics are given in the following:
+˙δG = ωG −ωo (9)
+˙ωG = 1
+M (pm,G,o −pe,G)
+∝−pe,G. (10)
+From (8), it can be concluded that ωI is proportional to pe,I ;
+therefore, considering the ﬁrst-order relation ofpe,I andpm,I in
+(2), GFM frequency has a ﬁrst-order relation with preconverter
+power, ˙δI ∝pm,I .F r o m(9) and (10), with respect to pe,G the
+frequency dynamics of the SG follow a ﬁrst-order response.
+Noting the second-order relation between pe,G andpm,G in (6),
+it is concluded that the frequency dynamics of the SG have at
+least a third-order relation with respect to preconverter power
+within this approximating time frame.
+It is highlighted that the droop gain ( RD ) parameter for the
+SG is in the denominator with respect to preconverter power(6).
+Therefore, the value of ofRD cannot be zero, while for stability
+purposes it cannot be near zero due to the resultant rapidity of
+pm,G. Note, RD is typically held constant (e.g., 5% in North
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 4 =====
+KENYON et al.: INTERACTIVE POWER TO FREQUENCY DYNAMICS BETWEEN GRID-FORMING INVERTERS 3459
+TABLE I
+NONLINEAR FUNCTIONS;W ITH PARAMETER VALUES
+America) for all frequency responsive devices on a system, for
+equitable power sharing purposes. For the case of the droop value
+Mp of the GFM, there is no mathematical limit for the value; the
+smaller the value the slower the resultant frequency dynamics,
+i.e., the ROCOF, with a time differentiation of (8).
+D. Potential for Nonlinear Frequency Control
+Having fully established the inverted relation of active power
+and frequency of the GFM and determined the timescale reduc-
+tion of the GFM dynamics, the presentation of potential nonlin-
+ear frequency responses for GFM inverters is made. Note that in
+all of these relations, the primary droop elements are maintained,
+namely a decrease in frequency for an increase in load, which is
+necessary to maintain synchronicity in ac systems [4]. Consider
+the basic frequency-active power equation, which is the general
+form of (1)
+˙δI = ωset −f(pm,I) (11)
+where f(pm,I) is the frequency response function of pm,I .I n
+the standard droop formulation, f(pm,I) is a linear function,
+Mp ×pm,I , where Mp is the droop value (the initial active
+power set point correction is omitted for clarity). The potential of
+three other functions is investigated; a quadratic, an exponential
+(initially presented by the authors in [24]), and a power law. The
+equations are presented in Table I, with the chosen constants for
+this study provided.
+Fig. 6 shows the frequency control output for(11), for the four
+different functions listed in Table I. The under frequency load
+shed (UFLS) potential region is presented for exemplary pur-
+poses only; the frequency value of UFLS will vary from system
+to system. For a GFM dispatched at 0.1 per unit, the traces show
+how the frequency output varies based on the delivered power.
+With the chosen parameters, each of the nonlinear functions
+will deliver more power with less deviation in frequency, with
+all three yielding at least 0.2 per unit more active power to
+the network prior to the UFLS region than the linear droop.
+The shallower initial tangential droop values indicated smaller
+ROCOFs. A potential issue with the Power function is the zero
+valued droop at zero power output; a zero valued droop gain
+has been shown to be unstable in [24].A s pm,I,set changes, the
+corresponding position on the nonlinear curve will change as
+well; pm,I,set deﬁnes where on the curve the 60 Hz crossing
+occurs.
+An obvious deviation in power sharing will occur with these
+nonlinear droop functions. This problem (secondary frequency
+response) has been solved in [24], where an autonomous power
+sharing controller was developed that brings the GFM active
+power output back to an equitable per unit value with other
+frequency responsive devices on the network. This autonomous
+controller permits the initial response of the GFM to be whatever
+the designer desires, while secondary control can achieve power
+Fig. 2. Nonlinear droop functions, compared with linear droop. The droop
+gain changes dynamically, as the GFM power pm,I changes.
+Fig. 3. Control scheme of multiloop droop grid-forming inverter—some in-
+terconnecting signals are not shown.
+sharing within seconds of the initial deviation. Here the focus
+is on the improved primary frequency response with nonlinear
+functions. These nonlinear functions are simulated in a small
+system consisting of a GFM and an SG in Section IV -A4.
+III. D ETAILED MAT H E M AT I C A LDESCRIPTION OF CONVERTERS
+FOR SIMULA TION
+The mathematical models representing the GFM and SG
+devices in the EMT simulations are presented.
+A. Grid F orming Inverters
+The control scheme of the GFM inverter is shown in Fig. 3.
+High frequency pulse width modulation and switching is not
+modeled, with averaged voltage signals being provided to ideal
+voltage sources as a standard power electronics approxima-
+tion [25]. In this control, anLC output ﬁlter meets with a coupling
+inductor to create the LCL topology shown in Fig. 3.T h e
+ﬁlter inductor current ( if ) and ﬁlter capacitor voltage ( vo)a r e
+regulated by proportional-integral (PI) controllers operated in
+the direct-quadrature (dq) synchronous reference frame. That is,
+¯xdq = Tdq¯xabc, where ¯xabc is a 3-D column vector representing
+the sinusoidal three phase waveforms, ¯xdq is a two dimensional
+column vector representing the nonsinusoidal d- and q-axes
+waveforms, andTdq is the 2× 3 Park transformation matrix[26].
+The instantaneous active (pe,I ) and reactive (qe,I )p o w e r si n
+the dq frame are calculated as pe,I = ℜ(vdq
+g ,idq,∗
+o )3 and qe,I =
+ℑ(vdq
+g ,idq,∗
+o ), where vdq
+g and idq
+o are the dq frame grid voltages
+and coupling ﬁlter currents, respectively, represented in the
+complex domain (i.e., α+jβ). The instantaneous powers pe,I
+andqe,I are passed through an LPF with cutoff frequencyωI,fil ,
+3∗denotes the complex conjugate.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 5 =====
+3460 IEEE SYSTEMS JOURNAL, VOL. 17, NO. 3, SEPTEMBER 2023
+as shown in (12) (reformulated from (2), whereωI,fil =2 π/τI )
+and (13)
+˙pm,I = ωI,fil (pe,I −pm,I) (12)
+˙qm,I = ωI,fil (qe,I −qm,I). (13)
+The currents across the ﬁlter resistor (Rf ) and inductor (Lf ),
+idq
+f are regulated with proportional integral (PI) controllers
+(depicted by the current controller block in Fig. 3)
+˙γdq = idq
+f −idq
+f,∗ (14)
+vdq
+i,∗= ki
+Cγdq +kp
+C ˙γdq −jωILfidq
+f +GCvdq
+o (15)
+where γdq are integrator error states (not mapped in the imagi-
+nary plane), ki
+C and kp
+C are the integral and proportional gains,
+respectively,ωI is the radian frequency from the droop relation
+and GC is the voltage feed forward gain. The controller gains
+are tuned to cancel the inductor pole. The response time of the
+inner current loop is on the order of 1 ms. The capacitor ( Cf )
+voltage is also regulated with a PI controller, as depicted by the
+following (depicted by the voltage controller block in Fig. 3):
+˙ξdq = vdq
+o −vdq
+o,∗ (16)
+idq
+f,∗= ki
+V ξdq +kp
+V ˙ξdq −jωICfvdq
+o +GV idq
+o (17)
+where ξdq are the integrator error states (not mapped in the
+imaginary plane), ki
+V and kp
+V are the integral and proportional
+gains, respectively, andGV is the current feed forward gain. The
+response time of the voltage controller is on the order of 10 ms.
+The fundamental governing equations of the multiloop droop
+grid forming inverter are given by the previously discussed (1)
+and (18), which are represented in the power controller block in
+Fig. 3, with the voltage relation
+vq
+o,∗= vq
+o,set +Mq(qset −qm,I) (18)
+whereqset is the predisturbance power set points,pm,I andqm,I
+are as deﬁned in (12) and (13),vq
+o,∗is the set point for the voltage
+controller (vd
+o,∗=0 ), vq
+o,set is the predisturbance steady state
+voltage, and Mq is the voltage droop value.
+A zeroth-order model with a voltage source and resistor is
+used to represent the battery as shown the dc-side system panel of
+Fig. 3. Higher order battery models, with seriesRL/RC branches,
+have a negligible impact on the battery response[27]. The battery
+output voltage is therefore as follows:
+vBESS = vOC −iBESS RBESS (19)
+where vBESS is the output voltage, RBESS is the battery re-
+sistance, iBESS is the delivered current, and vOC is the battery
+characteristic open circuit voltage.
+The voltage,VBESS is passed to a boost converter to regulate
+the voltage, vDC across the capacitor CDC , which forms the
+voltage source for the inverter. The dc-side system block depicts
+the boost converter and battery control block diagram. The
+dynamical equations are
+˙χ= v∗
+DC −vDC (20)
+iref = ki
+V,DCχ+kp
+V,DC ˙χ (21)
+˙η= iref −iin (22)
+u = ki
+i,DCη+kp
+i,DC ˙η (23)
+whereχ,ki
+V,DC , andkp
+V,DC are the integrator state, integral gain,
+and proportional gain of the dc voltage controller, respectively.
+iref is limited to ||iref|| ≤irate . η, ki
+i,DC , and ki
+i,DC are the
+integrator state, integral gain, and proportional gain of the dc
+current controller, respectively. The output from the dc voltage
+controller, is limited to a range of values between [0.05, 0.90].
+The inverter operation is impeded by the dc side dynamics when
+the 2-norm of the commanded voltages (||vdq
+i,∗||2) exceeds vDC ,
+indicating saturation. This is modeled by scaling vdq
+i,∗based on
+the minimum function between the 2-norm of vdq
+i,∗and vDC ,a s
+in (24) [27]
+vdq
+i,sat =
+(
+min{||vdq
+i,∗||2,vDC}
+||vdq
+i,∗||2
+)
+vdq
+i,∗ (24)
+||vdq
+i,∗||2 =
+√
+(vd
+i,∗)2 +(vq
+i,∗)2 (25)
+wherevdq
+i,sat is the implemented voltage command, and vd
+i,∗and
+vq
+i,∗are thed- andq-axes components of the voltage commands,
+respectively. Note thatvdq
+i,sat = vdq
+i,∗whenvDC exceeds||vdq
+i,∗||2.
+The dc–ac coupling variable is vdq
+i,sat, which is applied to the
+voltage sourcevi, shown in the voltage implementation panel of
+Fig. 3.
+B. Synchronous Generator
+The SG is a well documented device; see [19] and [28] for
+in-depth discussions. In the EMT modeling of the SG, all three
+distinct components are modeled: 1) the machine; 2) the exciter;
+and 3) the governor/turbine. The fundamental machine model is
+a set of differential current elements in the dq frame expressed
+as a function of ﬂux linkages and applied voltages [29].T h e
+machines in this study are established with two q-axis damper
+windings, consistent with the round-rotor implementation. The
+swing equation is depicted once again with damping for trans-
+parency
+˙δG = ωG −ωs (26)
+˙ωG = 1
+M
+(
+pm,G −pe,G −D˙δG
+)
+(27)
+whereD is the damper winding component.
+The exciter is based on the IEEE Type-1 model. The saturation
+function is an exponential of the form: SE(Efd)= γeϵEfd .
+No derivative gains or derivative feedback are modeled. The
+governor/turbine model used here is a simple representation that
+acts on speed (frequency) errors [19]. The model consists of two
+cascaded low-pass ﬁlters (τ= 0.5 s) and associated with output
+limiters.
+C. Simulation Statistics
+The system equivalent inertia ( H) is deﬁned based on the
+relative ratings of the devices as follows:
+H =
+∑n
+i=1(Hi ∗SR,i)∑n
+i=1 SR,i
+(28)
+whereHi is the inertia rating (in s)o fd e v i c ei,SR,i is the MV A
+rating of device i, and n is the number of devices. For a GFM,
+H =0 . Unless otherwise speciﬁed, the frequency of the system
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 6 =====
+KENYON et al.: INTERACTIVE POWER TO FREQUENCY DYNAMICS BETWEEN GRID-FORMING INVERTERS 3461
+Fig. 4. Frequency and power responses of isolated GFM and SG devices
+following a 0.1 pu load step. (a) Frequency response. (b) Power response.
+under inspection is the weighted frequency of all devices, which
+is calculated according to
+f(t)=
+∑n
+i=1(fi(t)∗SR,i)∑n
+i=1 SR,i
+(29)
+wherefi(t) is the frequency of devicei at timet. This weighted
+frequency is used to determine the ROCOF and nadir values.
+The ROCOF is deﬁned as
+˙f(t)= f(t+TR)−f(t)
+TR
+(30)
+where f is the frequency, and TR is the size, in seconds, of the
+sliding averaging window. A TR = 100 mswindow is used, in
+accordance with [30]. The nadir is deﬁned asmin{f(t)}, where
+t>t perturbation ; i.e., the lowest frequency post disturbance.
+The matrix pencil method [31] is used to calculate the frequency
+(ωk) and decay ( λk) of the modes of f(t). The damping factor
+of mode k isζk = λk√
+λ2
+k +ω2
+k
+.
+IV . NUMERICAL ANAL YSISRESULTS
+This section presents the results of numerical analysis with
+EMT simulations at the device- and network-level using power
+system computer aided design (PSCAD) [29]. The devices and
+networks are available open source at [32].
+A. Device-Level Dynamics
+The individual device step responses are presented followed
+by the direct interaction of the two devices as analyzed on a
+three-bus system, demonstrating the interrelated dynamics. The
+device-level analysis is concluded with an investigation into the
+impacts of the dc-side dynamical system, and simulations with
+the nonlinear frequency control functions.
+1) Device Step Response: To verify the analytical ﬁndings
+and conclusions of Section II, the frequency response of the SG
+and GFM following a load perturbation is simulated. For this
+analysis, each device is isolated, dispatched at 0.5 p.u. with a
+constant power load connected directly to the terminals.
+The frequency and power step response of each device for
+a 0.1 pu load step are presented in Fig. 4. The SG frequency
+trace in Fig. 4(a) shows the second-order negative step response
+following the load step with overshoot and subsequent damped
+oscillations that settle to the droop determined steady state. The
+GFM frequency trace follows a ﬁrst-order response; there is no
+overshoot and a far smaller response time as compared to the
+SG. This result is due in part to the faster response of the GFM,
+but primarily a dynamical system order reduction. A summary
+of the nadir, settling frequency, and ROCOF are presented in
+TABLE II
+SINGLE DEVICE STEP RESPONSE RESULTS
+TABLE III
+TWO GENERA TORSYSTEM RESULTS
+Table II. Note the inverse proportionality between inertia and
+ROCOF and the correlation between a lower nadir and reduced
+inertia for SGs, contrasted with the larger ROCOF of the GFM
+device, but a resultant higher nadir.
+Thepe andpm responses of each device are presented in Fig.
+4(b). Note that the pe response is identical for each device; the
+electrical power is primarily determined by network changes
+with the output voltage held nearly constant. The ﬁrst-order
+relation of pm,I and pe,G is evident in the GFM traces, which
+manifest at a faster rate than the higher order SG response, cor-
+roborating the timescale separation criteria for the singular per-
+turbation application. Thepm,G follows a second-order response
+complete with overshoot, oscillations, initial acceleration, and
+inﬂection change.
+2) Two-Generator System: A simple two generator radial test
+system was constructed with only a single GFM (bus 1) and a
+single SG (bus 3) at two ends and a single load (bus 2) in the
+middle, connected by equal impedance lines ( XT =0 .025+
+j0.125). A set of 11 simulations were performed, wherein the
+aggregate rating of the devices was maintained at 30 MV A to
+sweep the system equivalent inertia (H) space from 4.0 to 0.0 s.
+Table III provides these device ratings and respective inertia.
+These rating ratios will match the aggregate inertia ratings for
+the 39-bus system simulation scenarios in Section IV -B2.T h e
+devices are dispatched at 0.5 pu relative to the device rating, and
+the perturbation is a 0.1 pu load step relative to the 30 MV A total
+of the system.
+The frequency results presented in Table III are for the SG
+alone (except for the ﬁnal row), to highlight the impact of
+the GFM on the SG operation. There is a clear shift with a
+growing GFM ratio to an increase in ROCOF, accompanied
+by a rising nadir. Fig. 5 shows the SG frequency for a few
+of these cases, where it is evident that substantial damping is
+afforded to the SG response, until the SG represents only a small
+portion of the system machine rating (i.e., <20%). When the
+SG rating is 3 MV A, and the GFM is rated at 27 MV A, a high
+frequency (2.9 Hz) oscillatory mode is present that dampens
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 7 =====
+3462 IEEE SYSTEMS JOURNAL, VOL. 17, NO. 3, SEPTEMBER 2023
+Fig. 5. Frequency response of the synchronous generator (SG) from the two
+generator test system with a GFM, SG, and load.
+out within a few cycles. This oscillatory mode is present only
+as rapid variations in pe,G; pm,G does not change within the
+time frame of this oscillatory response. This mode is much
+faster than the 0.23 Hz oscillatory mode dominating the SG
+only simulation (SG: 30 MV A). The primary takeaway is that
+for low levels of SGs as compared to GFMs, with respect to
+total rating, high frequency oscillatory modes are excited in the
+SG rotors. The anticipated cause for these modes is the result
+of rapid power ﬂow differentials generated on the network by
+the rapid GFM frequency change. This will incur a substantial
+pe,G −pm,G differential on the SG, that when matched with the
+low inertia, would result in these higher frequency oscillatory
+modes. Similar tests with the AC1A exciter yielded no difference
+in these simulation results, with the response of the exciter being
+substantially faster than the active power transfer dynamics of
+the GFM and SG. Different governor models, such as GGOV1,
+TGOV1, and GAST were simulated, but with lower frequency
+bandwidths below the oscillatory mode, no impact was expected
+or observed. Further investigation into the root cause of these
+oscillatory modes is a prime topic for future research.
+3) Impact of DC-Side Dynamics: In Section II, it was as-
+sumed that pm,I is immediately available to the GFM upon
+changes inpe,I . This assumption is based on the suitable opera-
+tion of the dc-side system, which is predicated on the appropriate
+device size selection and boost converter operation. This system
+is now analyzed to conﬁrm the assumption. To determine an
+appropriate capacity of the dc-link capacitor ( CDC ), and a
+suitable dc-link voltage across the capacitor ( VDC ), a compu-
+tational sensitivity analysis was performed. The capacitor sizes
+investigated represent either 0.1, or 1 cycle’s worth of energy
+contained at the rated inverter power and voltage. The capacitor
+rating is determined as follows:
+CDC = 2SRα
+V 2
+DC
+(31)
+whereSR is the device rating andαrepresents the time duration
+based on the cycles of rated power. At a minimum, the VDC
+must span the positive and negative peaks of the inverter output.
+Namely, VDC >V base,l−l
+√
+8/3. Factoring in the anticipated
+operation of the inverter above rated voltage, in this case it is
+assumed 1.05 pu, the target VDC can be represented as in the
+following:
+VDC =1 .05
+√
+8/3Vbase,l−lΔV (32)
+where ΔV is a parameter that represents the setpoint overage
+above the requisite voltage. The parameter sweep is an executed
+0.5 pu load step, with an initial dispatch at 0.05 pu, on an
+isolated GFM inverter for six different value combinations of
+TABLE IV
+DC SIDE ENERGY DIFFERENCE—THE RESULTANT Edif f VALUES ARE
+EXPRESSED IN PER UNIT *S ECONDS
+Fig. 6. Frequency of the SG on the 3-bus system for various frequency droop
+functions of the GFM.
+TABLE V
+NONLINEAR DROOP
+CDC and ΔV . The per unit power differential between the no
+dc dynamics (pnoDC ) and the resultant power with the speciﬁc
+parameters (pDC ) is integrated (discretely) across the length of
+the simulation, Ediff = ∑(pnoDC −pDC)Δt, to quantify the
+impacts of the dc side dynamics. These results are shown in
+Table IV, where it is evident that for both voltage buffers of
+ΔV =5 %and ΔV = 10%, the differential is very small; it is
+effectively zero when the capacitor is rated for one electrical
+cycle and ΔV = 10%. In simulations where Ediff ̸=0 ,t h e
+difference persists for less than 200 ms. Subsequently, the dc
+side values of CDC =1 cycle and ΔV = 10% are selected
+to support the immediate availability of preconverter power
+assumed in the analysis of Section II. Having concluded on
+this appropriate assumption, dc side dynamics were disabled in
+the following simulations to reduce computational burden and
+improve simulation time.
+4) Nonlinear Frequency Control: Test results with the non-
+linear frequency functions from Section II-D are presented
+here, with the function parameters as presented in Table I.T h e
+three-bus system is used, where the SG is rated at 30 MV A and
+dispatched at 0.5 per unit, and the GFM is rated at 15 MV A
+and dispatched at 0.1 per unit. A 2.5 MW load step at bus 3
+is executed. The frequency responses presented in Fig. 6, with
+statistics in Table V, are derived from the rotational velocity
+of the SG. All three nonlinear functions present improved fre-
+quency dynamics, both in the nadir and ROCOF, as compared to
+the linear function, while the primary oscillatory mode exhibits
+better damping with all of the nonlinear responses.
+The per unit power deviations of each device, for each of
+the four functions, is shown in Fig. 7. It is clear that each of the
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 8 =====
+KENYON et al.: INTERACTIVE POWER TO FREQUENCY DYNAMICS BETWEEN GRID-FORMING INVERTERS 3463
+Fig. 7. Power output of the SG and GFM inverter for various nonlinear droop
+gains.
+TABLE VI
+9-BUS CONFIGURA TION AND RESULTS
+nonlinear functions permit a larger delivery of active power to the
+network than the linear function result. The exponential function
+shows the smallest component of high frequency oscillations im-
+mediately after the disturbance, with the power function showing
+the largest amount. These test results indicate the potential for
+various nonlinear functions to be used for GFM control in future
+power systems. Clearly, power is not shared equitably between
+the devices after this initial primary frequency response, but
+this deviation would be ameliorated by the autonomous power
+sharing controller ﬁrst presented in [24]. The application of this
+secondary controller is beyond the scope of this work. Overall,
+the results demonstrate the promise that nonlinear functions have
+to offer for improving primary frequency response.
+B. Network-Level Dynamics
+Now, the network level numerical analysis results from simu-
+lations with the the IEEE 9- and 39-bus test systems in the EMT
+domain are presented.
+1) Test Case I: IEEE 9-Bus System: Simulations on the IEEE
+9-bus test system [32], [33], consisted of a 0.1 pu load step (31.5
+MW, 11.5 MV ar) at bus 6. Interconnection scenarios of SGs and
+GFMs are created by systematically supplanting an SG with a
+GFM, as shown in Table VI.
+The results for four simulations (scenarios A, B, C, and
+D—dispatch in Table VI) show that as the mechanical inertia
+is decreased, the nadir is raised while the ROCOF increases,
+which is indicative of the dominant ﬁrst-order response of the
+additional GFMs. The system frequency oscillation period with
+all SGs (Scenario A) matches the single machine step response;
+i.e., 0.4 Hz oscillations. By inspection of Fig. 8, showing the
+individual device frequencies for each Scenario, the dominant
+oscillatory mode increases in frequency with more GFMs. The
+Fig. 8. IEEE 9-bus average system frequency response for varied quantities
+of GFM/SGs.
+Fig. 9. Initial frequency response of each device for the four simulated
+scenarios on the 9-bus system.
+damping ratio from Table VI shows a clear increase as the
+converters are changed to GFMs.
+In Scenario A, all three SGs have similar frequency tra-
+jectories, as the three devices maintain broad synchronization
+following the perturbation. Herein lies the motivation for the
+center of inertia frequency metric, which assumes similar fre-
+quency trajectories of all devices [19]. The Scenario B system
+frequency is second order with a damping value around 50%;
+the dominant mode damping is increased according to Table VI.
+From Fig. 9, it is obvious that the three devices are not broadly
+synchronized immediately following the disturbance. Scenario
+C frequency exhibits overshoot, but a quasi-ﬁrst-order recovery;
+i.e., the concavity in the green trace from t = 1.5–2.5 s is the
+inverse of the expected second-order recovery. The GFM device
+frequencies change too rapidly for the devices to remain loosely
+synchronized during the ﬁrst 0.5 s following the perturbation.
+With all GFM devices (D), the system frequency follows a
+ﬁrst-order response with overshoot and frequency oscillations
+absent.
+The pe and pm response for each scenario are presented
+in Fig. 10. The electrical powers show inter-area oscillations
+(f =1 .6 Hz) between SG 1 and SG 2 in Scenario A. Note
+the time separation between these pe,G oscillations and pm,G.
+Scenario B shows the very rapid changes in pm,I –pe,I (these
+are indistinguishable at this temporal resolution) of GFM 1,
+which exacerbates a larger peak pe,G of SG 2 and 3, while the
+subsequent oscillations are more damped. The peak pe,G output
+of SG 3 in Scenario C is further increased, although there are no
+oscillations following this overshoot. The conclusion is that the
+rapid frequency changes of the GFMs, evident in Fig.9, cause the
+network conditions to change rapidly, while the SG frequency
+follows the slower second-order response resulting in a larger
+pe,G extraction; the fast frequency change of the GFM forces a
+larger power change in the SG, aggravating larger oscillations.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 9 =====
+3464 IEEE SYSTEMS JOURNAL, VOL. 17, NO. 3, SEPTEMBER 2023
+Fig. 10. Comparison of preconverter and electrical powers of each device for
+the four 9-bus simulation scenarios.
+TABLE VII
+39-BUS CONFIGURA TION AND RESULTS
+This large pe,G excursion corroborates the hypothesis from
+Section IV -A2of an increasing extraction of SG energy when
+the rating ratio is low compared to shares of GFMs. Scenario
+D power outputs show a reduction in power oscillations with
+minimal overshoot and a rapid arrival to settling outputs.
+The results from the 9-bus system suggest that the presence
+of GFM inverters reduces the average system frequency nadir,
+while increasing ROCOF. Additionally, dominant oscillatory
+mode analysis indicates a monotonic increase in damping with
+more GFMs, contrary to Section IV -A2.
+2) Test Case II: IEEE 39-Bus System: The IEEE 39-bus test
+system [34] is presented as a larger case study. Supporting
+Python code and details about this model are available open-
+source at [32]. All ten initial SG devices are systematically
+replaced by GFMs, with a scenario deﬁning each replacement;
+i.e., scenarios 0–10 in Table VII. The 0.1 pu load step (600
+MW/140 Mvar) occurs at bus 15.
+The results suggest the existence of broad similarities to the
+9-bus results, with a substantial reduction in overshoot following
+the transition to a GFM dominated system. The inverted period
+within the initial deceleration occurs at higher average frequency
+values with a larger quantity of GFM devices. Portraits of the
+f –pm,I trajectories for a selection of 39-bus system simulations
+are presented in Fig. 11, where the subtitles correspond with the
+Table VII entry. With no GFMs, the SGs follow the trajectory
+of an initial frequency deviation prior to preconverter changes.
+Prior to convergence on the steady-state values, the trajectories
+exhibit oscillations in the form of converging spirals. With half
+GFMs in scenario 5, the algebraic relation between frequency
+Fig. 11. Frequency-power portraits of each device for scenario 0, 7, 9, and 10
+for the 10% load step on the 39-bus test system.
+and preconverter power is evident, while the SG trajectories are
+shortened with less overshoot. With only a single SG online
+in scenario 9, the SG exhibits no pre-converter power over-
+shoot; however, substantial frequency oscillations are present,
+of a higher frequency as conﬁrmed by the change in primary
+mode frequency. In scenario 10 with all GFMs online, system
+trajectory exhibits an order reduction to a ﬁrst-order response.
+The frequency statistics presented in Table VII show that
+while ROCOF increases with larger quantities of GFMs and
+a resultant decrease in system mechanical inertia, the nadir is
+simultaneously raised; the average frequency trajectories expose
+a transition to a ﬁrst-order response. Also presented in TableVII
+is the damping and frequency of the primary mode of the average
+frequency for each scenario. It is apparent that as the ﬁrst half
+of converters are swapped from SGs to GFMs, there is a large
+increase in damping of the primary mode, while the frequency
+of the primary mode sees a small increase. The monotonicity of
+these progressions ends beyond Scenario 7, where a substantial
+increase in mode frequency is present with greatly varying levels
+of damping. In fact, contrary to the steady increase in damping
+seen in the 9-bus system simulations, a substantial decrease in
+damping can be seen with only a few SGs remaining, though
+at a greatly increased dominant mode frequency. From Fig. 11,
+Scenario 9, a larger number of distinct oscillations are seen in the
+remaining SG. The presence of a large number of ﬁrst-order de-
+vices is exacerbating the second-order response of the remaining
+SGs. The results from this Section and Section IV -A2indicate
+that neither the network nor the quantity of the devices plays a
+role in these high frequency modes present during times of low
+SG rating ratios.
+V. R EAL-WORLD POWER SYSTEM:M AUI ISLAND
+In this section, a validated power system model of the Hawai-
+ian Island of Maui is simulated to identify the transition tra-
+jectory to a ﬁrst-order frequency response with a GFM device
+in a real-world system. The Maui power system (see Fig. 12)
+has a near 200 MW peak demand, 69 kV mesh network that
+has a variety of generation resources including synchronous
+generators, synchronous condensers, type 3 and 4 wind plants,
+hybrid power plants (HPPs), battery energy storage systems
+(BESSs), utility solar plants, and distributed generation (DG)
+in excess of 50% of demand at peak output. This model has
+been developed in PSCAD, validated against ﬁeld data, and
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 10 =====
+KENYON et al.: INTERACTIVE POWER TO FREQUENCY DYNAMICS BETWEEN GRID-FORMING INVERTERS 3465
+Fig. 12. Reduced representation of the Maui power system [3].
+TABLE VIII
+SUMMARY OF MAUI REGION RESOURCES FOR STUDIED DISPA TCH;
+DISTRIBUTED GENERA TION(DG), BA TTERYENERGY STORAGE SYSTEM
+(BESS), HYBRID POWER PLANT (HPP)
+parallelized on 32 cores to make simulations computationally
+tractable [35]; it is one of the largest, validated full power system
+EMT models to date. Here, the response of the Maui system to
+a generation loss is compared with a single HPP operating in
+GFL, or GFM mode.
+The system attributes are highlighted in Table VIII. With IBR
+penetration deﬁned asη= PIBR/PTot , the considered dispatch
+is 96% IBRs with PIBR = 140.2 MW and PTot = 145.9 MW.
+With a large number of synchronous condensers online, the sys-
+tem equivalent inertia of the dispatch is H = 0.97 s. There are
+two 30 MV A HPPs colocated at bus 502 in the Maalaea region,
+which are conﬁgured as GFL devices with frequency-droop (4%)
+grid support, each dispatched at 2.85 MW. Two simulations are
+executed at this dispatch, to depict the impacts of a GFM device
+on the Maui network. The ﬁrst simulation has all HPPs as GFL
+devices with grid support, which is referred to as the base-case.
+The second simulation has a single HPP at bus 502 converted
+to GFM control; this case is referred to as the GFM-case.T h e
+perturbation on the system is the disconnection of both type 4
+wind plants, which share a common point of coupling, for a loss
+of 21 MW, equating to 15% of total generation.
+The rotational speed of SG 501a is scaled to Hz, and presented
+as a proxy for the frequency response of the system for both
+simulations in Fig. 13. The ROCOF and nadir for the base-case
+are 6.7 Hz/s and 58.7 Hz, respectively. In the GFM-case, there
+Fig. 13. Frequency response of SG 501a for the base-case and GFM-case
+simulations.
+Fig. 14. Active power response of two HPPs and SG 501a. (a) Base-case. (b)
+GFM-case.
+is a clear improvement in the frequency response, evidenced
+by improved damping of the SG response, a less deviant nadir
+of 59.35 Hz, and a ROCOF of 3.7 Hz/s. As expected from
+the previous derivations and simulation results, the frequency
+response with a single GFM device online shows the trend of a
+transition toward a ﬁrst-order response.
+The active power response of SG 501a and the two HPP units
+is presented for each simulation in Fig. 14(a) and (b).I nt h e
+base-case, the responses of the HPPs are nearly identical as
+both devices are in GFLM mode operating under a frequency
+droop grid-supporting control strategy. There are high frequency
+oscillations present, primarily in the SG response. With HPPa
+switched to a droop controlled GFM, the immediate ( < 0.5 s)
+response of the SG and GFM HPP are similar, because both
+devices are regulating the local voltage, with the result a power
+extraction from the network as opposed to controller driven
+power injections. The peak power extraction from the SG is
+reduced by 50%, from 0.5 pu in the base-case, to 0.25 pu in the
+GFM-case. Improved damping of the high frequency mode of
+the SG present in Fig. 14(a), and the low frequency mode of
+the frequency response in Fig. 13 is evident in the active power
+output traces.
+The mode switch of a single HPP on the validated Maui model
+from GFL to GFM during a period of very high instantaneous
+shares of IBRs operating as GFLs is highly beneﬁcial to the
+frequency stability of the system. The impacts of a very large
+generation loss are mitigated with the single GFM, as the system
+frequency shows damping on multiple oscillatory modes, while
+the frequency response displays the trend toward a ﬁrst-order
+system as previously discussed and demonstrated on the test
+systems.
+VI. D ISCUSSION
+For devices that adjust preconverter power as a function of
+frequency changes such as SGs, a larger ROCOF generally
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 11 =====
+3466 IEEE SYSTEMS JOURNAL, VOL. 17, NO. 3, SEPTEMBER 2023
+yields a deeper nadir for the same magnitude power imbal-
+ance [30]. Consider the approximating equation Δfprior =
+αROCOF ×tresponse whereΔfprior is the frequency deviation
+prior to substantivepm,G changes,αROCOF is the ROCOF for a
+generic system, andtresponse is the preconverter power response
+time [as used in (2) and (5)]. A relatively larger ROCOF for
+the same tresponse [such as τG,i n (5)] yields a larger Δfprior
+prior to substantial pm changes. This is the inertial response
+period when rotational kinetic energy ( Eint,G) is extracted
+from the SGs; in SG dominated systems, less inertia yields
+largerαROCOF values, increasing susceptibility to lower nadirs
+that can trigger frequency load shedding [36]. This behavior
+has been highlighted as exacerbated by inverter dominated
+systems [17].
+Due to the control design, the GFM relation is Δfprior =0 ;
+after pe,I changes due to varying network conditions, pm,I is
+matched prior to any change in frequency. The GFM changes
+frequency according to a control objective, not rotational kine-
+matics and frequency-triggered governor action to match pe,G
+and pm,G. Given this ﬂexibility, the preconverter-frequency
+relationship can be of a lower order with GFMs, and potentially
+redeﬁne the frequency response in GFM dominated systems.
+Here, it is noted that there are potential broader issues due to
+larger ROCOFs, such as relay tripping, device disconnection,
+and machine shaft strain. While the analysis of these consid-
+erations is beyond the scope of this work, it is noted that the
+nonlinear droop functions presented in Section II-D, which
+maintain a ﬁrst-order response, reduced the ROCOF in all cases,
+while improving headroom utilization.
+An unusual phenomenon was uncovered in the two generator
+system, where for very low levels of SGs as a rating ratio (i.e.,
+when the rating of the SG was <20% of the total system online
+generation), a previously unreported high frequency oscillatory
+mode was observed. This mode was uncovered in the two
+generator system and also observed in the 39-bus system with
+ten generators, where similar rating ratios could be realized by
+binary dispatch changes where a generator is either a GFM or
+SG. That the mode exists in both of these systems indicates that it
+is not a function of generator quantity nor network interactions; it
+is likely the result of the rapid frequency change of GFMs, which
+places a substantial pe,G differential on the small amount of
+inertia remaining on the system. Interestingly, while it is caused
+by the rapid change in frequency of the GFMs, the GFMs are
+also the source of damping in the system as no substantial pm,G
+changes are observed prior to the oscillatory mode dampening
+out. This observation is generally contradictory to the claim
+of a trend of increased damping with GFM devices [4], [14],
+in that there is evidently an inversion in this damping when
+GFMs are the dominant resource in a heterogeneous system.
+This oscillatory mode was not observed in the 9-bus system
+because the discrete variation of generators did not yield this
+lower rating ratio (<20%).
+VII. C ONCLUSION
+This article investigated the active power-frequency conver-
+sion dynamics of the synchronous generator and the droop
+controlled grid-forming inverter and the associated power sys-
+tem frequency impacts due to the device disparities. Analysis
+highlighted the lower order frequency dynamics and the in-
+verted frequency regulation of grid-forming inverters, as com-
+pared to synchronous generators, which laid the framework for
+the introduction of novel, nonlinear frequency droop control
+concepts. Electro-magnetic transient simulations at the device
+level with full order models conﬁrmed this power-frequency
+order reduction, while investigation into the dc-side dynamics
+concluded on a negligible impact with proper design, which
+supports the approximation of a near immediate throughput
+active power capability of grid-forming devices. Nonlinear
+droop simulations yielded improved frequency dynamics, en-
+couraging further work in this ﬁeld. Network-level simulations
+of IEEE standard test cases supported the analytical results,
+and those with a validated model of the Maui power system
+corroborated the transition toward ﬁrst-order frequency dynam-
+ics with a single grid-forming inverter. This article sets the
+basis for novel, nonlinear control of grid-forming inverters to
+redeﬁne the foundations of frequency stability in future bulk
+power systems, while recognizing that questions remain be-
+fore such technologies may be implemented in future power
+systems.
+ACKNOWLEDGMENT
+The authors would like to thank J. D. Lara and R. Henriquez-
+Auba of the University of California Berkeley for their insightful
+discussions and comments. This work was authored in part
+by the National Renewable Energy Laboratory, operated by
+Alliance for Sustainable Energy, LLC, for the U.S. Department
+of Energy (DOE) under Contract No. DE-AC36-08GO28308.
+Funding provided by the Department of Energy Ofﬁce of Energy
+Efﬁciency & Renewable Energy. The views expressed herein
+do not necessarily represent the views of the DOE or the U.S.
+Government.
+REFERENCES
+[1] R. W. Kenyon et al., “Stability and control of power systems with high
+penetrations of inverter-based resources: An accessible review of current
+knowledge and open questions,”Sol. Energy, vol. 210, pp. 149–168, 2020.
+[2] North American Electric Reliability Corporation, “Integrating inverter
+based resources into low short circuit strength systems,” Atlanta, GA,
+USA, NERC Reliability Guideline, Dec. 2017.
+[3] R. W. Kenyon, A. Sajadi, A. Hoke, and B.-M. Hodge, “Criticality of
+inverter controller order in power system dynamic studies – Case study:
+Maui island,” Elect. Power Syst. Res., vol. 214, Jan. 2023, Art. no. 108789.
+[4] A. Sajadi, R. W. Kenyon, and B.-M. Hodge, “Synchronization in electric
+power networks with inherent heterogeneity up to 100% inverter-based
+renewable generation,” Nature Commun. , vol. 13, no. 1, May 2022,
+Art. no. 2490.
+[5] P . Piagi and R. H. Lasseter, “Autonomous control of microgrids,” in Proc.
+IEEE Power Eng. Soc. Gen. Meeting , 2006, Art. no. 8.
+[6] North American Electric Reliability Corporation, “Grid forming technol-
+ogy: Bulk power system reliability considerations,” Atlanta, GA, USA,
+NERC Reliability Guideline, Dec. 2021.
+[7] F. Milano, F. Dörﬂer, G. Hug, D. J. Hill, and G. V erbiˇc, “Foundations and
+challenges of low-inertia systems,” in Proc. Power Syst. Comput. Conf. ,
+2018, pp. 1–25.
+[8] A. Sajadi, J. P . Ranola, R. W. Kenyon, B. M. Hodge, and B. Mather,
+“Electric power industry challenges due to increasing shares of inverter-
+based resources in power systems,” in Proc. IEEE PES Innov. Smart Grid
+Technol. Conf. Eur .. Novi Sad, Serbia, 2022, pp. 1–5.
+[9] T. Qoria, Q. Cossart, C. Li, X. Guillaud, F. Gruson, and X. Kestelyn,
+“Deliverable 3.2: Local control and simulation tools for large transmis-
+sion systems,” MIGRA TE, Bayreuth, Germany, Tech. Rep. 66528683,
+Dec. 2018.
+[10] U. Markovic, O. Stanojev, P . Aristidou, E. Vrettos, D. S. Callaway, and G.
+Hug, “Understanding small-signal stability of low-inertia systems,” IEEE
+Trans. Power Syst., vol. 36, no. 5, pp. 3997–4017, Sep. 2021.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 12 =====
+KENYON et al.: INTERACTIVE POWER TO FREQUENCY DYNAMICS BETWEEN GRID-FORMING INVERTERS 3467
+[11] M. M. S. Khan, Y . Lin, B. Johnson, V . Purba, M. Sinha, and S. Dhople, “A
+reduced-order aggregated model for parallel inverter systems with virtual
+oscillator control,” in Proc. IEEE 19th Workshop Control Model. Power
+Electron., 2018, pp. 1–6.
+[12] A. Tayyebi, D. Groß, A. Anta, F. Kupzog, and F. Dörﬂer, “Frequency sta-
+bility of synchronous machines and grid-forming power converters,”IEEE
+Trans. Emerg. Sel. Topics Power Electron., vol. 8, no. 2, pp. 1004–1018,
+Jun. 2020.
+[13] M. E. Elkhatib, W. Du, and R. H. Lasseter, “Evaluation of inverter-based
+grid frequency support using frequency-watt and grid-forming PV invert-
+ers,” in Proc. IEEE Power Energy Soc. Gen. Meeting , 2018, pp. 1–5.
+[14] R. H. Lasseter, Z. Chen, and D. Pattabiraman, “Grid-forming inverters: A
+critical asset for the power grid,” IEEE Trans. Emerg. Sel. Topics Power
+Electron., vol. 8, no. 2, pp. 925–935, Jun. 2020.
+[15] Y . Lin et al., “Research roadmap on grid-forming inverters,” National
+Renewable Energy Lab., Golden, CO, USA, Tech. Rep. NREL/TP-5D00-
+73476, 2020.
+[16] R. W. Kenyon, A. Sajadi, A. Hoke, and B.-M. Hodge, “Open-source
+PSCAD grid-following and grid-forming inverters and a benchmark for
+zero-inertia power system simulations,” in Proc. IEEE Kansas Power
+Energy Conf., 2021, pp. 1–6.
+[17] A. Ulbig, T. S. Borsche, and G. Andersson, “Impact of low rotational
+inertia on power system stability and operation,” IF AC Proc. V ol., vol. 47,
+no. 3, pp. 7290–7297, Jan. 2014.
+[18] P . Tielens and D. V an Hertem, “The relevance of inertia in power systems,”
+Renewable Sustain. Energy Rev., vol. 55, pp. 999–1009, Mar. 2016.
+[19] P . W. Sauer, M. A. Pai, and J. H. Chow, Power System Dynamics and
+Stability: With Synchrophasor Measurement and Power System Toolbox ,
+2nd ed. Hoboken, NJ, USA: Wiley, 2017.
+[20] H. Beck and R. Hesse, “Virtual synchronous machine,” in Proc. 9th Int.
+Conf. Elect. Power Qual. Utilisation , 2007, pp. 1–6.
+[21] B. B. Johnson, M. Sinha, N. G. Ainsworth, F. Dörﬂer, and S. V . Dhople,
+“Synthesizing virtual oscillators to control islanded inverters,”IEEE Trans.
+Power Electron., vol. 31, no. 8, pp. 6002–6015, Aug. 2016.
+[22] C. Arghir, T. Jouini, and F. Dörﬂer, “Grid-forming control for power
+converters based on matching of synchronous machines,” Automatica,
+vol. 95, pp. 273–282, Sep. 2018.
+[23] J. H. Chow, J. R. Winkelman, M. A. Pai, and P . W. Sauer, “Singular
+perturbation analysis of large-scale power systems,” Int. J. Elect. Power
+Energy Syst., vol. 12, no. 2, pp. 117–126, Apr. 1990.
+[24] R. W. Kenyon, A. Sajadi, and B.-M. Hodge, “Droop-e: Exponential droop
+as a function of power output for grid-forming inverters with autonomous
+power sharing,” in Proc. 11th Bulk Power Syst. Dyn. Control Symp., 2022,
+pp. 1–11.
+[25] R. W. Erickson and D. Maksimovic, Fundamentals of Power Electronics,
+2nd ed. Berlin, Germany: Springer, May 2007.
+[26] R. H. Park, “Two-reaction theory of synchronous machines generalized
+method of analysis-part I,” Trans. Amer . Inst. Elect. Eng., vol. 48, no. 3,
+pp. 716–727, Jul. 1929.
+[27] C. Roberts, J. D. Lara, R. Henriquez-Auba, B. K. Poolla, and D. S. Call-
+away, “Grid-coupled dynamic response of battery-driven voltage source
+converters,” inProc. IEEE Int. Conf. Commun., Control, Comput. Technol.
+Smart Grids, 2020, pp. 1–6.
+[28] J. Machowski, J. W. Bialek, and J. R. Bumby, Power System Dynamics:
+Stability and Control. Hoboken, NJ, USA: Wiley, 2008.
+[29] Manitoba hydro International Ltd, “Power systems computer aided de-
+sign,” Accessed: Jan. 14, 2020. [Online]. Available: https://www.mhi.ca/
+products/pscad
+[30] North American Electric Reliability Corporation, “Fast Frequency re-
+sponse concepts and bulk power system reliability needs,” Inverter-Based
+Resource Performance Task Force, Atlanta, GA, USA, NERC Reliability
+Guideline, Mar. 2020.
+[31] T. Sarkar and O. Pereira, “Using the matrix pencil method to estimate the
+parameters of a sum of complex exponentials,” IEEE Antennas Propag.
+Mag., vol. 37, no. 1, pp. 48–55, Feb. 1995.
+[32] R. W. Kenyon, “PyPSCAD,” Golden, CO, USA, Nov. 2020. [Online].
+Available: https://github.com/NREL/PyPSCAD
+[33] Manitoba Hydro International Ltd, “PSCAD: IEEE 9 bus system,”
+Accessed: Nov. 03, 2020. [Online]. Available: https://www.pscad.com/
+knowledge-base/article/25
+[34] Manitoba Hydro International Ltd, “IEEE 39 bus system,” Accessed: Jan.
+14, 2021. [Online]. Available: https://www.pscad.com/knowledge-base/
+article/28
+[35] R. W. Kenyon, B. Wang, A. Hoke, J. Tan, C. Antonio, and B.-M. Hodge,
+“V alidation of maui PSCAD model: Motivation, methodology, and lessons
+learned,” in Proc. 52nd North Amer . Power Symp., 2021, pp. 1–6.
+[36] North American Electric Reliability Corporation, Standard PRC-006-2
+Automatic Underfrequency Load Shedding . Atlanta, GA, USA: NERC,
+Aug. 2017.
+Rick Wallace Kenyon (Member, IEEE) received the
+Ph.D. degree in electrical, computer, and energy en-
+gineering from the University of Colorado Boulder,
+Boulder, CO, USA, in 2022.
+He is the Power Systems Simulation Lead with
+encoord, Denver, CO, USA, where he studies hybrid
+simulation platforms for assessing the dynamic secu-
+rity of power systems with large shares of renewable
+resources. His main research interests include the
+potential for nonlinear frequency control with grid-
+forming control, to enable the decarbonization of the
+grid.
+Amirhossein Sajadi (Senior Member, IEEE) re-
+ceived the Ph.D. degree in systems and control en-
+gineering from Case Western Reserve University,
+Cleveland, OH, USA, in 2016.
+He is currently a Research Afﬁliate with the Re-
+newable and Sustainable Energy Institute, Univer-
+sity of Colorado Boulder, Boulder, CO, USA. His
+main research interests include modeling, planning,
+dynamics, control, and management of large-scale
+power systems, including renewable resources.
+Matt Bossart (Student Member, IEEE) is currently
+working toward the Ph.D. degree in electrical, com-
+puter, and energy engineering with the University of
+Colorado Boulder, Boulder, CO, USA.
+His main research interests include the dynamics
+and control of large-scale inverter-based power sys-
+tems, and the use of data-driven models and tech-
+niques to enable high ﬁdelity simulation of large
+systems.
+Anderson Hoke (Senior Member, IEEE) received
+the M.S. and Ph.D. degrees in electrical, computer,
+and energy engineering from the University of Col-
+orado, Boulder, Boulder, CO, USA, in 2013 and 2016.
+He is a Principal Engineer with the Power Sys-
+tems Engineering Center, National Renewable En-
+ergy Laboratory, Golden, CO, USA. His research
+interests include grid integration of power electronics
+and inverter-based renewable and distributed energy.
+Bri-Mathias Hodge (Senior Member, IEEE) re-
+ceived the Ph.D. degree in chemical engineering from
+Purdue University, West Lafayette, IN, USA, in 2010.
+He is an Associate Professor with the Department
+of Electrical, Computer and Energy Engineering and
+an Associate Director and Fellow of the Renew-
+able and Sustainable Energy Institute, University of
+Colorado Boulder, Boulder, CO, USA. He is also a
+Chief Scientist and Distinguished Member of Re-
+search Staff with the National Renewable Energy
+Laboratory, Golden, CO, USA.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:51:15 UTC from IEEE Xplore.  Restrictions apply. 

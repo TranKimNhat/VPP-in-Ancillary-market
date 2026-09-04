@@ -124,6 +124,36 @@ class TieSwitchReconfiguration:
         except Exception:
             return False
 
+    def _is_acyclic(self, net) -> bool:
+        """True iff the active network graph is a forest (no cycles).
+
+        This is the radiality invariant for THIS feeder: it has multiple
+        grid-forming inverters (one per island), so a valid reconfiguration is
+        not a single spanning tree but a FOREST of GFM-rooted trees — each
+        connected component must be loop-free. Closing a normally-open tie that
+        forms a loop within an island is rejected unless a switch on that loop is
+        also opened (the standard close-tie / open-sectionalizer pairing). Uses
+        union-find on the edge_index used everywhere else (build_edge_index), so
+        the check is consistent with training/eval graphs.
+        """
+        ei = self._build_edge_index(net)
+        edges = {tuple(sorted((int(ei[0, k]), int(ei[1, k])))) for k in range(ei.shape[1])}
+        parent: dict[int, int] = {}
+
+        def find(a: int) -> int:
+            parent.setdefault(a, a)
+            while parent[a] != a:
+                parent[a] = parent[parent[a]]
+                a = parent[a]
+            return a
+
+        for u, v in edges:
+            ru, rv = find(u), find(v)
+            if ru == rv:
+                return False  # an edge joins two already-connected nodes => cycle
+            parent[ru] = rv
+        return True
+
     def _pf_objective(self, net) -> float | None:
         """Run PF and return scalar loss objective; return None if PF fails."""
         try:
@@ -206,36 +236,72 @@ class TieSwitchReconfiguration:
         scenarios: list[tuple[Any, np.ndarray, set[int]]] = []
         diagnostics: list[dict[str, Any]] = []
 
-        switch_candidates: list[int] = []
+        # Reconfigurable elements = et="b" bus-bus switches (the sectionalizers,
+        # tagged ("s", idx)) PLUS tie LINES whose name starts with "tie" (added by
+        # the model builder with realistic impedance, tagged ("l", idx)). Both kinds
+        # participate as binary open/closed candidates. Tie lines carry impedance
+        # (54-94 etc. span real distance), so they cannot be zero-Z et="b" switches.
+        switch_candidates: list[tuple[str, int]] = []
         if hasattr(self.net_base, "switch") and len(self.net_base.switch) > 0:
             sw = self.net_base.switch
             et = sw["et"].astype(str).to_numpy(copy=False)
-            switch_candidates = [int(idx) for idx, et_i in zip(sw.index.tolist(), et.tolist()) if str(et_i) == "b"]
+            switch_candidates = [("s", int(idx)) for idx, et_i in zip(sw.index.tolist(), et.tolist()) if str(et_i) == "b"]
 
-        candidates = switch_candidates if switch_candidates else [int(x) for x in self.TIE_LINES if int(x) in self.net_base.line.index]
-        use_switch_mode = len(switch_candidates) > 0
+        tie_line_candidates: list[tuple[str, int]] = []
+        if hasattr(self.net_base, "line") and len(self.net_base.line) > 0 and "name" in self.net_base.line.columns:
+            for idx in self.net_base.line.index.tolist():
+                nm = str(self.net_base.line.at[idx, "name"])
+                if nm.lower().startswith("tie"):
+                    tie_line_candidates.append(("l", int(idx)))
 
-        all_subsets: list[set[int]] = []
+        if switch_candidates or tie_line_candidates:
+            candidates: list[tuple[str, int]] = switch_candidates + tie_line_candidates
+        else:
+            # Legacy fallback: toggle the documented TIE_LINES by line index.
+            candidates = [("l", int(x)) for x in self.TIE_LINES if int(x) in self.net_base.line.index]
+
+        all_subsets: list[set[tuple[str, int]]] = []
         for r in range(len(candidates) + 1):
             for subset in combinations(candidates, r):
                 all_subsets.append(set(subset))
 
         order = self._rng.permutation(len(all_subsets))
+        seen_edge_hashes: set[str] = set()
+        # Exclude the base topology G_0 itself: the empty open-set (and any subset
+        # that collapses back to base) is edge-identical to G_0 and must not appear
+        # in the unseen hold-out. Seed the dedup set with G_0's edge hash.
+        try:
+            _bei = self._build_edge_index(self.net_base)
+            if _bei.shape[1] > 0:
+                _bedges = sorted({tuple(sorted((int(_bei[0, k]), int(_bei[1, k]))))
+                                  for k in range(_bei.shape[1])})
+                seen_edge_hashes.add("|".join(f"{u}-{v}" for u, v in _bedges))
+        except Exception:
+            pass
         for idx in order:
             if len(scenarios) >= int(n):
                 break
 
-            open_set = all_subsets[int(idx)]
+            open_tagged = all_subsets[int(idx)]
             net_copy = deepcopy(self.net_base)
 
-            if use_switch_mode:
-                valid_open = [sw_idx for sw_idx in open_set if sw_idx in net_copy.switch.index]
-                if valid_open:
-                    net_copy.switch.loc[valid_open, "closed"] = False
-            else:
-                valid_open = [line_idx for line_idx in open_set if line_idx in net_copy.line.index]
-                if valid_open:
-                    net_copy.line.loc[valid_open, "in_service"] = False
+            # NON-SUBTRACTIVE: set EVERY candidate's state explicitly — open iff it is
+            # in this subset, otherwise CLOSED/active. This is the key change from the
+            # old subtractive logic (which only ever opened switches and so left a
+            # normally-open tie open in every config). Closing a tie that is absent
+            # from open_tagged adds its reroute edge; the forest gate below then
+            # requires a switch on the resulting loop to also be open.
+            for kind, cidx in candidates:
+                is_open = (kind, cidx) in open_tagged
+                if kind == "s" and cidx in net_copy.switch.index:
+                    net_copy.switch.at[cidx, "closed"] = (not is_open)
+                elif kind == "l" and cidx in net_copy.line.index:
+                    net_copy.line.at[cidx, "in_service"] = (not is_open)
+            # open_set stored as plain int ids (advisory; net_copy is authoritative)
+            open_set = {int(cidx) for _, cidx in open_tagged}
+            valid_open = [cidx for kind, cidx in open_tagged
+                          if (kind == "s" and cidx in net_copy.switch.index)
+                          or (kind == "l" and cidx in net_copy.line.index)]
 
             reachable_count = 0
             pf_ok = False
@@ -249,6 +315,10 @@ class TieSwitchReconfiguration:
                 reachable_count = int(np.sum(reachable))
                 if reachable_count < int(self._base_reachable_count):
                     reject_reason = "connectivity_worse_than_base"
+                elif not self._is_acyclic(net_copy):
+                    # Radiality: each GFM island must stay loop-free. A closed tie
+                    # that forms a cycle without a paired sectionalizer open is rejected.
+                    reject_reason = "has_cycle"
                 else:
                     try:
                         pp.runpp(net_copy, numba=False, algorithm="nr", max_iteration=cast(Any, 50), init="flat")
@@ -281,7 +351,17 @@ class TieSwitchReconfiguration:
             except Exception:
                 edge_hash = "hash_error"
 
-            accepted = (reject_reason == "") and self._is_topology_valid(net_copy, run_power_flow=True)
+            # Deduplicate by edge_hash: different open-sets can yield the same graph
+            # (e.g. opening a redundant switch), which would otherwise inflate the
+            # cache with identical topologies (the min-Jaccard=0 artifact).
+            is_duplicate = edge_hash in seen_edge_hashes
+            accepted = (
+                reject_reason == ""
+                and (not is_duplicate)
+                and self._is_topology_valid(net_copy, run_power_flow=True)
+            )
+            if reject_reason == "" and is_duplicate:
+                reject_reason = "duplicate_edge_set"
             diagnostics.append({
                 "candidate_id": int(idx),
                 "open_set": sorted([int(x) for x in open_set]),
@@ -300,8 +380,61 @@ class TieSwitchReconfiguration:
             if not accepted:
                 continue
 
+            seen_edge_hashes.add(edge_hash)
             ei = self._build_edge_index(net_copy)
             scenarios.append((net_copy, ei, open_set))
+
+        # ---- N-1 line-contingency phase ------------------------------------
+        # Per the evaluation protocol the topology set is generated by tie switch
+        # operations AND N-1 line contingencies. The tie phase above covers the
+        # former; here a single in-service feeder line is tripped and a normally
+        # open tie is reclosed to restore a radial, fully energized network --
+        # reconfigurations that tie toggling alone cannot reach. Reuses the same
+        # reachability / radiality / PF gates and the shared dedup set, and fills
+        # only up to the remaining budget n.
+        if len(scenarios) < int(n) and tie_line_candidates:
+            removable_lines = [
+                int(li) for li in self.net_base.line.index.tolist()
+                if bool(self.net_base.line.at[li, "in_service"])
+                and not str(self.net_base.line.at[li, "name"]).lower().startswith("tie")
+            ]
+            for line_idx in removable_lines:
+                if len(scenarios) >= int(n):
+                    break
+                for _, tie_idx in tie_line_candidates:
+                    if len(scenarios) >= int(n):
+                        break
+                    net_copy = deepcopy(self.net_base)
+                    net_copy.line.at[line_idx, "in_service"] = False  # N-1 trip
+                    net_copy.line.at[tie_idx, "in_service"] = True    # reclose tie
+                    try:
+                        if int(np.sum(self._reachable_mask(net_copy))) < int(self._base_reachable_count):
+                            continue
+                        if not self._is_acyclic(net_copy):
+                            continue
+                        pp.runpp(net_copy, numba=False, algorithm="nr",
+                                 max_iteration=cast(Any, 50), init="flat")
+                        if not bool(getattr(net_copy, "converged", False)):
+                            continue
+                    except Exception:
+                        continue
+                    ei = self._build_edge_index(net_copy)
+                    if ei.shape[1] == 0:
+                        continue
+                    edges_set = set(tuple(sorted((int(ei[0, k]), int(ei[1, k]))))
+                                    for k in range(ei.shape[1]))
+                    edge_hash = "|".join(f"{u}-{v}" for u, v in sorted(edges_set))
+                    if edge_hash in seen_edge_hashes:
+                        continue
+                    seen_edge_hashes.add(edge_hash)
+                    scenarios.append((net_copy, ei, {int(line_idx)}))
+                    diagnostics.append({
+                        "candidate_id": -1, "phase": "n_minus_1",
+                        "open_set": [int(line_idx)], "n_open": 1,
+                        "tripped_line": int(line_idx), "reclosed_tie": int(tie_idx),
+                        "n_bus": int(len(net_copy.bus)), "edge_hash": edge_hash,
+                        "accepted": True, "reject_reason": "",
+                    })
 
         if not scenarios:
             net_base = deepcopy(self.net_base)

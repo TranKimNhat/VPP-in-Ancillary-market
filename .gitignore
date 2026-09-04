@@ -9,3 +9,36 @@ __pycache__/
 checkpoints/
 results/
 figures/
+.gitnexus
+
+# T1/T2 repo cleanup (plan v3.1 Part 1.4): must never reach a published repo
+archive/_quarantine/
+
+# --- heavy or non-source payloads (added 2026-09-04) -------------------------
+# Model checkpoints, datasets and raw simulation traces are regenerable and would
+# put ~1.8 GB into history permanently. The text side of every artifact
+# directory (README, boundaries.csv, metrics.csv, manifest.json, config.yaml)
+# stays versioned -- that is what a result is; the .npz traces are how it was
+# produced and are rebuilt by the documented command in each README.
+artifacts/ckpt_*/
+artifacts/*/raw/
+data/
+*.npz
+
+# Reference papers: third-party copyrighted PDFs, not ours to redistribute.
+# reference/**/*.md (the mapping notes) is tracked.
+reference/**/*.pdf
+
+# Tool caches and agent scaffolding, not project source.
+.agents/
+.serena/
+.vscode/
+.claude/worktrees/
+__MACOSX/
+
+# LaTeX and run logs
+*.aux
+*.log
+
+# Embedded git repository: vendored separately, would become a broken gitlink.
+OneHammer/

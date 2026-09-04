@@ -1,0 +1,1157 @@
+
+===== PAGE 1 =====
+Sustainable Energy, Grids and Networks 27 (2021) 100496
+Contents lists available at ScienceDirect
+Sustainable Energy, Grids and Networks
+journal homepage: www.elsevier.com/locate/segan
+Performance assessment of grid-forming and grid-following
+converter-interfaced battery energy storage systems on frequency
+regulation in low-inertia power grids✩
+Yihui Zuo a,∗, Zhao Yuan a, Fabrizio Sossan b, Antonio Zecchino a, Rachid Cherkaoui a,
+Mario Paolone a
+a École Polytechnique Fédérale de Lausanne EPFL, Lausanne, Switzerland
+b Center for Processes, Renewable energies and Energy systems, MINES ParisTech - PSL, France
+a r t i c l e i n f o
+Article history:
+Received 24 December 2020
+Received in revised form 7 March 2021
+Accepted 13 May 2021
+Available online 20 May 2021
+Keywords:
+Battery energy storage
+Converter control
+Grid-forming
+Grid-following
+Frequency containment
+Unit commitment
+Dynamic simulation
+a b s t r a c t
+Power systems with large shares of converter-interfaced renewables may be characterized by low
+grid inertia due to the lack of frequency containment provided by synchronous generators. Battery
+energy storage systems (BESSs), which can adjust their power output at much steeper ramping than
+conventional generation, are promising assets to restore suitable frequency regulation capacity levels.
+BESSs are typically connected to the grid with a power converter, which can be operated in either
+grid-forming or grid-following modes. This paper quantitatively assesses the impact of large-scale
+BESSs on the frequency containment of low inertia power grid and compares the performance of
+grid-forming and grid-following control modes. Numerical results are provided considering a detailed
+dynamic model of the IEEE 39-bus system where fully characterized models of stochastic demand and
+generation are taken into account. In order to assess the performance of the BESS control modes in a
+practical operative context, daily long simulations are considered where reserve levels for frequency
+containment and restoration are allocated considering the current practice of a transmission system
+operator in Europe. Numerical analyses on various metrics applied to grid frequency show that
+grid-forming outperforms grid-following converter control mode.
+© 2021 The Authors. Published by Elsevier Ltd. This is an open access article under the CC BY license
+(http://creativecommons.org/licenses/by/4.0/).
+1. Introduction
+Power systems are going through the transition from a sig-
+nificant share of conventional power generation to massive re-
+newable resources interfaced by power electronics. Renewable
+power generation levels larger than 15% of the overall annual
+electricity generation is now a reality for several European coun-
+tries [1]. In Australia, the total wind and solar capacity is rapidly
+increasing and has reached 20% in the National Electricity Market
+(NEM) [2]. In the United States, the installed capacity of renew-
+able generation has reached 20% of the total generation capacity
+at the national level, with peaks over 40% in the grids of the
+Western Electricity Coordinating Council (WESS) and California
+Independent System Operator (CAISO) [3].
+As broadly acknowledged in the power systems community, a
+large deployment of converter-interfaced generation determines
+✩ This work is supported by OSMOSE project. The project has received funding
+from the European Union’s Horizon 2020 Research and Innovation Program
+under Grant 773406.
+∗ Corresponding author.
+E-mail address: yihui.zuo@epfl.ch (Y. Zuo).
+lower grid inertia levels and calls for a review of frequency
+containment concepts and the identification of assets capable to
+maintain the power balance. In fact, some power systems are al-
+ready facing this control challenge. The Australian Energy Market
+Operator (AEMO) has observed that lower frequency containment
+provided by generators results in a lack of effective control of
+frequency under normal operating conditions [4]. Consequently,
+the lack of consistent and certain frequency containment de-
+livered from conventional power plants has impacted AEMO’s
+ability to effectively plan the system reserves. CAISO has also
+observed a progressive deterioration of its frequency containment
+and restoration performance: the frequency response measure
+(FRM1) has steadily decreased from 263 MW/0.1 Hz in 2012 to
+141 MW/0.1 Hz in 2016 [5].
+In this context, converter-interfaced battery energy storage
+systems (BESSs) are advocated as a potential solution for grid
+frequency regulation (e.g., [6]) thanks to their large ramping
+1 The FRM, calculated in resources of MW/0.1 Hz, is the change in net actual
+interchange on the inter-tie lines between the pre-event period (point A) and
+the stabilizing period after the event (point B) per 0.1 Hz of the frequency event
+measured between the those two points.
+https://doi.org/10.1016/j.segan.2021.100496
+2352-4677/© 2021 The Authors. Published by Elsevier Ltd. This is an open access article under the CC BY license (http://creativecommons.org/licenses/by/4.0/).
+===== PAGE 2 =====
+Y. Zuo, Z. Yuan, F. Sossan et al. Sustainable Energy, Grids and Networks 27 (2021) 100496
+rates, high round-trip efficiency and commercial availability [7].
+Recently installed large BESSs, like the 100 MW/129 MWh unit
+of the Hornsdale Power Reserve (HPR) in Australia [8] and the
+300 MW/1200 MWh unit at Moss Landing in California [9], have
+shown the applicability of this technology in practical contexts.
+As BESSs can provide significant value to both frequency con-
+tainment and restoration services, quantitatively evaluating their
+performance is of fundamental importance for transmission grid
+operators. To the best of the Authors’ knowledge, very few re-
+searches have attempted to quantitatively assess the impact of
+BESS converter control strategies on the grid frequency using
+a detailed model of a realistic low-inertia power system. The
+work in [10] studies the impact of a BESS on grid frequency
+transients using a dynamic model of a simple low-inertia grid.
+However, the BESS is modelled as an ideal power source and
+falls short of capturing the dynamic interactions between the
+converter and the grid. In [11], BESS’s and grid’s dynamic models
+are used to show that the BESS can reduce frequency oscillations
+after a disturbance. Nevertheless, this work only assesses the
+post-disturbance performance of BESS under a single system op-
+eration point. Yet, [10] and [11] have not considered the possible
+influences of different converter controls. In this context, this
+paper contributes to the current state of the art by explicitly
+modelling the BESS dynamics and comparing grid-forming and
+grid-following control strategies.
+The simulation framework used in this paper is based on the
+one proposed in [12]. It consists of a detailed dynamic model
+of the low-inertia 39-bus power system hosting conventional
+and renewable power generation and converter-interfaced BESS.
+In this paper, this model is coupled with a day-ahead schedule
+layer so as to statistically evaluate the daily system frequency
+containment via 24-hour long time-domain simulations. In or-
+der to reproduce a realistic grid operative scenario for the nu-
+merical analyses, power reserves for frequency containment and
+restoration are allocated following the procedure adopted by a
+transmission system operator (TSO). This stage, also described
+in the paper, leverages a unit commitment formulation fed by
+forecasts of renewable generation and demand computed with
+state-of-the-art methods.
+The contributions of this paper are listed here below.
+(1) Propose a comprehensive benchmark framework, that
+comprises a day-ahead schedule layer with procedures
+nowadays adopted by TSOs and a day-long real-time op-
+eration stage that provides a way to assess the frequency
+containment performance of power systems under daily
+operation.
+(2) A comprehensive simulation model of a low-inertia power
+grid that includes detailed dynamic models of all the de-
+vices in order to obtain the dynamics that are not captured
+by simplified models. Particularly, we consider the dy-
+namic interactions between the low-inertia power grid and
+the converter-based BESS, and the closed-loop dynamics
+between the converter and the battery DC voltage model.
+(3) Quantitative comparison of the impact of grid-forming ver-
+sus grid-following converter-interfaced BESS on the sys-
+tem frequency containment via suitably-defined frequency
+metrics.
+The rest of the paper is structured as follows. Section 2
+presents the state of the art on converters’ control. Section 3
+describes the adopted frequency control strategies. Section 4 de-
+scribes the simulation framework and power reserves allocation.
+Section 5 illustrates the study cases and simulation results, and
+Section 6 concludes the paper.
+2. State of the art on converters’ control
+There are generally two main approaches to achieve the power
+control for power converter-interfaced units: grid-following and
+grid-forming controls [13–15]. Here below we recall the def-
+initions of grid-following and grid-forming controls proposed
+in [13].
+In a grid-following converter, the current injected by the con-
+verter is controlled with a specific phase displacement from the
+grid voltage at the point of common coupling (PCC). As a conse-
+quence, the knowledge of the fundamental frequency phasor of
+the grid voltage is needed at any time for the correct calculation
+of the converter’s reference current, whose amplitude and angle
+with respect to the grid voltage phasor are properly modified by
+outer control loops so as to inject the required amount of active
+and reactive power or control the RMS voltage.
+In a grid-forming unit, the magnitude and angle of the voltage
+at the PCC are controlled. As a consequence, the knowledge of
+the fundamental frequency phasor of the grid voltage at the point
+of connection is not strictly necessary. Depending on the charac-
+teristics of the network to which the converter is connected, an
+isolated system or a slack bus, it is possible by means of addi-
+tional outer loops to adapt the injected instantaneous active and
+reactive power also to provide voltage and frequency support. In
+an isolated system, a grid-forming unit could behave itself like a
+slack-bus. When connected with other power sources, through an
+inductive line, the grid-forming converter is controlling the active
+power by the modification of the angle. The voltage magnitude is
+independent of the active power control.
+In contrast to the grid-following control whose concept has
+been widely accepted, several variants of control laws allowing
+the grid-forming capability have been recently proposed [16–18].
+Some new controllers have been proposed to make the converter
+behave like synchronous machine, e.g. Virtual Synchronous Gen-
+erator (VSG) [19–21], Virtual Synchronous Machine (VSM) [22,
+23], VISMA [24], Synchronverter [25,26], droop-based control [27,
+28]. Some of those controllers (e.g., VSG and VSM) use a Phase
+Locked-Loop (PLL) to decouple the power control from frequency
+control capability, while the droop-based controls are PLL-free.
+The benefit of using PLL-free controls is to avoid the stability
+issues caused by PLL and possibly the interaction between the
+PLL and power controller [29]. Another recently introduced grid-
+forming control law is the Virtual Oscillator (VOC) [30,31]. It
+provides a way to synchronize and control the converter by acting
+as a non-linear oscillator. This control may be more advantageous
+in case of voltage unbalance and distortion due to its non-linear
+characteristics. However, its robustness of interacting with the
+grids, that comprise various generation resources (i.e., the mix
+of synchronous generations and power-electronics devices inter-
+faced generations), has not yet been properly studied and may
+be the subject of future studies. In this context, the droop-based
+PLL-free grid-forming control proposed in [28] is considered in
+this paper as it has been proved to be robust on a wide range of
+short circuit ratio (i.e., 1.2 to 20) as well as under contingency
+analysis in low-inertia power grids [12].
+3. Implemented frequency control strategies
+3.1. Power converter controls
+3.1.1. PLL-free grid-forming converter control
+A grid-forming converter controls the magnitude and angle
+of the voltage at its terminals, thus linking the active power ex-
+change with the angle difference between the modulated voltage
+and the grid voltage at PCC. In this context, the estimate of grid
+voltage angle is necessary and can be achieved in two ways: by
+2
+===== PAGE 3 =====
+Y. Zuo, Z. Yuan, F. Sossan et al. Sustainable Energy, Grids and Networks 27 (2021) 100496
++
++ +
+_
+Fig. 1. PLL-free grid-forming converter.
+using a PLL or directly linking the active power exchange to the
+angle difference between the grid and the modulated voltages to
+create a PLL-free controller.
+We opt for the PLL-free grid-forming control proposed in [28].
+This control layout, highlighted in blue Fig. 1, is an effective and
+simple scheme that allows the converter to synchronize with
+the grid and provide the frequency containment. Specifically,
+the frequency droop coefficient mp corresponds to the active
+power-frequency p-f droop coefficient. The reactive power com-
+pensation with droop nq adjusts the voltage magnitude reference
+according to the difference between actual reactive power output
+and the reference reactive power. A first-order low-pass filter
+with cut-off frequency ωLP is added to avoid fast frequency vari-
+ations imposed by the control of the converter’s terminal and
+filter out the power measurements noise; a lead–lag filter with
+time constants T1 and T2 is applied to the power measurements
+to improve the converter dynamics [32]. It is worth noting that in
+the adopted grid-forming control, a virtual impedance is included
+in order to keep the control as it was proposed in the original
+MIGRATE project report [28]. However, the virtual impedance is
+only activated to limit the current under over-current condition
+(e.g. short-circuits). Under the normal operating conditions we
+tested, it is not activated.
+3.1.2. Grid-following converter operated with grid-supporting mode
+The grid-forming control adjusts the modulated voltage with
+respect to the grid voltage at PCC, whereas the grid-following
+control adjusts the injected power with respect to the grid voltage
+at the PCC. As shown in Fig. 2, the grid-following converter
+controls the values of active and reactive power by controlling the
+amplitude and phase of the injected current with respect to the
+grid-voltage at the PCC. In this case, a three-phase PLL is required
+to estimate the fundamental frequency phasor of the grid voltage,
+so as to generate the instantaneous value of the current reference
+and, eventually, the voltage reference. In this regard, the active
+and reactive power are controlled independently.
+The grid-following converter is operated with grid-supporting
+mode by adding higher-level frequency and voltage droop regu-
+lators. The active power is regulated according to the f -p control
+gain K
+following
+f -p , as the frequency deviates from the reference value.
+The reactive power is regulated according to the v−q control gain
+K
+following
+v−q , as the difference between the measured voltage and the
+voltage reference exceeds the dead-band of ∆Vtr . Fig. 3 illustrates
+the PLL with moving average filter (MAF) from [33] used for
+tracking the fundamental phasor of grid voltage at the PCC. It
+consists of a phase detector, a loop filter and a voltage controlled
+Fig. 2. Grid-following converter with grid-supporting mode.
+Fig. 3. PLL implemented in grid-following converter with grid-supporting mode.
+oscillator. The loop filter includes a frequency-adaptive MAF and
+a PI controller so as to enhance the PLL’s filtering capability [34].
+The time window length, Twd, of the frequency-adaptive MAF is
+adjusted online according the frequency variation as Twd = 1/ ˆfg ,
+where ˆfg is the PLL estimated frequency. The parameter wLF is
+the cut-off frequency of the low-pass filter applied to reduce the
+oscillation of ˆfg , which is used by both the frequency-adaptive
+MAF and upper-level frequency regulator.
+3.2. Frequency controls in synchronous generators
+3.2.1. Frequency containment and restoration regulation
+The synchronous generators provide both frequency contain-
+ment and frequency restoration, as shown is Fig. 4. The parameter
+Rp is the static droop coefficient for frequency containment, Ts
+is the integration time constant for the frequency restoration
+regulation, wref is reference frequency (i.e., nominal frequency),
+wmeas is measured actual frequency, Pset is the power set-point
+scheduled for the generator, and Pref is the power reference for
+the turbine-governor system.
+3.2.2. Hydraulic turbine and governor system
+As it will be detailed in Section 4.5, the low-inertia 39-bus
+power grid includes only hydropower plants, being thermal gen-
+eration replaced by wind power [12]. The adopted governing sys-
+tem for hydropower plants is shown in Fig. 5 and is from [35]. It
+consists of a PI governor, a servomotor, and a non-linear turbine-
+water column model that accounts for the effects of varying flow
+on the effective water starting time. Parameters kp,gov and ki,gov
+are the proportional and integral gains of the PI governor, ka and
+Ta are the gain and time constant of the servomotor, and Tw the
+water starting time of the hydro water column.
+The values of the parameters presented in this section are
+listed in Appendix.
+3
+===== PAGE 4 =====
+Y. Zuo, Z. Yuan, F. Sossan et al. Sustainable Energy, Grids and Networks 27 (2021) 100496
+Fig. 4. Diagram of the synchronous generator frequency containment and
+restoration regulators.
+Fig. 5. Diagram of the hydro turbine-governing system.
+Fig. 6. Post-contingency RoCoF for p-f droop coefficients ( f -p control gains) 2%
+(225 MW/Hz).
+3.3. Sensitivity analysis
+We conducted a sensitivity analysis of the system frequency
+response with respect to the critical converter control parame-
+ters. Two critical controls parameters that have a major impact on
+the control of the converters are studied: the p-f droop coefficient
+(f -p control gain) and the cut-off frequency of the low-pass
+filter.2 The sensitivity of the system frequency response to these
+parameters is studied on the same low-inertia 39-bus power grid
+presented in Section 4.5. To excite the converter control response,
+we simulated a large contingency: the outage of G4 (i.e., tripping
+of 300 MW generation power).
+In order to be in line with the p-f droop coefficients ( f -p con-
+trol gains) adopted in the 24-hour long simulation cases in , the
+same p-f droop coefficients ( f -p control gains) are selected in the
+contingency tests, namely, 2% (225 MW/Hz) and 1% (450 MW/Hz).
+As for the cut-off frequency of the low-pass filters, it should be
+tuned in a range that is wide enough while also insuring controls’
+stability [28,34]. To this end, the cut-off frequency is tuned in the
+range from 1/2 to 1/10 of the nominal frequency, i.e., the selected
+values are 25 Hz, 10 Hz and 5 Hz, respectively.
+Figs. 6 and 7 show the system post-contingency Rate-of-
+Change-of-Frequency (RoCoF) for the p-f droop coefficients 2%
+(f -p control gain 225 MW/Hz) and 1% ( f -p control gain 450
+2 In the grid-forming control, the low-pass filter is inside the synchronization
+and p-f droop layer. In the grid-following control, the low-pass filter is inside
+the PLL (see Fig. 3).
+Fig. 7. Post-contingency RoCoF for p-f droop coefficients ( f -p control gains) 1%
+(450 MW/Hz).
+MW/Hz), respectively. The RoCoF is computed as the discrete first
+time derivative of the system frequency 3 with time difference ∆t
+= 20 ms. The fact that the RoCoF instead of frequency is used as
+an index for comparing different cases, is to better highlight the
+differences in post-contingency system frequency performance.
+On one hand, for both grid-forming and grid-following controls,
+the case with lower p-f droop coefficient 1% (higher f -p control
+gain 450 MW/Hz) exhibits higher RoCoF than the case with
+higher p-f droop coefficient 2% (lower f -p control gain 225
+MW/Hz). This is consistent with the expectation that the lower
+p-f droop coefficient (higher f -p control gain) leads to larger
+amount of active power injected by the converter into the power
+grid, thereby allowing improved system frequency containment.
+On the other hand, with the same p-f droop coefficient ( f -p
+control gain), the cut-off frequency of the low-pass filter also
+affects the performance of the converter controls. For the grid-
+forming control, reducing the cut-off frequency increases the
+post-contingency RoCoF, whereas for the grid-following control,
+reducing the cut-off frequency decreases post-contingency RoCoF.
+In the grid-forming control, the equivalent inertia constant is
+represented by the term 1
+2mpωLP
+[28], whereby the frequency
+is better contained with lower ωLP as it corresponds to higher
+equivalent inertia. In the grid-following control, the higher ωLF
+for the low-pass filter in PLL allows to capture faster frequency
+dynamics, therefore enabling the converter to react faster to the
+frequency decreasing after the contingency.
+In this respect, the cut-off frequency of the low-pass filter that
+allows the best converter contribution to the system frequency
+containment has been adopted, i.e., 5 Hz for the grid-forming
+control and 25 Hz for the grid-following control. From Figs. 6 and
+7 it can be seen that, overall, the grid-forming control outper-
+forms the grid-following control for both the cases with p-f droop
+coefficients 2% and 1% ( f -p control gains 225 MW/Hz and 450
+MW/Hz). Nevertheless, in the condition where the grid-forming
+control adopts an unfavourable cut-off frequency while the grid-
+following control uses an advantageous one, the grid-forming
+converter may not outperform the grid-following converter.
+4. Simulation framework
+4.1. Framework structure
+The proposed simulation framework has two layers: real-time
+simulations and a scheduling stage. The former is used to evaluate
+the performance of the converter controllers by analysing the
+whole grid dynamic behaviour. The latter allows to size power
+3 For all the cases, we consider the rotor speed of the same generator as
+system frequency.
+4
+===== PAGE 5 =====
+Y. Zuo, Z. Yuan, F. Sossan et al. Sustainable Energy, Grids and Networks 27 (2021) 100496
+reserve requirements and reproduce realistic operative scenar-
+ios for the real-time simulations. Fig. 8 illustrates the overall
+simulation process, where L and W denote measurements of
+power demand and wind generation, respectively. The process
+starts with dividing the measurements into two subsets, one for
+training the forecasting and model, and one to feed the real-time
+simulations. Measurements and forecasts are discussed in 4.2.
+Accordingly, the demand profile denoted by the sequence L =
+{l1, l2, . . . ,ln} is separated as L1 = { ˜l1, ˜l2, . . . ,˜ln−24} and L2 =
+{ln−23, ln−22, . . . ,ln}, and the wind generation profile denoted by
+the sequence W = { w1, w2, . . . , wm} is separated as W1 =
+{ ˜w1, ˜w2, . . . , ˜wm−24} and W2 = {wm−23, wm−22, . . . , wm}.4 L2 and
+W2 are directly applied to the RTS to be reproduced in the day-
+long simulations. At the day-head schedule layer, L1 and W1 are
+sent to the forecasting models (described in Section 4.2) to obtain
+the demand and wind generation forecasting results, which are
+then used to compute the frequency restoration reserve, with the
+procedure described in Section 4.3. Additionally, L1 is also used
+for computing the frequency containment reserve as is consid-
+ered as 10% of peak load (described in Section 4.3). Then, a unit
+commitment model determines an optimal hourly generation and
+reserve schedule accounting for the demand and wind generation
+forecasting results, the frequency containment and restoration re-
+serves, as well as the power network and operational constraints
+(detailed in Section 4.4). Eventually, the RTS executes simulations
+of the dynamic models of the low-inertia 39-bus power grids
+which are implemented with the realistic demand and wind
+generation profiles (i.e., L2 and W2) and the energy generation and
+reserve schedules provided by the unit commitment model.
+It is worth to note that, in the low-inertia 39-bus power grid,
+all the devices (including type-III wind power plants, synchronous
+generators, converter-interfaced BESS and frequency and voltage-
+dependent dynamic loads) are fully modelled in time domain to
+make the simulations as close as possible to the realistic sce-
+nario. Moreover, the converter is modelled by switching devices
+(i.e., IGBT and Diode) in order to adequately capture the dynamics
+due to the interaction between the grid-forming/grid-following
+converter and the system frequency. In view of the high compu-
+tational complexity and the microsecond-scale time-integration
+step required by the high sampling frequency devices (i.e., Pulse
+Width Modulation (PWM) generator of the converter and Phase
+Measurement Units (PMUs)), we choose to adopt a real-time
+simulation platform. All dynamic models used for the simula-
+tions are built in MATLAB/Simulink and executed in an OPAL-RT
+eMEGAsim real-time simulator. For the sake of reproducibility, all
+the models are open-source available online [36].
+The demand and wind generation forecasting, the system re-
+serves allocation, the unit commitment model and the dynamic
+models of the low-inertia 39-bus power grid are described in the
+following sub-sections.
+4.2. Measurements and forecasting
+Although it is not a specific contribution of this paper, fore-
+casting stochastic generation and demand is a necessary element
+of the process and thus briefly discussed here below.
+4 It should be noted that li = {li,1, li,2, . . . ,li,3600} is the 1-s resolution demand
+set for hour i and ˜li is the average demand of hour i. wi and ˜wi are likewise the
+1-s resolution wind generation set and the average wind generation for hour i,
+respectively.
+Fig. 8. Simulation framework.
+Fig. 9. Aggregated day-ahead wind forecast and 99.8% prediction intervals.
+4.2.1. Wind power
+Wind production measurements are at a 1-s resolution and
+coming from two real wind farms with a nominal capacity of
+17 MW and 50 MW. Measurements are scaled proportionally to
+match the capacity of the four wind farms considered in the case
+study (i.e., 1500 MW, 1200 MW, 750 MW and 600 MW). Forecasts
+are computed in terms of prediction intervals, which express the
+range where the realization is predicted to happen at a certain
+confidence level, and thus are the suitable format to evaluate
+reserve requirements. For the reasons that will be discussed in
+4.3, the target confidence level is 99.8%. Prediction intervals of
+wind generation are computed with a quantile regression forest
+model from the existing literature [37,38] trained on historical
+numerical weather predictions and plant production data. Fig. 9
+shows the day-ahead hourly wind forecast and the corresponding
+prediction intervals at 99.8% confidence level.
+4.2.2. Power demand
+The active power measurements are adapted from a mon-
+itoring system based on PMUs installed in the 125 kV sub-
+transmission system of Lausanne, Switzerland [39]. Reactive
+5
+===== PAGE 6 =====
+Y. Zuo, Z. Yuan, F. Sossan et al. Sustainable Energy, Grids and Networks 27 (2021) 100496
+Fig. 10. Aggregated day-ahead demand forecast and 99.8% prediction intervals.
+power is computed assuming a constant power factor for the
+loads. Since the demand level of Lausanne is smaller than the
+demand level of the IEEE 39-bus benchmark power grid, the
+measured load profiles are scaled-up to match the rating power
+of the 19 loads in the 39-bus power grid. Specifically, 7 different
+demand profiles (i.e., corresponding to measurements at different
+network buses of Lausanne) and their combinations are used
+such that the scaled-up profiles for the 19 loads are all different.
+Forecasting is based on a Seasonal Auto Regression Integrated
+Moving Average (SARIMA) model with seasonality order of 24
+hours, seasonal AR order of 5 (non-zero terms at lags 1, 2, 3 and
+5), AR order of 1, MA order of 18 (non-zero terms at lags 1, 6 and
+18), and a trend difference order of 1. Fig. 10 shows the day-ahead
+hourly demand forecast and the corresponding 99.8% prediction
+intervals.
+4.3. System reserves
+Power reserves for frequency containment and restoration are
+calculated referring to the norms of the Swiss national TSO, Swiss-
+grid. Both are allocated as symmetric products and calculated as
+described next [40,41].
+4.3.1. Frequency containment reserve
+Typically, national TSOs within a large interconnected system
+procure reserves for frequency containment proportionally to the
+size of their systems. Swissgrid, as the Swiss TSO within the
+electricity grid of continental Europe (UCTE), procures reserve as
+the pro rata of its maximum load compared to the total UCTE
+one [42]. Since our low-inertia 39-bus power system is assumed
+to be non-interconnected, we set the frequency containment re-
+serve as 10% of the peak load, ±500 MW, using the deterministic
+notion proposed in [43].
+4.3.2. Frequency restoration reserve
+ENTSO-E operation handbook recommends attaining zero fre-
+quency error with a probability of 99.8% [44]. According to this
+principle, and since grid imbalances are caused by stochastic
+generation and demand, we size the power reserve for frequency
+restoration considering 99.8% prediction intervals of the wind
+generation and power demand. Fig. 11 shows, in addition to the
+99.8% prediction intervals of wind and demand already discussed,
+the allocated power reserve for frequency restoration. The to-
+tal positive, R+
+h (negative, R−
+h ), reserve at hour h is the sum of
+the upper (lower) quantile of the wind and demand prediction
+intervals. However, since the power reserve is symmetric, the
+applied total secondary frequency reserve at each hour is Rh =
+±max{|R+
+h |, |R−
+h |}.
+Fig. 11. Secondary frequency reserve for 99.8% prediction intervals.
+4.4. Unit commitment for generation and reserve scheduling
+We formulate a security constrained unit commitment (SCUC)
+model for generation and frequency containment and restoration
+reserves scheduling based on the DC power flow. This model is
+used as a replace of the day-ahead market set-up to schedule
+the active power profiles. The BESSs are treated here as an ad-
+ditional frequency regulation service provider. For the sake of
+a fair comparison in the results section, they are not included
+in the SCUC (where only synchronous generators are included)
+because this would determine different operating conditions for
+the generators, making it difficult to compare the dynamic system
+performance in the cases with and without the BESS. As a matter
+of fact, the exclusion of the BESS in the SCUC produces the
+same boundary conditions on the system allowing to quantify the
+impact of the BESS on the system dynamics.
+The objective is to minimize the economic cost of energy gen-
+eration and reserve procurement considering the power network
+constraints, operational (security) constraints, load and renew-
+able energy generation forecast, and reserve requirements. The
+SCUC model is given in (1). The SCUC model (1) is a mixed integer
+linear programming problem [45].
+Minimize
+Ω
+Cost uc = Ecost + Upcost + Dwcost + Revcost
+subject to
+Ecost =
+∑
+n,t
+βnpgn,t (1a)
+Upcost =
+∑
+n,t
+C
+up
+n,t u
+up
+n,t (1b)
+Dwcost =
+∑
+n,t
+C down
+n,t udw
+n,t (1c)
+Revcost =
+∑
+n,t
+C reserve
+n,t pr
+gn,t (1d)
+pgn,t − pdn,t =
+∑
+l
+A(n, l)pl,t + Gn (1e)
+pl,t = θsl,t − θrl,t
+Xl
+(1f)
+uon
+n,t Rampdw
+n,t ≤ pgn,t − pgn,t−1 ≤ uon
+n,t Ramp
+up
+n,t (1g)
+uon
+n,t − uon
+n,t−1 = u
+up
+n,t − udw
+n,t (1h)
+u
+up
+n,t + udw
+n,t ≤ 1 (1i)
+∑
+n
+pr
+gn,t ≥ Revt (1j)
+uon
+n,t pmin
+gn ≤ pgn,t ≤ uon
+n,t pmax
+gn (1k)
+pmin
+gn ≤ pgn,t + pr
+gn,t ≤ pmax
+gn (1l)
+6
+===== PAGE 7 =====
+Y. Zuo, Z. Yuan, F. Sossan et al. Sustainable Energy, Grids and Networks 27 (2021) 100496
+pmin
+l ≤ pl,t ≤ pmax
+l (1m)
+θ min
+n ≤ θn − θn′ ≤ θ max
+n , ∀n ∈ NPV , n′ ∈ Nslack (1n)
+θ min
+l ≤ θsl,t − θrl,t ≤ θ max
+l (1o)
+{
+uon
+n,t , u
+up
+n,t , udw
+n,t
+}
+∈ {0, 1} (1p)
+The objective cost function Cost uc includes the energy gen-
+eration cost (linear) Ecost , generator start-up cost (linear) Upcost ,
+generator shut-down cost (linear) Dwcost and reserve cost Revcost .
+Ω = { pgn,t , uon
+n,t , u
+up
+n,t , udw
+n,t } is the set of decision variables. βn
+is the cost parameter of energy generation. C
+up
+n,t , C down
+n,t , C reserve
+n,t
+are the cost parameters of generator start-up, shut-down and
+reserve. pgn,t is the energy generation of the generator at bus
+n and time step t. pdn,t is the active power load forecast. pl,t
+is the active power flow of transmission line l. A(n, l) is the
+network matrix with A(n, l) = 1 if n is the sending end of
+transmission line l and A(n, l) = − 1 if n is the receiving end
+of transmission line l. Gn is the shunt conductance at bus n. As
+we are using the DC power flow, the voltage amplitudes are
+assumed equal to 1 p.u. for all the buses. Constraint (1e) is the
+active power balance equation. Constraint (1f) is the DC power
+flow equation. pl,t is the power flow through the transmission
+line l at time step t. θsl,t , θrl,t are the voltage phase angles at
+the sending end and receiving end of transmission line l. uon
+n,t is
+the unit commitment variable. u
+up
+n,t is the unit start-up variable.
+udw
+n,t is the unit shut-down variable. Constraint (1g) is the ramp-
+rate bound. Ramp
+up
+n,t , Rampdw
+n,t are the upper and lower bounds of
+generators’ ramp rates. Constraint (1h) is the relationship among
+the generator start-up, shut-down and in-operation variables.
+Constraint (1i) is the bound of start-up and shut-down variables.
+Constraint (1j) is the requirement of total reserve which is equal
+to the sum of frequency containment and restoration reserves
+computed in Section 4.3. Constraint (1k) is the bound for active
+power generation. Constraint (1l) is the bound of reserve (plus
+energy generation). Constraint (1m) is the bound of power flow of
+the transmission line. Constraint (1n) is the phase angle stability
+bound for all (non-slack bus) generators compared with the slack
+bus generator. Nslack is the set of slack bus generator. NPV is the
+set of non-slack bus generator. Constraint (1o) is the phase angle
+bound for all transmission line for security consideration. For
+the unit commitment variables,
+{
+uon
+n,t , u
+up
+n,t , udw
+n,t
+}
+= 1 means the
+generator is in-operation, start-up action and shut-down action,
+respectively. Otherwise,
+{
+uon
+n,t , u
+up
+n,t , udw
+n,t
+}
+= 0 means the generator
+is off-operation, no start-up action or shut-down action.
+4.5. Low-inertia IEEE 39-bus power grids
+The low-inertia power system considered in this work is de-
+rived from the IEEE 39-bus benchmark system, where four syn-
+chronous generators (one thermal power plant and three hydro
+power plants) are replaced with four wind farms. The detailed
+description of the model is given in [12]. For clarity, its main
+features are summarized here. The configuration of the low-
+inertia 39-bus system is shown in Fig. 12. Its inertia constant
+(referred to a 10 GW base and obtained by summing the inertia
+constant of all the conventional power plants) has decreased
+from 7.84 s of the original grid to 1.98 s. Conventional genera-
+tors are simulated with a sixth-order model for the synchronous
+generator, a prime mover and governor model [46], and an ex-
+citation system associated with an Automatic Voltage Regulator
+(AVR) [47]. Each wind farm is simulated by scaling up a de-
+tailed model of a Type-III wind turbine, including a sixth-order
+order model for the double-fed induction generator (DFIG) and
+the averaged model for the AC/DC back-to-back converter [48].
+Available power measurements from the wind farms are assumed
+to be the mechanical power on the turbine shaft. This is done in
+Fig. 12. Diagram of 39-bus low-inertia power systems (The presence of the BESS
+at bus 17 is taken into account in grid).
+order to retain a detailed dynamic modelling representation of in-
+teractions among the wind turbines and the power grid. Loads are
+reproduced with a three-phase frequency and voltage-dependent
+EPRI LOADSYN load model [49] associated with the input power
+demand measurements. For the BESS, we consider a single system
+with a power rating of 225 MVA and energy capacity of 175
+MWh. Its model consists of the battery pack and a four-quadrant
+DC/AC power converter, as shown in Fig. 13. The battery pack
+is simulated with a three-time-constant equivalent circuit model
+with SOC-dependent parameters, reported in Table 1. The arrows
+in the table imply that these values vary linearly with the SOC
+in the indicated range. We use the model proposed in [50,51] for
+a Lithium-Titanate-Oxide battery, assuming a 2s156p 5 configu-
+ration of the battery packs (with identical parameters) feeding a
+single DC bus. The power converter is modelled in detail at the
+level of the switching devices.
+The BESS power rating (approx. 5% of the peak demand) is
+chosen so as to be of meaningful size for the system. The BESS’s
+energy capacity is chosen as a function of the power rating of the
+power converter. Commercially available BESSs are commonly
+designed so that they may be fully charged or discharged in
+between 30 min to 2 h (according to the C-rate limitations of the
+cells).
+4.6. Case studies
+For the purpose of comparison, we test five cases over 24-
+hour long simulations, where the same generation and reserve
+schedules obtained from the SCUC are reproduced. Figs. 14(a) and
+14(b) show the generation and reserve schedules determined for
+the day of operations.
+Table 2 lists the five cases tested over the 24-hour long sim-
+ulations. Case 1 is the base configuration with no BESS. Case 2
+and Case 3 feature a BESS connected to the low-inertia power
+grid via a PLL-free grid-forming converter with the p-f droop
+coefficients of 2% and 1%, corresponding to the f -p control gains
+of 225 MW/Hz and 450 MW/Hz, respectively. Case 4 and Case 5
+5 Two battery packs in series, and 156 series in parallel.
+7
+===== PAGE 8 =====
+Y. Zuo, Z. Yuan, F. Sossan et al. Sustainable Energy, Grids and Networks 27 (2021) 100496
+Table 1
+Parameters of the BESS connected to the HV transmission grid.
+SOC[%] 10 →30 30 →50 50 →70 70 →90
+E [V ] 1184.4 → 1250.0 1250.0 → 1305.8 1305.8 → 1360.4 1360.4 → 1466.4
+Rs [Ω] 0.052 → 0.042 0.042 → 0.030 0.030 → 0.028 0.028 → 0.026
+R1 [Ω] 0.190 → 0.150 0.150 → 0.180 0.180 → 0.158 0.158 → 0.398
+C1 [F ] 4465.0 → 4904.5 4904.5 → 6998.0 6998.0 → 6000.0 6000.0 → 5617.0
+R2 [Ω] 0.080 → 0.018 0.018 → 0.018 0.018 → 0.018 0.018 → 0.020
+C2 [F ] 454.50 → 1069.5 1069.5 → 1241.0 1241.0 → 1245.0 1245.0 → 1252.5
+R3 [Ω] 5.0e −3 → 9.8e−5 9.8e −5 → 4.8e−4 4.80e −4 → 13.6e−4 13.6e −4 → 12.0e−4
+C3 [F ] 272.10 → 394.50 394.50 → 1479.8 1479.8 → 2250.0 2250.0 → 3088.7
+Table 2
+Cases studied through day-long simulations.
+Case BESS converter control f -p Gain
+Case 1 No BESS –
+Case 2 Grid-forming 225 MW/Hz
+Case 3 Grid-forming 450 MW/Hz
+Case 4 Grid-following with supporting mode 225 MW/Hz
+Case 5 Grid-following with supporting mode 450 MW/Hz
+Fig. 13. Diagram of BESS-VSC.
+are the two cases where the BESS is connected to the low-inertia
+power grid through a grid-following converter with f -p control
+gains of 225 MW/Hz and 450 MW/Hz, respectively. For the sake
+of brevity, in the following of this section we also use f -p control
+gains for the grid-forming converter.
+5. Results
+5.1. Metrics
+In order to quantitatively evaluate the frequency containment,
+the following metrics are used.
+• Frequency Probability Density Function (PDF), identified us-
+ing the 24-hour frequency measurements from the 19 sim-
+ulated PMUs (with a reporting rate of 50 frames per second)
+located at 19 load buses [52].
+• Integral Frequency Deviation (IFD):
+IFD =
+L∑
+i
+N∑
+k=1
+|fk,i − f0| (2)
+where L is the number of loads and N is the total sampling
+number of frequency measurements for each load.
+• Relative Rate-of-Change-of-Frequency (rRoCoF):
+rRoCoF = ∆fpcc/∆t
+∆PBESS
+(3)
+where ∆fpcc is the difference between one grid frequency
+sample and the next (once-differentiated value) at the bus
+where the BESS is connected to, ∆PBESS is the once-
+differentiated BESS active power, and ∆t is the sampling
+interval.
+Fig. 14. Generation and reserve schedules. Generation schedule (a); Frequency
+containment and restoration reserve schedule (b).
+The frequency PDF and IFD measure grid frequency deviations
+from the nominal value and are used to assess frequency con-
+tainment performance. The rRoCoF measures the RoCoF regula-
+tion at PCC weighted by the delivered active power of the BESS
+and is used to compare the performance of grid-forming versus
+grid-following converters.
+5.2. Results and discussions
+This section presents and discusses the simulation results
+for the 5 cases listed in Table 2. Fig. 15(a) shows the system
+frequency for the 5 cases. In the zoomed region, we show the
+grid frequency dynamics at the beginning of the 15-th hour,
+where a considerable frequency deviation happens. The cases
+with a higher f -p control gain attain more frequency containment
+because of the larger regulating power provided, as visible in the
+zoomed region of Fig. 15(b). While Fig. 15 provides a general view
+of the system frequency responses, the defined metrics allow a
+better scrutiny of the control performance and will be described
+next.
+5.2.1. IFD
+The IFD results in Table 3 shows that the case without BESS
+(i.e., Case 1 ) scores the highest IFD. In Case 2 and Case 3 , IFD
+8
+===== PAGE 9 =====
+Y. Zuo, Z. Yuan, F. Sossan et al. Sustainable Energy, Grids and Networks 27 (2021) 100496
+Fig. 15. System frequency and BESS active power. System frequency
+(represented by the rotor speed of Generator 2) (a); BESS active power (b).
+Table 3
+Integrated Frequency Deviation and apparent power for the 5 cases.
+Case IFD [Hz]
+∑
+SBESS [MVA·h]
+Case 1 7.547 × 105 –
+Case 2 6.718 × 105 435.5
+Case 3 6.015 × 105 442.8
+Case 4 6.798 × 105 558.3
+Case 5 6.138 × 105 564.3
+decreases by 11.0% and 20.3%, respectively, compared to Case 1. In
+Case 4 and Case 5, IFD decreases by 10.0% and 18.7%, respectively.
+This is in accordance with the expectation that the higher f -p con-
+trol gain (i.e., 450 MW/Hz) provides more frequency containment,
+therefore reducing deviations of the grid frequency.
+5.2.2. PDF
+Fig. 16 shows the PDF estimated from the frequency mea-
+surements on the 19 loads. The PDF results are consistent with
+the value of IFD, demonstrating that the higher control gain
+results in smaller standard deviation and higher probability at
+50 Hz. By comparing Case 2 and Case 4 , the two cases with the
+lowest f -p control gain, we can observe that the grid-forming
+and grid-following converters achieve an equivalent increment
+of performance for frequency containment. After examining the
+values of IFD and PDF standard deviation for Case 3 and Case 5 ,
+we can observe that, for a higher f -p control gain, the grid-
+forming converter performs better than the grid-following con-
+verter, achieving a 2% reduction of IFD and 1% reduction of PDF
+standard deviation.
+Fig. 16. Probability density function for frequency measurements of 19 loads.
+Standard deviation for each case: σ
+f
+case1 = 0.0128, σ
+f
+case2 = 0.0113, σ
+f
+case3 =
+0.0102, σ
+f
+case4 = 0.0113, and σ
+f
+case5 = 0.0103.
+Fig. 17. Cumulative density function (CDF) of rRoCoF. Case2 and Case4 (a); Case3
+and Case5 (b).
+5.2.3. rRoCoF
+Fig. 17 illustrates the Cumulative Density Functions (CDFs)
+of rRoCoF for the larger and smaller f -p gains for both grid-
+forming and grid-following converter. For the smaller gain in
+Fig. 17(a), the grid-forming converter performs better than the
+grid-following converter as it achieves lower RoCoF per Watt of
+regulating power. The standard deviation of rRoCoF for Case 2
+and 4 are σ rRoCoF
+case2 = 0.0016 and σ rRoCoF
+case4 = 0.0065, respectively.
+Fig. 17(b) shows that also for the larger gain, the grid-forming
+converter performs better than the grid-following as it achieves
+smaller frequency rates. In this case, the corresponding standard
+deviations of rRoCoF are δrRoCoF
+case3 = 0.0013 and δrRoCoF
+case5 = 0.0064 for
+Case 3 and 5, respectively.
+Fig. 18 shows the evolution in time of the BESS state of charge
+(SOC). It is interesting to observe its decreasing trend, that, since
+the average grid frequency along the day is 50 Hz due to the
+frequency restoration action, is to ascribe to power losses on the
+9
+===== PAGE 10 =====
+Y. Zuo, Z. Yuan, F. Sossan et al. Sustainable Energy, Grids and Networks 27 (2021) 100496
+Table 4
+List of parameters in the frequency controls of the Low-inertia 39-bus Power grid.
+Grid-forming control Grid-following control Frequency control of
+synchronous generators
+mp 2%/1% K
+following
+f −p
+[MW/Hz]
+225/450
+Rp 5%
+Ts [s] 120
+ka 1
+Ta [s] 0.2
+nq [V/MVar] 0.33
+K
+following
+v−q
+[MVar/V]
+1.5 kp,gov 2.4
+ki,gov
+G2 0.36
+∆Vtr [p.u.] ±0.005 G3 0.30
+G4 0.39
+ωLP [rad/s] 31.4 ωLF [rad/s] 157
+G6 0.31
+G7 0.41
+G10 0.26
+T1 [s] 0.0333 kp,pll 60
+Tw [s]
+G2 2.02
+G3 2.39
+G4 1.90
+T2 [s] 0.0111 ki,pll 1400
+G6 2.32
+G7 1.76
+G10 2.80
+Fig. 18. Evolution in time of the battery state of charge.
+AC- and DC-side filters. Thanks to the high fidelity of the dynamic
+models, we are capable to numerically quantify the impact of
+converter controls on the SOC evolution. Since the energy losses
+are proportional to the apparent power SBESS =
+√
+P 2
+BESS + Q 2
+BESS ,
+Table 3 reports the integral of the BESS apparent power over the
+24 h of the simulation.
+On one hand, the PDF of frequency (therefore the active power
+of BESS) is more dependent on the droop setting. As we compare
+Case 3 vs Case 2 or Case 5 vs Case 4, we do observe that the cases
+with the high control gain 450 MW/Hz correspond to higher ap-
+parent power due to converter’s higher active power output than
+in the cases with the low control gain 225 MW/Hz. Therefore, for
+the same control law, we observe a larger SOC decrease in the
+case with higher control gain.
+On the other hand, the grid-following unit exhibits a higher
+apparent power throughput than in the case of grid-forming unit
+due to its converter’s higher reactive power output, as shown
+in Fig. 19. The grid-following converter provides higher reac-
+tive power because of its voltage–reactive power (v-q) regulator,
+which supports the grid voltage by injecting reactive power as
+the grid-voltage varies. Conversely, the grid-forming unit adjusts
+the converter’s voltage magnitude to limit the reactive power
+deviation from its reference value, therefore reducing the impact
+of grid voltage variation on the reactive power exchange.
+6. Conclusions
+In this paper, the full-replica dynamic model of the low-inertia
+39-bus power grid has been used to assess the performance of
+Fig. 19. BESS reactive power.
+grid-forming and grid-following converter-interfaced BESS in en-
+hancing frequency containment regulation. In order to reproduce
+a real operational scenario, frequency containment and restora-
+tion reserves are allocated with the same margins and procedures
+adopted by TSOs nowadays. To this end, a SCUC problem embed-
+ding prediction intervals from real forecasters of wind generation
+and electric demand is formulated. Based on the SCUC schedule,
+we run 24-hour long dynamic simulations reproducing the real
+outcome of the stochastic wind generation and demand (both
+from high-resolution measurements at a 1-s resolution). In the
+simulations, we compare the performance of 5 cases: no BESS,
+BESS with grid-forming converter small (225 MW/Hz) and large
+(445 MW/Hz) f -p gains, and BESS with grid-following converter
+with same gains.
+The results quantitatively verified, by means of suitably-
+defined frequency metrics, that the grid-forming control strategy
+outperforms the grid-following one achieving better frequency
+containment and lower relative RoCoF. Simulations also quan-
+titatively demonstrate that large-scale BESSs are capable of sig-
+nificantly improving the system frequency containment, and the
+level of improvement is proportionally related to the level of f -p
+gain.
+CRediT authorship contribution statement
+Yihui Zuo: Methodology, Software, Validation, Formal analy-
+sis, Writing - original draft, Visualization. Zhao Yuan: Methodol-
+ogy, Data curation, Writing - review & editing. Fabrizio Sossan:
+Methodology, Resources, Supervision, Writing - review & editing.
+Antonio Zecchino: Formal analysis, Writing - review & editing.
+10
+===== PAGE 11 =====
+Y. Zuo, Z. Yuan, F. Sossan et al. Sustainable Energy, Grids and Networks 27 (2021) 100496
+Rachid Cherkaoui: Conceptualization, Writing - review & editing.
+Mario Paolone: Conceptualization, Supervision, Writing - review
+& editing, Resources, Project administration.
+Declaration of competing interest
+The authors declare that they have no known competing finan-
+cial interests or personal relationships that could have appeared
+to influence the work reported in this paper.
+Appendix
+Table 4 lists the values of the parameters in the frequency
+controls that are applied in the low-inertia -39 bus power grid.
+References
+[1] A.Z. Amin, Renewable Energy Prospects for the European Union, Tech. Rep.,
+IRENA and European Commission, 2018.
+[2] AEMO, Review of the Black System South Australia Report – System Event
+of 28 September 2016, Tech. Rep., AEMO, 2017.
+[3] Y. Sun, S.V. Wachche, A. Mills, O. Ma, 2018 Renewable Energy Grid
+Integration Data Book, Tech. Rep., National Renewable Energy Lab.(NREL),
+Golden, CO (United States), 2020.
+[4] AEMO, Renewable Integration Study: Stage 1 Report, Tech. Rep., AEMO,
+2020.
+[5] CAISO, Frequency Response Phase 2, Tech Rep, CAISO, 2016.
+[6] A. Zecchino, Z. Yuan, F. Sossan, R. Cherkaoui, M. Paolone, Optimal pro-
+vision of concurrent primary frequency and local voltage control from a
+BESS considering variable capability curves: Modelling and experimental
+assessment, Electr. Power Syst. Res. 190 (2021) 106643.
+[7] B. Dunn, H. Kamath, J.-M. Tarascon, Electrical energy storage for the grid:
+A battery of choices, Science 334 (6058) (2011) 928–935.
+[8] AEMO, Initial operation of the Hornsdale Power Reserve Battery Energy
+Storage System, Technical Report, 2018.
+[9] VISTRA Energy, 2018 Sustainability Report, Tech. Rep., 2018.
+[10] P.V. Brogan, R.J. Best, D.J. Morrow, K. McKinley, M.L. Kubik, Effect of BESS
+response on frequency and RoCoF during underfrequency transients, IEEE
+Trans. Power Syst. 34 (1) (2019) 575–583.
+[11] U. Datta, A. Kalam, J. Shi, The relevance of large-scale battery energy
+storage (BES) application in providing primary frequency control with
+increased wind energy penetration, J. Energy Storage 23 (2019) 9–18.
+[12] Y. Zuo, M. Paolone, F. Sossan, Effect of voltage source converters with
+electrochemical storage systems on dynamics of reduced-inertia bulk
+power grids, Electr. Power Syst. Res. 189 (2020) 106766.
+[13] M. Paolone, A. Monti, T. Gaunt, T. Van Cutsem, X. Guillaud, V. Vittal,
+M. Liserre, C. Vournas, S. Meliopoulos, Fundamentals of power systems
+modelling in the presence of converter-interfaced generation, in: 21st
+PSCC, 2020.
+[14] A. Mehrizi-Sani, R. Iravani, Potential-function based control of a microgrid
+in islanded and grid-connected modes, IEEE Trans. Power Syst. 25 (4)
+(2010) 1883–1891.
+[15] J. Rocabert, A. Luna, F. Blaabjerg, P. Rodríguez, Control of power converters
+in AC microgrids, IEEE Trans. Power Electron. 27 (11) (2012) 4734–4749.
+[16] T. Qoria, E. Rokrok, A. Bruyere, B. François, X. Guillaud, A PLL-
+free grid-forming control with decoupled functionalities for high-power
+transmission system applications, IEEE Access 8 (2020) 197363–197378.
+[17] P. Unruh, M. Nuschke, P. Strauß, F. Welck, Overview on grid-forming
+inverter control methods, Energies 13 (10) (2020).
+[18] J. Matevosyan, B. Badrzadeh, T. Prevost, E. Quitmann, D. Ramasubramanian,
+H. Urdal, S. Achilles, J. MacDowell, S.H. Huang, V. Vital, J. O’Sullivan,
+R. Quint, Grid-forming inverters: Are they the key for high renewable
+penetration? IEEE Power Energy Mag. 17 (6) (2019) 89–98.
+[19] J. Driesen, K. Visscher, Virtual synchronous generators, in: 2008 IEEE Power
+and Energy Society General Meeting - Conversion and Delivery of Electrical
+Energy in the 21st Century, 2008, pp. 1–3.
+[20] J. Liu, Y. Miura, T. Ise, Comparison of dynamic characteristics between vir-
+tual synchronous generator and droop control in inverter-based distributed
+generators, IEEE Trans. Power Electron. 31 (5) (2016) 3600–3611.
+[21] B. Li, L. Zhou, Power decoupling method based on the diagonal compensat-
+ing matrix for VSG-controlled parallel inverters in the microgrid, Energies
+10 (12) (2017).
+[22] H. Beck, R. Hesse, Virtual synchronous machine, in: 2007 9th International
+Conference on Electrical Power Quality and Utilisation, 2007, pp. 1–6.
+[23] M. Yu, A.J. Roscoe, C.D. Booth, A. Dysko, R. Ierna, J. Zhu, N. Grid, H. Urdal,
+Use of an inertia-less Virtual Synchronous Machine within future power
+networks with high penetrations of converters, in: 2016 Power Systems
+Computation Conference, PSCC, 2016, pp. 1–7.
+[24] Y. Chen, R. Hesse, D. Turschner, H. Beck, Improving the grid power quality
+using virtual synchronous machines, in: 2011 International Conference on
+Power Engineering, Energy and Electrical Drives, 2011, pp. 1–6.
+[25] Q. Zhong, G. Weiss, Synchronverters: Inverters that mimic synchronous
+generators, IEEE Trans. Ind. Electron. 58 (4) (2011) 1259–1267.
+[26] R. Rosso, S. Engelken, M. Liserre, Robust stability analysis of synchron-
+verters operating in parallel, IEEE Trans. Power Electron. 34 (11) (2019)
+11309–11319.
+[27] M. Guerrero, L.G. de Vicuna, J. Matas, M. Castilla, J. Miret, A wireless con-
+troller to enhance dynamic performance of parallel inverters in distributed
+generation systems, IEEE Trans. Power Electron. 19 (5) (2004) 1205–1213.
+[28] Q. Taoufik, C. Quentin, L. Chuanyue, G. Xavier, C. Frederic, G. François,
+K. Xavier, Deliverable 3.2: Local control and simulation tools for large
+transmission systems, in: MIGRATE Project, 2018.
+[29] E. Rokrok, T. Qoria, A. Bruyere, B. Francois, X. Guillaud, Classification
+and dynamic assessment of droop-based grid-forming control schemes:
+Application in HVDC systems, Electr. Power Syst. Res. 189 (2020) 106765.
+[30] D. Raisz, T.T. Thai, A. Monti, Power control of virtual oscillator controlled
+inverters in grid-connected mode, IEEE Trans. Power Electron. 34 (6)
+(2019) 5916–5926.
+[31] T.T. Thai, D. Raisz, A. Monti, F. Ponci, A. Ahmadifar, Voltage harmonic
+reduction using virtual oscillator based inverters in islanded microgrids, in:
+2018 18th International Conference on Harmonics and Quality of Power,
+ICHQP, 2018, pp. 1–6.
+[32] G. Denis, T. Prevost, P. Panciatici, X. Kestelyn, F. Colas, X. Guillaud,
+Improving robustness against grid stiffness, with internal control of an
+AC voltage-controlled VSC, in: IEEE PESGM, 2016, pp. 1–5.
+[33] S. Golestan, J.M. Guerrero, J.C. Vasquez, Three-phase PLLs: A review of
+recent advances, IEEE Trans. Power Electron. 32 (3) (2017) 1894–1907.
+[34] S. Golestan, M. Ramezani, J.M. Guerrero, F.D. Freijedo, M. Monfared, Moving
+average filter based phase-locked loops: Performance analysis and design
+guidelines, IEEE Trans. Power Electron. 29 (6) (2014) 2750–2763.
+[35] P.S.D.P. Committee, et al., Dynamic models for turbine-governors in power
+system studies, IEEE Power Energy Soc. (2013).
+[36] DESL-EPFL, Extension of the IEEE 39-bus test network for the study of
+fundamental dynamics of modern power system, 2019, (Online). Available:
+https://github.com/DESL-EPFL.
+[37] S. Camal, A. Michiorri, G. Kariniotakis, Optimal offer of automatic frequency
+restoration reserve from a combined PV/Wind virtual power plant, IEEE
+Trans. Power Syst. 33 (6) (2018) 6155–6170.
+[38] S. Camal, A. Michiorri, G. Kariniotakis, Forecasting extremes of aggre-
+gated production from a RES virtual power plant, in: Proceedings of the
+Wind Energy Science Conference 2019, EAWE - European Academy of
+Wind Energy, Cork, Ireland, 2019, (Online). Available: https://hal.archives-
+ouvertes.fr/hal-02158589.
+[39] L. Zanni, A. Derviškadić, M. Pignati, C. Xu, P. Romano, R. Cherkaoui, A. Abur,
+M. Paolone, PMU-based linear state estimation of lausanne subtransmission
+network: Experimental validation, in: 21st PSCC, 2020.
+[40] F. Abbaspourtorbati, M. Zima, The Swiss reserve market: Stochastic
+programming in practice, IEEE Trans. Power Syst. 31 (2) (2016) 1188–1194.
+[41] J. Abrell, The Swiss Wholesale Electricity Market, Tech. Rep., Swiss
+Competence Center for Energy Research, 2016.
+[42] ENTSO-E, Continental Europe Operation Handbook, Tech. Rep., OpHB-Team,
+2016.
+[43] A.A. Khatir, R. Cherkaoui, M. Zima, Literature survey on fundamental issues
+of frequency control reserve (FCR) provision, Swiss Electr. Res. (2010).
+[44] ENTSO-E, Policy 1 – Load-Frequency Control and Performance, Tech. Rep.,
+UCTE Operation Handbook, OpHB-Team, 2016.
+[45] Z. Yuan, M. Paolone, Properties of convex optimal power flow model based
+on power loss relaxation, Electr. Power Syst. Res. 186 (2020) 106414.
+[46] Dynamic models for steam and hydro turbines in power system studies,
+IEEE Trans. Power Appar. Syst. (6) (1973) 1904–1915.
+[47] IEEE draft recommended practice for excitation system models for power
+system stability studies, 2015, pp. 1–202, IEEE P421.5/D38.
+[48] R. Pena, J.C. Clare, G.M. Asher, Doubly fed induction generator using back-
+to-back PWM converters and its application to variable-speed wind-energy
+generation, IEE Proc.– Electr. Power Appl. 143 (3) (1996) 231–241.
+[49] Load representation for dynamic performance analysis (of power systems),
+IEEE Trans. Power Syst. 8 (2) (1993) 472–482.
+[50] F. Sossan, E. Namor, R. Cherkaoui, M. Paolone, Achieving the dispatchability
+of distribution feeders through prosumers data driven forecasting and
+model predictive control of electrochemical storage, IEEE Trans. Sustain.
+Energy 7 (4) (2016) 1762–1777.
+[51] E. Namor, F. Sossan, E. Scolari, R. Cherkaoui, M. Paolone, Experimental
+assessment of the prediction performance of dynamic equivalent circuit
+models of grid-connected battery energy storage systems, in: IEEE ISGT,
+2018.
+[52] P. Romano, M. Pignati, M. Paolone, Integration of an IEEE Std. C37.118
+compliant PMU into a real-time simulator, in: 2015 IEEE Eindhoven
+PowerTech, 2015, pp. 1–6.
+11

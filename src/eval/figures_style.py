@@ -169,6 +169,115 @@ def apply_style() -> None:
 
 
 # =============================================================================
+# Paper style (true-size design) — figures are drawn AT their final printed
+# size, so the font sizes below are the sizes the reader actually sees.
+#   - IEEE single column = 3.5 in; full text width = 7.16 in.
+#   - Arial throughout (incl. mathtext), 8 pt base / 7 pt ticks-legend:
+#     at or above the IEEE 8 pt-after-scaling minimum WITHOUT any scaling.
+#   - Tight bounding box, 0.01 in pad -> minimal whitespace.
+#   - Vector PDF output; decimate dense traces before plotting to keep
+#     file sizes small (see decimate_trace).
+# The legacy apply_style() (render-big-then-scale idiom) is kept untouched
+# for the in-eval diagnostic plots.
+# =============================================================================
+
+PAPER_FIGSIZE_COL = (3.5, 2.5)          # single-column default
+PAPER_FIGSIZE_COL_TALL = (3.5, 3.6)     # single-column, stacked panels
+PAPER_FIGSIZE_GRID_2x2 = (7.16, 5.0)    # full-width 2x2 grid
+PAPER_FIGSIZE_WIDE = (7.16, 2.3)        # full-width single row
+
+
+def apply_paper_style() -> None:
+    """Arial, true-size IEEE paper style. Idempotent."""
+    mpl.rcParams.update({
+        # --- Fonts: Arial everywhere, including math ---
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
+        "font.size": 8.0,
+        "axes.titlesize": 8.0,
+        "axes.labelsize": 8.0,
+        "xtick.labelsize": 7.0,
+        "ytick.labelsize": 7.0,
+        "legend.fontsize": 7.0,
+        "figure.titlesize": 8.5,
+        "mathtext.fontset": "custom",
+        "mathtext.rm": "Arial",
+        "mathtext.it": "Arial:italic",
+        "mathtext.bf": "Arial:bold",
+
+        # --- Lines / markers scaled for true-size rendering ---
+        "lines.linewidth": 1.1,
+        "lines.markersize": 4.0,
+        "lines.markeredgewidth": 0.7,
+        "axes.linewidth": 0.6,
+        "axes.edgecolor": "#333333",
+        "axes.labelcolor": "#111111",
+        "axes.axisbelow": True,
+
+        # --- Ticks ---
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+        "xtick.major.width": 0.5,
+        "ytick.major.width": 0.5,
+        "xtick.major.size": 2.2,
+        "ytick.major.size": 2.2,
+        "xtick.major.pad": 1.8,
+        "ytick.major.pad": 1.8,
+        "xtick.color": "#333333",
+        "ytick.color": "#333333",
+
+        # --- Grid: subtle ---
+        "axes.grid": True,
+        "grid.color": "#c8c8c8",
+        "grid.linewidth": 0.4,
+        "grid.alpha": 0.45,
+        "grid.linestyle": "-",
+
+        # --- Legend: compact, no frame ---
+        "legend.frameon": False,
+        "legend.handlelength": 1.4,
+        "legend.columnspacing": 0.9,
+        "legend.labelspacing": 0.25,
+        "legend.handletextpad": 0.4,
+        "legend.borderpad": 0.2,
+        "legend.borderaxespad": 0.3,
+
+        # --- Margins / labels hug the axes ---
+        "axes.labelpad": 2.0,
+        "axes.titlepad": 3.0,
+        "axes.xmargin": 0.02,
+        "axes.ymargin": 0.04,
+
+        # --- Output: tight vector, minimal pad, embedded TrueType ---
+        "figure.dpi": 130,
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.01,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+        "svg.fonttype": "none",
+    })
+
+
+def decimate_trace(t: np.ndarray, y: np.ndarray, max_points: int = 600) -> tuple[np.ndarray, np.ndarray]:
+    """Uniformly thin a dense trace to <= max_points samples for plotting.
+
+    Keeps vector-PDF size small (each retained point is a path segment) while
+    staying visually indistinguishable at column width. Always keeps the
+    first and last samples.
+    """
+    t = np.asarray(t)
+    y = np.asarray(y)
+    n = len(t)
+    if n <= max_points:
+        return t, y
+    idx = np.unique(np.concatenate([
+        np.linspace(0, n - 1, max_points).astype(int), [0, n - 1]
+    ]))
+    return t[idx], y[idx]
+
+
+# =============================================================================
 # Helpers
 # =============================================================================
 

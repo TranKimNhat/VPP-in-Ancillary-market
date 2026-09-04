@@ -1,0 +1,1155 @@
+
+===== PAGE 1 =====
+IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 2, MARCH 2021 999
+On the Impact of Fault Ride-Through on Transient
+Stability of Autonomous Microgrids: Nonlinear
+Analysis and Solution
+Mohsen Eskandari and Andrey V . Savkin , Senior Member, IEEE
+Abstract—Fault ride-through (FRT) is essential for inverter-
+interfaced distributed generation (IIDG) units to protect semi-
+conductor switches from being imposed to overcurrent conditions
+while the transients are securely passed. To this end, a current
+limiting strategy is adopted for IIDG units, mostly embedded in
+control loops, to limit the current within the withstand-able band
+and to make the IIDG units stay connected to the (micro) grid
+during the transient. However, the FRT/current limiting of grid-
+forming inverters affects the transient stability of the autonomous
+droop-based microgrids and may make them unstable, which
+yet has not been well-explored in the literature. This issue is
+considered in this work through a scrupulous observation of
+the second-order nonlinear differential equation describing the
+frequency-phase angle dynamics and investigating the problem
+through the Lyapunov theory. The Chetaev’s instability theo-
+rem, which is developed based on the Lyapunov direct method,
+is used to explore the instability conditions due to the FRT. It is
+revealed that the phase angle variation, as a consequence of the
+current limiting, and the arbitrary/resistive transient impedance
+of grid-forming inverters make the system unstable. Numerical
+and time-domain results through MATLAB/Simulink platform
+prove the validity of the models.
+Index Terms —Current limiting, droop control, fault ride-
+through (FRT), inverter-interfaced distributed generation (DG)
+units, microgrid, transient stability.
+I. I NTRODUCTION
+T
+HE POWER Electronics emerging technologies have
+prompted modernization streams in electrical power
+systems [1]. Among the innovations, the renewable and dis-
+tributed energy integration paradigm has stimulated the real-
+ization of the carbon-neutral energy systems [2]. Consequently,
+penetration of the inverter-interfaced distributed genera-
+tion (IIDG) units have converted the passive electrical grids
+to active systems which demand innovative control and man-
+agement solutions [3]. In the meantime, the microgrid (MG)
+concept, while providing the solution via a hierarchical
+control structure [4]–[5], has gained increased attention as
+Manuscript received May 25, 2020; revised August 22, 2020; accepted
+October 6, 2020. Date of publication October 12, 2020; date of current ver-
+sion February 26, 2021. This work was supported in part by the Australian
+Research Council under Grant DP190102501. Paper no. TSG-00797-2020.
+(Corresponding author: Mohsen Eskandari.)
+The authors are with the School of Electrical Engineering and
+Telecommunications, University of New South Wales, Sydney, NSW 2052,
+Australia (e-mail: m.eskandari@unsw.edu.au; a.savkin@unsw.edu.au).
+Color versions of one or more of the ﬁgures in this article are available
+online at https://ieeexplore.ieee.org.
+Digital Object Identiﬁer 10.1109/TSG.2020.3030015
+the key solution to improve power systems performance,
+affected by the emerging technologies, through autonomous
+operation [6]–[7]. Due to the crucial importance of the stable
+operation of autonomous MGs in future power systems, exten-
+sive studies have been carried out to investigate the stability
+issues of the autonomous MGs [8]–[11], and a new paradigm
+in investigating the dynamic stability of autonomous MGs is
+presented in [12] through small-signal analysis.
+On the other hand, the transient stability analysis of
+the IIDG units under fault condition, as large disturbance,
+is an important issue that has been considered in recent
+works [13]–[21]. Grid synchronization issue and transient
+response of the doubly-fed induction generator (DFIG) based
+wind turbines has been carried out in [13]–[14]. The impact
+of the phase-locked loop (PLL) synchronization unit on the
+transient stability of the grid-connected inverters has been
+investigated in [15]–[16]. The transient angle stability of vir-
+tual synchronous generators has been explored as a grid-tied
+inverter [17] and in the context of islanded MGs [18]. In [19]
+a Lyapunov function is developed based on the Extended
+Invariance Principle [20] to determine the critical fault clear-
+ance time of virtual synchronous generators, and [21] presents
+a design-oriented study of a droop-controlled voltage source
+inverters (VSIs).
+Nevertheless, another important aspect of transient stabil-
+ity issue, particularly in the context of autonomous MGs,
+which almost has been overlooked in the literature, is
+fault ride-through (FRT), or alternatively known as low-
+voltage ride-through, of IIDG units [22]–[24]. The IIDG
+units switch to current limiting/saturation mode to protect
+the semiconductor switches from thermal damages due to
+large fault/transient currents while their continuous connec-
+tivity to MG is preserved [25]–[27]. However, the dynamic
+performance of the grid-forming VSIs, which are the domi-
+nant rulers in an autonomous MG, are critically affected by
+the current limiting [28]–[29], and thus impacts the stability
+of the MG.
+From this perspective, although unlike the conventional syn-
+chronous generators, there is not a rotatory element in the
+IIDG units to make the system unstable due to the traditional
+phase angle instability (out-of-step/loss of synchronization)
+issues, the inverter-based MGs are prone to transient insta-
+bility under the FRT since the current limiting leads to the
+voltage sag at the grid-forming VSIs which affects the effec-
+tive phase angle at their ends with respect to the rest of the
+1949-3053 c⃝ 2020 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 2 =====
+1000 IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 2, MARCH 2021
+Fig. 1. The control system of the grid-forming VSI: (a) the droop-controlled VSI in the autonomous MGs; (b) VSI’s inner control loops with the current
+limiter. It worth to note that a voltage limiter is also usually used after the current controller and before the dq to abc block to avoid the over-voltage problem
+which occurs after the current limiting period due to the saturation of the voltage controller during the current limiting period and has not been show ni nt h i s
+ﬁgure. Also, PI controllers are equipped with anti-windup to improve the performance in current limiting. Moreover, one of VSI’s variables, i.e., if , vo or io,
+can be given from the other two variables through electrical circuit calculations to preserve operating costs.
+MG. This issue has been studied in [30] by considering a sin-
+gle grid-forming VSI connected to an inﬁnite bus where the
+idea of virtual phase angle characteristic is presented and the
+VSI is modeled as a constant saturated current source in cur-
+rent limiting mode. However, the methodology is less valid in
+the context of low-voltage grids due to some simpliﬁcations
+such as considering purely inductive feeder, ignoring voltage
+and reactive power control, etc. Likewise, this idea has been
+adopted in [31] to develop a solution for the transient stability
+issue of an autonomous droop-based MG. However, still, the
+feeder impedance has been considered purely inductive, which
+makes the methodology and the proposed solution incompetent
+as the MGs are mostly located in the low-voltage grids.
+Moreover, a critical issue, i.e., arbitrary transient output
+impedance of IIDG units [29], [32] which varies based on the
+fault severity [33] and thus changes the critical fault clearance
+time, has not been considered in the current studies (neither in
+the context of individual IIDG units nor in an MG). In view
+of this, due to the unknown/variant transient output impedance
+of IIDG units, the application of the multi-machine transient
+stability analysis [20], [34] by obtaining the numerical solution
+of ordinary differential equations is not feasible.
+Yet, a more in-depth investigation is required to elaborate
+on the issue in the context of droop-controlled inverter-based
+MGs, considering the power-sharing and voltage control loops.
+This issue is critically important in autonomous MGs since
+the grid-forming VSIs are controlled through f − P droop con-
+trollers for power-sharing purposes which dynamically control
+the phase angles at the VSIs output voltages. The interaction
+of the phase angle variation due to current limiting with the
+frequency-phase angle dynamics governed by the f − P droop
+loop is of great importance which should be clariﬁed. In this
+regard, the contributions of this article are outlined as follows:
+• The Lyapunov theory is adopted to investigate the stabil-
+ity boundaries of the developed second-order nonlinear
+model of the f − P droop loop in the grid-forming VSIs.
+It is demonstrated that the Lyapunov function, in the
+general sense in power systems [20], fails to guarantee
+the stability of the system when the feeder impedance is
+dominantly resistive;
+• Then sufﬁcient condition for instability of the developed
+model is investigated through the Chetaev’s instability
+theorem [35];
+• The impact of the transient impedance of the grid-
+forming VSIs, affected by the VSI’s voltage control
+loop and current limiting, is discovered which is to
+the best of the authors knowledge the ﬁrst time to
+develop the sub-transient and transient impedances of
+the VSI through a quantitative analysis. In addition, it
+is investigated how the resistive transient impedance,
+which arbitrarily changes in FRT depending on the VSI’s
+power factor and fault resistance, satisﬁes the instability
+condition;
+• An effective solution, based on the sliding-mode control,
+is proposed to stabilize the autonomous MGs imposed on
+FRT. The proposed method alleviates the requirement of
+determining critical fault clearance time for the protec-
+tion unit to preserve the stability of the system, which is
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 3 =====
+ESKANDARI AND SA VKIN: ON IMPACT OF FAULT RIDE-THROUGH ON TRANSIENT STABILITY OF AUTONOMOUS MICROGRIDS 1001
+not feasible in the autonomous MGs due to the arbitrary
+transient impedance of IIDGs units.
+In the next section, the droop control system in MGs and
+the impact of current limiting on the stability of autonomous
+NMG is presented followed by the solution proposed in
+Section III. Numerical and time-domain simulation is carried
+out in Section VI and Section V concludes this article.
+II. F
+AULT-RIDE TROUGH AND STABILITY ISSUE
+A. Control System of Grid-Forming VSIs
+A hierarchical control structure is used for autonomous
+MGs and the lowest (primary) control level, including the
+power (droop) control loop and inner controllers of the
+IIDG units, is in charge of securing transient/dynamic sta-
+bility of the whole system [36]–[37] while implementing
+power-sharing [10] and voltage regulation [11]. The FRT
+is accomplished by embedding current limiters in the inner
+control loops of IIDG units, as shown in Fig. 1. Normally,
+anti-windup PI controllers are adopted to avoid the overvoltage
+problem caused by the saturation issue of the current limiter.
+The conventional f − P and V − Q droop rules are given as
+follows:
+ω = ω
+0 − kpP (1)[ vod
+voq
+]
+ref
+=
+[ V0 − kqQ
+0
+]
+−
+[ 0 −ω0Lv
+ω0Lv 0
+][ iod
+ioq
+]
+(2)
+where ω(ω0) is the operating (nominal) angular frequency; vod
+and voq are the direct and quadrature ( d − q) components of
+the voltage in the synchronous reference frame, respectively;
+V0 is the nominal voltage magnitude; kp and kq are the droop
+gains and P and Q are the average of output active and reac-
+tive power which are given after passing instantaneous active
+and reactive Power (p and q) through a low-pass ﬁlter (LPF),
+Lvis the intended value for virtual inductance and iod and ioq
+are d − q components of the VSI’s output current. The vir-
+tual impedance (inductance) loop is used to make the output
+impedance of the VSI inductive and to decouple the f − P
+and V − Q droop controllers [38]. It worth noting that the out-
+put (virtual) impedance of IIDG units diffuses into the lossy
+power grids and thus is effective in the dynamic response of
+IIDG units [39].
+B. The f − P Nonlinear Equation and Lyapunov Theory
+The nonlinear dynamic model of the f − P droop rule is
+achieved after considering the transfer function of the LPF
+(ω
+c/(s + ωc)) in (1) [10]:
+/Delta1ω=− kp
+( ωc
+s + ωc
+)
+/Delta1p (3)
+where ωc is the cut-off frequency of the LPF and s is the
+Laplace operator. Noting that /Delta1δ= /Delta1ω/s , where δ is the
+phase angle of the VSI’s output voltage (commonly knowns as
+the power angle in traditional power systems) [6]. The power
+ﬂow equation is given as:
+p = V
+i
+Z
+[ (
+Vi − Vjcos δij
+)
+Vjsinδij
+][ cos θ sinθ]T (4)
+where V is the voltage magnitude, Z and θ are the magnitude
+and phase angle of the feeder, the subscript indices indicate
+the power network buses, where i is related to the allocated
+bus of the given VSI and j for the adjacent bus. The nonlin-
+ear second-order equation describing the dynamics of /Delta1δis
+developed [10] by plugging p from (4) into (3):
+/Delta1¨δ+ ω
+c/Delta1˙δ+ K(sinθsin/Delta1δ− cos θcos /Delta1δ+ cos θ) = 0
+(5)
+where K = kpωc
+ViVj
+Zij . Then, the ﬁrst-order differential equa-
+tions are developed as follows:
+˙x1 = x2
+˙x2 =− f2(x2) − Kf1(x1) (6)
+where f1(x1) = sinθsin x1 − cos θcos x1 + cos θ,f2(x2) =
+ωcx2, x1 = /Delta1δ,x2 = /Delta1˙δ= /Delta1ω. This system has an inﬁnite
+number of equilibrium points (±mπ, 0) for m ⊂ Z. The equi-
+librium point of interest in this work, i.e., in droop-controlled
+autonomous MGs, is x = 0 where x = [ x1 x2 ]T . The phase
+portraits (family of trajectories) of (6) for purely inductive Z
+is given in [10].
+Lyapunov Direct Method: to conduct the Lyapunov direct
+study, the following energy-like function V(x) is adopted:
+V(x) = 1
+2x2
+2 +
+∫ x1
+0
+Kf 1(y)dy (7)
+The ﬁrst derivative of (7) is obtained as follows:
+˙V(x) = x2(−f2(x2) − Kf1(x1)) + Kf1(x1)x2
+⇒ ˙V(x) =− x2f2(x2) ≤ 0( 8 )
+Based on the LaSalle’s Invariance Principle [40], for the
+Lyapunov candidate to satisfy the stability of the system in
+domain D containing the origin:
+D =
+{
+x ∈ R2|− β< xi <β
+}
+(9)
+f1(·) and f2(·) should be locally Lipschitz and satisfy:
+fi(0) = 0, yfi(y) > 0 ∀y ̸= 0 and y ∈ (−β,β) (10)
+which indicates the system is asymptotically stable at the ori-
+gin. However, f1(x1) fails to satisfy the condition given above
+for the resistive impedance when 0 ≤ θ< 45◦ as shown in
+Fig. 2. The arbitrary output impedance of grid-forming VSIs
+turns to be mostly resistive (or even capacitive) in the current
+limiting mode [12], [29], [41], which makes the equivalent
+impedance seen from VSI resistive and thus is against the
+asymptotic stability of the system.
+1
+However, the Lyapunov function provides sufﬁcient con-
+ditions for stability and not necessary conditions [40]. So,
+more investigation is required to ﬁnd sufﬁcient conditions for
+instability of the equilibrium point. To this end, Chetaev’s
+instability theorem is adopted [35]. Based on the Chetaev’s
+theorem if the Lyapunov function V
+′(x) is positive for some
+1Hence, the inductive nature of power systems’ elements, i.e., synchronous
+generators with inductive output impedance and power lines with high X/R
+ratio, and its consistency with the f − P and V − Q controllers provides the
+harmony which is necessary for stable operation of power systems as the
+authors highlighted in [41].
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 4 =====
+1002 IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 2, MARCH 2021
+Fig. 2. Investigating conditions for satisfying the Lyapunov stability analysis: (a) f1(x1,θ) which is positive for x1 < 0a n d0 ≤ θ< 45◦ happens in current
+limiting mode and does not satisfy the x1fi(x1)> 0 requirement; (b)
+∫ x1
+0 f1(y)dy, which is negative for 0 ≤ θ< 45◦ due to the FRT/current limiting.
+x0 close to equilibrium point (the origin), with arbitrary small
+∥x0∥, and ˙V′(x)> 0, the origin is an unstable equilibrium
+point, where ∥·∥ denotes 2-norm (Euclidean distance). To
+investigate this issue in our study, consider the following
+Lyapunov function:
+V
+′(x) = 1
+2
+(
+x2
+1 − x2
+2
+)
+(11)
+Let take domain D ⊂ R2 that contain the origin x = 0, and
+deﬁne the ball Br, enclosed in D, in which 0 < ∥x∥ < r for
+r > 0 and let:
+S =
+{
+x ∈ Br|V′(t, x)> 0
+}
+(12)
+The set S is contained in Br and its boundary is the surface
+V′(x) and the sphere ∥x∥= r where V′(x0)> 0, as shown in
+Fig. 3(a). Now for investigating the instability condition, ˙V′(x)
+is developed as:
+˙V′(x) = x1x2 + ωcx2
+2 + Kx2f1(x1) (13)
+The ˙V′(x) is positive for 0 <θ< 45◦ and ωc > 5 (rad.s−1),
+as shown in Fig. 3(b). It worth noting that 5 <ω c < 30 to
+achieve a desired dynamic performance [37] for low-voltage
+(distribution level) MGs. To brieﬂy elaborate on this issue,
+from (5) for inductive Z, the damping ratio is given as ζ =
+ω
+c/2
+√
+K and ωc = 10 (rad.s−1) leads to ζ ≈ 0.7 in dynamics
+for a low-voltage MG (VL−L = 400 V).
+In the next subsection, the transient impedance of the VSI
+is developed to investigate how the FRT satisﬁes the Chetaev’s
+instability condition, i.e., |x1| > |x2| and 0 <θ< 45◦.
+C. Transient Impedance of the Grid-Forming VSI
+Although it has been explored, through qualitative analysis
+and getting help from simulation results, that the grid-forming
+VSIs reveal almost resistive output impedance in the current
+limiting mode [29], [33], a quantitative study is required to
+achieve more accurate results to be adopted in the instabil-
+ity analysis of the developed model in (6). To elaborate on
+the transient impedance of grid-forming VSIs, let consider
+Fig. 4(a), which indicates VSI’s steady-state model in the pha-
+sor domain. As a voltage source, the equivalent impedance
+Z
+n∡/Phi1which models the VSI’s nominal load is given from
+Fig. 3. The Chetaev’s instability theorem: (a) the set S where V′(x0)> 0;
+(b) ˙V′(x) which is positive for 0 <θ< 45◦ and ωc > 5(rad.s−1), (VL−L =
+400 V, |Z|= 0.1).
+the VSI’s voltage and nominal output current 2:
+Zn = Vref
+In
+∡/Phi1 (14)
+where Vref denotes the reference value for the VSI’s output
+voltage determined by the V − Q droop control at the refer-
+ence frame given from the f − P loop, which is considered as
+the reference axis for studying the transient impedance so that
+∡V
+ref = 0. So, without loss of generality, Vref = vodref and
+voqref ≈ 0 in (2) noting that the effects of the virtual impedance
+(and droop loops) are ignored due to the large (and fast) vari-
+ations in the voltage magnitude at transients/current limiting,
+and I
+n∡ − /Phi1models the VSI’s nominal current. At the onset
+of the fault and just before current saturation the VSI can be
+modeled as shown in Fig. 4(b) and is given as:
+V
+ref ∡0 = Rf Zn∡/Phi1
+Rf +Zn∡/Phi1η− In∡
+(
+−/Phi1+ /Delta1/Phi1′′)
+(15)
+2In order to have a clear sense of the context, the argument of the load’s
+equivalent impedance (current) is considered positive (negative) to be con-
+sistent with the real electrical distribution systems with inductive loads. This
+issue is considered throughout the section to develop the transient impedance.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 5 =====
+ESKANDARI AND SA VKIN: ON IMPACT OF FAULT RIDE-THROUGH ON TRANSIENT STABILITY OF AUTONOMOUS MICROGRIDS 1003
+Fig. 4. Modeling the (sub) transient impedance of the VSI: (a) pre-fault
+(steady-state) model; (b) fault onset, pre-current saturation, model; (c) sub-
+transient at the onset of the current limiting/saturation model; (d) transient
+model in the current limiting/saturation state.
+where /Delta1/Phi1′′ indicates the phase shift in the VSI’s output cur-
+rent due to the fault resistance which is modeled as Rf in
+parallel connection with the load equivalent impedance, and η
+is the coefﬁcient that speciﬁes the threshold value for current
+saturation (I
+th) in respect to the VSI’s nominal current (In)
+so that η =| Ith|/|In|. The negative superscript on η indicates
+that the current magnitude is slightly smaller than Ith so that
+the current saturation has not been triggered yet. Noting that
+Vref =| Zn||In|, (15) can be simpliﬁed as:
+1∡0 = Rf η−
+Rf +Zn∡/Phi1∡
+(
+/Delta1/Phi1′′)
+(16)
+and consequently:
+/Delta1/Phi1′′ =− ∡
+( η− Rf
+Rf +Zn∡/Phi1
+)
+= tan−1 Znsin/Phi1
+Rf +Zncos /Phi1 (17)
+Now, suppose that current saturation has just been triggered
+and the sub-transient impedance of the VSI (Z′′
+VSI) is realized
+which is shown in Fig. 4(c) and is given as:
+Z′′
+VSI =
+(
+Vref −
+(
+λ′′∡ − /Delta1δ′′)
+Vref
+)
+/
+(
+ηIn∡
+(
+−/Phi1+ /Delta1/Phi1′′))
+(18)
+where λ′′ and /Delta1δ′′ model the magnitude variation (drop) and
+phase angle shift at the VSI’s output voltage, respectively.
+Eq. (18) can be written as:
+Z′′
+VSI =
+( 1
+η|Zn|∡
+(
+/Phi1− /Delta1/Phi1′′)) (
+1 −
+(
+λ′′∡−/Delta1δ′′))
+(19)
+Fig. 5. The transient impedance of the VSI which reveals resistive charac-
+teristics for various load factors and fault resistance ( Zn = 10,η = 2), the
+smaller fault resistance the larger/more resistive transient impedance.
+The λ′′∡/Delta1δ′′ term is given from Fig. 4(c) as:
+(
+λ′′∡ − /Delta1δ′′)
+Vref = Rf λ′′2Zn∡/Phi1
+Rf +λ′′2Zn∡/Phi1
+ηIn∡
+(
+−/Phi1+ /Delta1/Phi1′′)
+⇒ 1∡ − /Delta1δ′′ = Rf λ′′η
+Rf +λ′′2Zn∡/Phi1
+∡/Delta1/Phi1′′
+(20)
+bearing in mind that the equivalent impedance is proportional
+to |V|2. Consequently, λ′′ is given from (20) (noting that the
+magnitude in the right-hand side is equal to 1) by solving the
+following biquadratic (a quartic equation with zero terms of
+odd degrees):
+⏐⏐R
+f λ′′η
+⏐⏐ =
+⏐⏐
+⏐R
+f +λ′′2Zn∡/Phi1
+⏐⏐
+⏐
+⇒
+⏐⏐R
+f λ′′η
+⏐⏐ =
+⏐⏐
+⏐R
+f + λ′′2Zncos /Phi1+ jλ′′2Znsin/Phi1
+⏐⏐
+⏐
+⇒
+(
+R
+f λ′′η
+)2 =
+(
+Rf + λ′′2Zncos /Phi1
+) 2
++
+(
+λ′′2Znsin/Phi1
+) 2
+⇒
+(
+Rf λ′′η
+)2 = R2
+f + 2Rf λ′′2Zncos /Phi1+
+(
+λ′′2Zn
+) 2
+⇒ Z2
+nλ′′4 +
+(
+2Rf Zncos /Phi1− R2
+f η2
+)
+λ′′2 + R2
+f (21)
+and /Delta1δ′′ is given as:
+/Delta1δ′′ =− /Delta1/Phi1′′ + /Delta1ϕ (22)
+where /Delta1ϕ=− ∡( Rf λ′′η
+Rf +λ′′2Zn∡/Phi1) = tan−1 λ′′2Znsin /Phi1
+Rf +λ′′2Zncos /Phi1
+For the fault resistance Rf ≲ Zn/(η− 1), by which the
+system is drawn to the current limiting/saturation mode, 3 (21)
+possesses complex roots for λ′′, which leads to the sub-
+transient oscillations. So λ′′∡/Delta1δ′′ is not an equilibrium point
+that pushes the VSI to the transient state with the transient
+impedance (Z
+′
+VSI), as shown in Fig. 4(d). Then, by approxi-
+mation, λ′ ≈ (1 −| real(λ′′)|)/2, then /Delta1δ′ and /Delta1/Phi1′ can be
+3Supposing that the power factor, i.e., cos /Phi1>0.85 which is the case for
+the normal/efﬁcient operation of the distribution systems and IIDG units.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 6 =====
+1004 IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 2, MARCH 2021
+Fig. 6. VSI performance in the FRT/current limiting mode, a three-phase to ground fault occurs at t = 1.2 − 1.25 (seconds): (a) frequency and phase angle
+transients; (b) a zoom-on plot on the frequency and phase angle ﬂuctuations, which satisﬁes the Chetaev’s instability condition; (c) the voltage dro pc h a r t
+and VSI’s sub-transient and transient impedance, Real
+(
+Z′VSI
+)
+≈ 0.75 /Omega1, which is dominant in comparison to the power network impedance which is 0.1 in
+magnitude and X/R=1; (d) the system trajectory indicating the system becomes unstable due to FRT.
+given as:
+/Delta1δ′ ≈ /Delta1/Phi1′ ≈ 1
+2
+(
+/Delta1ϕ− tan−1 λ′2Znsin/Phi1
+Rf +λ′2Zncos /Phi1
+)
+(23)
+Finally, the transient impedance of the VSI can be achieved
+by updating (19) for the transient state as:
+Z′
+VSI = |Zn|
+η
+(
+1∡
+(
+/Phi1− /Delta1/Phi1′′ + /Delta1/Phi1′)
+− λ′∡(/Phi1− /Delta1ϕ)
+)
+(24)
+which, arbitrarily, varies based on the load (Zn∡/Phi1), current
+saturation coefﬁcient η and fault resistance. Nevertheless, (24)
+reveals resistive transient impedance for grid-forming VSIs, as
+shown in Fig. 5, noting that the power systems operate with
+power factors more than 0.85, i.e., 30
+◦ >/Phi1>/Delta1 /Phi1′′ ≫ /Delta1/Phi1′
+and /Delta1ϕ.
+Also (22) reveals phase angle variation at the VSI’s out-
+put voltage in transients due to the current limiting, which
+leads to the active power ﬂuctuations. Due to the fast tran-
+sient time scale, droop controllers fail to respond in time and
+the Chetaev’s instability condition, i.e., |/Delta1δ| > |/Delta1ω|, is estab-
+lished. In the other words, the resistive output impedance of
+the VSIs correlates the f − P and V − Q droop loops, and
+consequently, the interaction of droop controllers makes the
+system unstable after losing the synchronism of the droop
+controllers [12].
+Concluded from the Lyapunov direct method (Chetaev’s the-
+orem) and the developed transient impedance of a grid-forming
+VSI, the following statement is released: the arbitrary/resistive
+transient impedance of the VSIs combined with the sudden
+phase angle variation at the VSI’s output voltage are comple-
+mentary parts to realize the Chetaev’s instability condition .
+Numerical Example: an autonomous MG, including three
+generation buses (VSIs) and one load bus connected through
+the power network with a meshed topology, is simulated to
+investigate the instability issue. The simulated model and
+detailed information are presented in Section IV . A three-phase
+to ground fault is simulated in the power network and IIDG
+units switch to current limiting mode to preserve the FRT
+scheme. Fig. 6(b) shows a zoom-on plot of the frequency and
+phase angle variations in the current limiting period, which
+reveals |/Delta1δ| > |/Delta1ω| and proves the Chetaev’s instability
+theorem. Fig. 6(c) demonstrates the sub-transient and tran-
+sient impedance of a VSI. A trajectory that shows the system
+becomes unstable, due to FRT, is plotted in Fig. 6(d).
+III. S
+OLUTION TO THE TRANSIENT STABILITY ISSUE
+Since the system response to transients is unpredictable due
+to the arbitrary transient impedance of the VSIs, variable struc-
+ture control method can be adopted to secure the robustness of
+the whole system. To this end, and to stabilize the autonomous
+MG in the FRT, the motion of the system might be controlled
+along with the sable boundaries. In this regard, sliding mode
+control could be effective which has been successfully tested
+in the multi-agent (micro) power systems [42]. On the other
+hand, power-sharing and synchronism of the droop controllers
+must be guaranteed in designing the sliding mode control.
+A. Sliding Mode Control-Based Stabilizer
+Normally, the frequency restoration loop is embedded to the
+f − P droop loop in the grid-forming VSIs to restore frequency
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 7 =====
+ESKANDARI AND SA VKIN: ON IMPACT OF FAULT RIDE-THROUGH ON TRANSIENT STABILITY OF AUTONOMOUS MICROGRIDS 1005
+deviations caused due to operation of the droop rules [10] as
+given below:
+ω = ω0 − kp
+( ωc
+s + ωc
+)
+p − kf
+s (ω − ω0) (25)
+Consequently, the differential equations describing the f − P
+loop dynamics are updated for inductive output impedance as:[ ˙x1
+˙x2
+]
+=
+[ x2
+−ωcx2 − kpωcKsin(x1)
+]
+− kf
+[ 00
+ωc 1
+][ x1
+x2
+]
+(26)
+where kf is the feedback gain. To secure the stability of the
+system during/after current limiting, the system trajectories
+might be slid to the stable manifold γ = αx1 + x2 = 0
+for a given period of Tslide. Selecting α> 0 makes x(t) →
+0 as t →∞ and the rate of convergence is controlled by
+choice of α. In this way, x2 =− αx1 and thus ˙x1 =− αx1
+governs the motion of the system. This can be realized by
+adaptively tuning the feedback gain kf as explained next. The
+sliding surface γ satisﬁes the following equation:
+˙γ = α˙x1 +˙x2 = 0 (27)
+Plugging (26) into (27) results in:
+αx2 −
+(
+ωc + kf
+)
+x2 − ωckf x1 − kpωcKsin(x1) = 0 (28)
+Using sliding surface γ, i.e., x2 =− αx1, (28) is updated as:
+−α2x1 + α
+(
+ωc + kf
+)
+x1 − ωckf x1 − kpωcKsin(x1) = 0
+⇒− α(α − ωc)x1 + kf (α − ωc)x1 − kpωcKsin(x1) = 0
+(29)
+and kf is achieved from (29):
+kf =
+(
+kpωcKsin(x1) + α(α − ωc)x1
+)
+/(α − ωc)x1 (30)
+To investigate the stability of (26) with the control law given
+in (30) let take the following Lyapunov function:
+V(x) = 1
+2γT(x)γ (x) = 1
+2∥γ(x)∥2
+2 (31)
+Then ˙V(x) = γT ˙γ which is developed as follows:
+˙V(x) = (αx1˙x1 + x2˙x2)
+⇒ ˙V(x) = αx1x2
++ x2
+(
+−
+(
+ωc + kf
+)
+x2 − ωckf x1 − kpωcKsin(x1)
+)
+(32)
+From the sliding manifold x2 =− αx1:
+⇒ ˙V(x) =− α2x2
+1 − α2(
+ωc + kf
+)
+x2
+1 + αωckf x2
+1
++ αkpωcKsin(x1)x1
+⇒ ˙V(x) =− α2x2
+1 − α2ωcx2
+1 − α(α − ωc)kf x2
+1
++ αkpωcKsin(x1)x1 (33)
+Plugging kf from (30) into (33) results in:
+⇒ ˙V(x) =− α2x2
+1 − α2ωcx2
+1 − α2(α − ωc)x2
+1
+− αkpωcKsin(x1)x1 + αkpωcKsin(x1)x1
+⇒ ˙V(x) =− α2x2
+1 − α2ωcx2
+1 − α3x2
+1 + α2ωcx2
+1
+⇒ ˙V(x) =− α2x2
+1 − α3x2
+1
+⇒ ˙V(x) =− α2x2
+1 − αx2
+2 < 0 for α> 0 (34)
+Which proofs the asymptotic stability of the system.
+Fig. 7. Tslide(5τ) vs. α plot given from (37) (ωc = 10 (rad.s−1)).
+B. Preserving Power-Sharing and Synchronism of the f − P
+Droop Controllers
+To preserve executing the accurate power-sharing two issues
+must be considered:
+1. Choosing Appropriate α: parameter α might be selected
+intentionally to be coordinated at individual VSIs to be
+consistent with power-sharing purposes and to maintain
+synchronism of the droop controllers.
+2. Time Period of Sliding Mode (Tslide): keeping the system
+on the sliding surface for longer than a critical period
+may lead to losing power-sharing and synchronism of
+the droop controllers after sliding mode. To this end,
+T
+slide should be selected to result in the optimum
+dynamic performance after returning the system to the
+nominal manifold.
+To investigate achieving the above-mentioned objectives, let
+replace kf in (26) by (30), which results in (35) after using
+x2 =− αx1 and some mathematical simpliﬁcation:
+˙x2 =
+(
+−ω2
+cαx2
+1 − α2ωcx2
+1
+)
+/(α − ωc)x1
+⇒˙ x2 =−
+(
+ω2
+cα + α2ωc
+)
+x1/(α − ωc) (35)
+Now by adopting x1 =− x2/α, (35) is updated as:
+˙x2 =− ωc(ωc + α)
+(ωc − α) x2 (36)
+Based on (36), the time constant of the frequency dynamics
+in sliding mode control is given as:
+τ= (ωc − α)/ωc(ωc + α) (37)
+Since the sliding mode control makes x = 0i n5 τ, then Tslide
+should not be larger than 5 τ after which the synchronism of
+the system might be lost. Therefore let Tslide = 5τ. However,
+τ is speciﬁed by α in (37), bearing in mind that ωc is known
+and constant, as plotted in Fig. 7.
+On the other hand, the fault clearing time (implemented by
+a suitable protection scheme) must not be longer than 100 ms
+in the inverter-based (distribution) power systems [43]–[44].
+Taking the fault period lasting for 100 ms, as the worst-case
+since the longer fault time the tougher to stabilize the system,
+the Tslide should be larger than 200 ms (after fault is cleared)
+to make sure that the system is settled down and the phase
+angle dynamics are less affected by transients. So α ≈ 2 − 4
+is appropriate based on Fig. 7, noting that larger α enforces
+overshoots and smaller α makes the response time too slow
+which imposes more oscillations to the system.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 8 =====
+1006 IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 2, MARCH 2021
+Fig. 8. The block diagram illustrating the implementation of the proposed
+sliding mode stabilizer: when current is saturated ( I ≥ Ith) the fault time (if )
+is recorded and for the period time of tf ≤ t ≤ tf + Tslide the sliding mode
+stabilizer is triggered. The normal frequency restoration loop has not been
+shown here for the sake of conciseness, which can be found in [10] in detail
+to achieve frequency restoration while accurate power-sharing is preserved.
+Fig. 9. The simulated networked MG in MATLAB/Simulink platform.
+Still, power-sharing must be guaranteed. Due to different
+δ0 at individual VSIs [10] at initial of FRT, and based on
+the sliding manifold, i.e., ˙x1 =− αx1, α should be different
+at individual VSIs to make sure that all δ’s have the same
+amount of variations at Tslide to preserve power-sharing and
+synchronism of the f − P loops. To this end, by specifying
+a given value for /Delta1ωin (35), say /Delta1ωslide which should be in
+the permitted band for frequency deviation and be same for
+all VSIs, α
+i for each individual VSIs (VSIi) can be selected
+online by solving the equation given by (38) and based on δi0:
+/Delta1ωslide =−
+(
+ω2
+cαi + α2
+i ωc
+)
+δ0i/(αi − ωc) (38)
+The implementation of the proposed sliding mode controller
+is illustrated in Fig. 8.
+Discussion: It is important that the current contribution of
+IIDG units to severe faults be discontinued as quickly as
+possible, in relatively short duration 100 ms, to minimize
+equipment and semiconductor damage, personnel risk, and
+mis-coordination of feeder protection [44]–[45]. On the other
+hand, FRT scheme demands IIDG units stay connected to the
+grid, through current limiting/saturation, for at least 150 ms
+for severe faults and 1500 ms for smoother faults to provide
+frequency and reliability supports [44]. And now, the transient
+stability issue, in the context of autonomous MGs, is another
+concern that should be considered in the design process of
+MGs and the standardization of the control and protection
+strategies in MGs regarding the FRT scheme. This could be
+TABLE I
+ELECTRICAL AND CONTROL PARAMETERS OF VSI
+considered as future works to extend the study as the time
+scales of MG control and protection (MG CAP) systems are
+relatively closed.
+IV . SIMULATION RESULTS
+To prove the instability issue of the droop-based
+autonomous MGs in FRT and to evaluate the effec-
+tiveness of the proposed solution, an autonomous MG
+is simulated in MATLAB/Simulink platform using the
+Simscape/Electrical/Specialized Power Systems toolboxes.
+The simulated MG is depicted in Fig. 9, and the electrical
+and control parameters of the VSI are given in Table I. The
+low-voltage (V
+L−L = 400 V and f0 = 60 Hz ) MG consists
+of three grid-forming VSIs and one load bus (Pload = 40 kW
+and Qload = 10 kV Ar) connected through a meshed power
+network (|Z| < 0.1 and X/R = 1).
+The control system of the grid-forming VSI, given in Fig. 1,
+is adopted in the simulation for each VSI and the Universal
+Bridge block available in the Fundamental Blocks/Power
+Electronics toolbox, which implements a universal three-phase
+power converter that consists of up to six power switches
+connected in a bridge conﬁguration, has been used to model
+switching. Also, each VSI equipped with a sliding mode sta-
+bilizer which is depicted in Fig. 8. The assigned droop gains
+are k
+p1 = 5e − 6 and kp2 = kp3 = 2 ∗kp1 = 1e − 5, then the
+contribution of VSI# 1 in load tracking is twice of VSI# 2 and
+VSI# 3. The virtual inductance for all units is Lv = 5e − 4.
+A balanced 3-phase to ground fault, with 1 /Omega1impedance, is
+placed in the power network at t = 1.2 − 1.25 (sec).
+At the ﬁrst stage, the current limiting block is bypassed
+(not activated) to evaluate the dynamic stability of the system.
+Fig. 10 shows that the MG is stable under a sever fault, which
+makes the fault current reaching 5-6 pu. that would damage
+the semiconductor switches. The reason is although the dis-
+turbance is large, the output impedance of the VSIs is not
+affected by current saturation/limiting.
+In the second stage, the current limiting is activated which
+saturate the fault current up to 2 pu. The simulation results, as
+shown in Fig. 11, indicate that the MG becomes unstable due
+to the FRT/current limiting, and VSIs lose their synchronism.
+The transient impedance of a VSI and frequency and phase
+angle ﬂuctuations satisfying the Chetaev’s instability condition
+for this case study are demonstrated earlier in Fig. 6.
+The performance of the proposed sliding mode control to
+stabilize the autonomous MG in transients is illustrated in
+Fig. 12. The system is stable during and after the FRT for
+a similar fault scenario at t = 1.2 − 1.3 (sec), which lasts
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 9 =====
+ESKANDARI AND SA VKIN: ON IMPACT OF FAULT RIDE-THROUGH ON TRANSIENT STABILITY OF AUTONOMOUS MICROGRIDS 1007
+Fig. 10. Simulation results, a three-phase to ground fault occurs in MG at t = 1.2 − 1.25 (seconds) and the system retains its stability while the current
+limiting is bypassed: (a) output active power of grid forming VSIs; (b) frequency at grid forming VSIs; (c) the output current of VSI#2, (c) a zoom-on pl ot
+of current during fault period, the fault current reaches to 5-6 pu.
+Fig. 11. Simulation results, a three-phase to ground fault occurs in MG at t = 1.2− 1.25 (seconds) and the system became unstable after FRT (current limiting
+of grid-forming VSIs): (a) output active power of grid forming VSIs; (b) frequency at grid forming VSIs; (c) the output current of VSI#2, (d) a zoom-on p lot
+of current during fault period, the fault current is limited to 2 pu.
+for 100 ms. The system trajectory is moved to the sliding
+manifold, which is shown in Fig. 12(d). After fault occurrence
+and during the sliding mode the system trajectory is controlled
+so that, although the VSI shows resistive/transient impedance
+due to current limiting, the Chetaev’s instability condition,
+i.e., |/Delta1δ| > |/Delta1ω|, is not established . Moreover, the coordi-
+nation of the phase angles is preserved during/after sliding
+mode, see Fig. 12 (c), to assure accurate power-sharing after
+fault clearance. In the pre/post sliding regions, the frequency
+restoration loop [10] restores the frequency to the nominal
+value (/Delta1ω= 0).
+Robustness is the main strength of the sliding mode con-
+trol. To evaluate the robustness of the proposed sliding
+mode stabilizer, it is supposed that the fault is persis-
+tent, and an appropriate protection scheme disconnects the
+faulted element after 150 ms. To this end, the power line
+connecting VSI# 1 to VSI# 2 is disconnected from the
+MG to clear the fault. The simulation results are given in
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 10 =====
+1008 IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 2, MARCH 2021
+Fig. 12. Simulation results, a three-phase to ground fault occurs in MG at t = 1.2 − 1.3 (seconds) and the proposed sliding mode controller stabilizes the
+system while preserves power-sharing: (a) output active power of grid forming VSIs; (b) frequency at grid forming VSIs; (c) phase angle of grid formin g
+VSIs; (d) system trajectory indicating pre/post sliding and the sliding surface; (e) the output current of VSI# 2; (f) a zoom-on plot of current during fault
+period, the fault current is limited to 2 pu.
+Fig. 13. Simulation results, a three-phase to ground fault occurs in MG at t = 1.2 (sec) and is cleared at t = 1.35 (sec) by disconnecting the faulted line,
+the proposed sliding mode controller stabilizes the system: (a) output active power of grid forming VSIs; (b) the output current of VSI# 2; (f) a zoom-o np l o t
+of current during fault period, the fault current is limited to 2 pu.
+Fig. 13 which proves the effectiveness and robustness of the
+controller.
+Comparison Study: In order to evaluate the superiority of the
+proposed method, a comparison analysis is conducted with the
+developed technique in [31] which has proposed a solution to
+the transient stability problem of autonomous MGs. However,
+there are some critical problems related to the method in [31]
+as given below:
+i. As it is mentioned earlier, the proposed solution in [31]
+is not effective in the context of low-voltage MGs as the
+feeder impedance is considered to be purely inductive
+in this method. Using the virtual inductance loop to
+increase the X/R ratio in the lossy grids is against the
+proposed solution since, in this method, the quadratic
+component of the VSI’s output voltage in the syn-
+chronous reference frame ( v
+q) is adopted as a feedback
+signal to enhance the performance of the f − P droop
+loop. However, vq would not be zero after using the
+virtual inductance loop, even in steady states, which
+is against the accurate power-sharing and frequency
+restoration [10]. Also, v
+q is affected by the VSI’s out-
+put fault current, when the virtual inductance is adopted,
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 11 =====
+ESKANDARI AND SA VKIN: ON IMPACT OF FAULT RIDE-THROUGH ON TRANSIENT STABILITY OF AUTONOMOUS MICROGRIDS 1009
+Fig. 14. Simulation results for the method presented in [31] ( KPL = 0.05), a three-phase to ground fault occurs in MG at t = 1.2 − 1.25 (seconds) and
+the proposed solution in [31] makes the system stable while imposes frequency deviations ( /Delta1f > 0.5 Hz): (a) output active power of grid forming VSIs;
+(b) frequency at grid forming VSIs; (c) the output current of VSI# 2.
+which makes the situation too difﬁcult to be handled as
+the fault current is not predictable.
+ii. Besides, vq is not a purely dc value in the presence
+of harmonics and unbalanced loads which destroys the
+power quality and may make the system unstable.
+iii. Furthermore, the robustness of the method is question-
+able in response to the feedback gain adjustment.
+Nevertheless, in order to evaluate the effectiveness of the
+method in [31] through simulation results, it is assumed that
+the grid impedance is inductive (via multiplying the power
+network inductances by 7 in the testbed MG in Fig. 9). The
+simulation results are presented in Fig. 14. As per the sim-
+ulation results, there is a compromise between stabilizing
+the transients and frequency deviations. The feedback gain
+(K
+PL) in this case is considered to be 0.05. The larger gain
+may achieve better results with fewer transients, however, it
+would cause more frequency variations which is already high
+(/Delta1f > 0.5 Hz). A smaller gain limits frequency variations but
+leads to more transients and may not be sufﬁcient to stabilize
+the system.
+V. C
+ONCLUSION
+The impact of current limiting, which is executed to realize
+the fault ride-through of IIDG units, on the transient stability
+of autonomous MGs was investigated in this work. To this
+end, the nonlinear second-order differential equation describ-
+ing the dynamics of the f − P droop loop was developed and
+stability analysis has been conducted through the Lyapunov
+theory. It was demonstrated that the Lyapunov function, in
+its general sense in the power systems, cannot provide a suf-
+ﬁcient stability condition for inverter-based MGs. Using the
+Chetaev’s instability theorem the condition for instability of
+the system was explored and the transient impedance of the
+VSI was developed to investigate if the FRT of the grid-
+forming VSIs satisﬁes the instability condition. It has been
+proved that FRT makes the autonomous MGs unstable due to
+arbitrary/resistive output impedance of VSIs in current lim-
+iting in completion with the sudden phase angle variation at
+the VSI’s output voltage which is against the performance of
+the f − P droop controllers and satisﬁes Chetaev’s instability
+condition.
+Finally, an appropriate solution to the transient stability
+problem of the autonomous MGs was proposed employing
+sliding mode control and validated through simulation results.
+The robustness and effectiveness of the proposed method was
+compared with the existing technique in [31] which proved
+the superiority of the proposed method in this article.
+R
+EFERENCES
+[1] N. Mohan, A. K. Jain, P. Jose, and R. Ayyanar, “Teaching utility appli-
+cations of power electronics in a ﬁrst course on power systems,” IEEE
+Trans. Power Syst., vol. 19, no. 1, pp. 40–47, Feb. 2004.
+[2] R. J. Pearson et al. , “Energy storage via carbon-neutral fuels made
+from CO2, water, and renewable energy,” Proc. IEEE, vol. 100, no. 2,
+pp. 440–460, Feb. 2012.
+[3] C. A. Cortes, S. F. Contreras, and M. Shahidehpour, “Microgrid topology
+planning for enhancing the reliability of active distribution networks,”
+IEEE Trans. Smart Grid , vol. 9, no. 6, pp. 6369–6377, Nov. 2018.
+[4] M. H. Moradi, M. Eskandari, and S. Mahdi Hosseinian, “Operational
+strategy optimization in an optimal sized smart microgrid,” IEEE Trans.
+Smart Grid, vol. 6, no. 3, pp. 1087–1095, May 2015.
+[5] R. Zamora and A. K. Srivastava, “Multi-layer architecture for voltage
+and frequency control in networked microgrids,” IEEE Trans. Smart
+Grid, vol. 9, no. 3, pp. 2076–2085, May 2018.
+[6] M. Eskandari, L. Li, M. H. Moradi, F. Wang, and F. Blaabjerg, “A control
+system for stable operation of autonomous networked microgrids,” IEEE
+Trans. Power Del., vol. 35, no. 4, pp. 1633–1647, Aug. 2020.
+[7] M. Eskandari, L. Li, and M. H. Moradi, “Decentralized optimal servo
+control system for implementing instantaneous reactive power sharing
+in microgrids,” IEEE Trans. Sustain. Energy, vol. 9, no. 2, pp. 525–537,
+Apr. 2018.
+[8] M. Farrokhabadi et al. , “Microgrid stability deﬁnitions, analysis, and
+examples,” IEEE Trans. Power Syst., vol. 35, no. 1, pp. 13–29, Jan. 2020.
+[9] R. Majumder, “Some aspects of stability in microgrids,” IEEE Trans.
+Power Syst., vol. 28, no. 3, pp. 3243–3252, Aug. 2013.
+[10] M. Eskandari, L. Li, M. H. Moradi, P. Siano, and F. Blaabjerg, “Active
+power sharing and frequency restoration in an autonomous networked
+microgrid,” IEEE Trans. Power Syst. , vol. 34, no. 6, pp. 4706–4717,
+Nov. 2019.
+[11] M. Eskandari, L. Li, P. Siano, and F. Blaabjerg, “Simultaneous reac-
+tive power sharing and voltage regulation in an autonomous networked
+microgrid,” IET Gener. Trans. Distrib. , vol. 14, no. 7, pp. 1366–1377,
+Apr. 2020.
+[12] M. Eskandari, A. V . Savkin, “Interaction of droop controllers through
+complex power network in microgrids,” in Proc. 18th IEEE Int. Conf.
+Ind. Informat. (INDIN) , 2020, pp. 1–4.
+[13] S. Ma, H. Geng, L. Liu, G. Yang, and B. C. Pal, “Grid-synchronization
+stability improvement of large scale wind farm during severe grid fault,”
+IEEE Trans. Power Syst. , vol. 33, no. 1, pp. 216–226, Jan. 2018.
+[14] W. Tang, J. Hu, Y . Chang, and F. Liu, “Modeling of DFIG-based wind
+turbine for power system transient response analysis in rotor speed con-
+trol timescale,” IEEE Trans. Power Syst., vol. 33, no. 6, pp. 6795–6805,
+Nov. 2018.
+[15] H. Wu and X. Wang, “Design-oriented transient stability analysis
+of PLL-synchronized voltage-source converters,” IEEE Trans. Power
+Electron., vol. 35, no. 4, pp. 3573–3589, Apr. 2020.
+[16] M. G. Taul, X. Wang, P. Davari, and F. Blaabjerg, “An overview
+of assessment methods for synchronization stability of grid-connected
+converters under severe symmetrical grid faults,” IEEE Trans. Power
+Electron., vol. 34, no. 10, pp. 9655–9670, Oct. 2019.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
+===== PAGE 12 =====
+1010 IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 2, MARCH 2021
+[17] L. Xiong et al. , “Static synchronous generator model: A new per-
+spective to investigate dynamic characteristics and stability issues of
+grid-tied PWM inverter,” IEEE Trans. Power Electron. , vol. 31, no. 9,
+pp. 6264–6280, Sep. 2016.
+[18] H. Cheng, Z. Shuai, C. Shen, X. Liu, Z. Li, and Z. J. Shen, “Transient
+angle stability of paralleled synchronous and virtual synchronous gen-
+erators in islanded microgrids,” IEEE Trans. Power Electron. , vol. 35,
+no. 8, pp. 8751–8765, Aug. 2020.
+[19] Z. Shuai, C. Shen, X. Liu, and Z. Li, “Transient angle stability of virtual
+synchronous generators using Lyapunov’s direct method,” IEEE Trans.
+Smart Grid, vol. 10, no. 4, pp. 4648–4661, Jul. 2019.
+[20] N. G. Bretas and L. F. Alberto, “Lyapunov function for power systems
+with transfer conductances: Extension of the invariance principle,” IEEE
+Trans. Power Syst., vol. 18, no. 2, pp. 769–777, May 2003.
+[21] D. Pan, X. Wang, F. Liu, and R. Shi, “Transient stability of
+voltage-source converters with grid-forming control: A design-oriented
+study,” IEEE J. Emerg. Sel. Topics Power Electron. , vol. 8, no. 2,
+pp. 1019–1033, Jun. 2020.
+[22] J. Pei et al. , “Characteristic analysis and risk assessment for voltage–
+frequency coupled transient instability of large-scale grid-connected
+renewable energy plants during LVRT,” IEEE Trans. Ind. Electron. ,
+vol. 67, no. 7, pp. 5515–5530, Jul. 2020.
+[23] P. Piya, M. Ebrahimi, M. Karimi-Ghartemani, and S. A. Khajehoddin,
+“Fault ride-through capability of voltage-controlled inverters,” IEEE
+Trans. Ind. Electron., vol. 65, no. 10, pp. 7933–7943, Oct. 2018.
+[24] B. Mahamedi, M. Eskandari, J. E. Fletcher, and J. Zhu, “Sequence-
+based control strategy with current limiting for the fault ride-through of
+inverter-interfaced distributed generators,” IEEE Trans. Sustain. Energy,
+vol. 11, no. 1, pp. 165–174, Jan. 2020.
+[25] A. D. Paquette and D. M. Divan, “Virtual impedance current limiting
+for inverters in microgrids with synchronous generators,” IEEE Trans.
+Ind. Appl., vol. 51, no. 2, pp. 1630–1638, Mar.–Apr. 2014.
+[26] I. Sadeghkhani, M. E. H. Golshan, J. M. Guerrero, and A. Mehrizi-Sani,
+“A current limiting strategy to improve fault ride-through of inverter
+interfaced autonomous microgrids,” IEEE Trans. Smart Grid ,v o l .8 ,
+no. 5, pp. 2138–2148, Sep. 2017.
+[27] X. Liu et al., “Fault current hierarchical limitation strategy for fault ride-
+through scheme of microgrid,” IEEE Trans. Smart Grid , vol. 10, no. 6,
+pp. 6566–6579, Nov. 2019.
+[28] M. G. Taul, X. Wang, P. Davari, and F. Blaabjerg, “Current limiting
+control with enhanced dynamics of grid-forming converters during fault
+conditions,” IEEE J. Emerg. Sel. Topics Power Electron. , vol. 8, no. 2,
+pp. 1062–1073, Jun. 2020.
+[29] B. Mahamedi, J. G. Zhu, M. Eskandari, L. Li, and A. Mehrizi-Sani,
+“Analysis of fault response of inverter-interfaced distributed generators
+in sequence networks,” in Proc. IEEE Ind. Appl. Soc. Annu. Meeting
+(IAS), Portland, OR, USA, 2018, pp. 1–9.
+[30] H. Xin, L. Huang, L. Zhang, Z. Wang, and J. Hu, “Synchronous
+instability mechanism of P-f droop-controlled voltage source converter
+caused by current saturation,” IEEE Trans. Power Syst. , vol. 31, no. 6,
+pp. 5206–5207, Nov. 2016.
+[31] L. Huang, H. Xin, Z. Wang, L. Zhang, K. Wu, and J. Hu, “Transient
+stability analysis and control design of droop-controlled voltage source
+converters considering current limitation,” IEEE Trans. Smart Grid ,
+vol. 10, no. 1, pp. 578–591, Jan. 2019.
+[32] M. Eskandari, F. Blaabjerg, L. Li, M. H. Moradi, and P. Siano, “Optimal
+voltage regulator for inverter interfaced distributed generation units
+part II: Application,” IEEE Trans. Sustain. Energy , vol. 11, no. 4,
+pp. 2825–2835, Oct. 2020.
+[33] B. Mahamedi and J. E. Fletcher, “The equivalent models of grid-forming
+inverters in the sequence domain for the steady-state analysis of power
+systems,” IEEE Trans. Power Syst. , vol. 35, no. 4, pp. 2876–2887,
+Jul. 2020.
+[34] H. Saadat, Power System Analysis . Boston, MA, USA: McGraw-Hill,
+1999.
+[35] W. Hahn,
+Stability of Motion . Heidelberg, Germany: Springer, 1967.
+[36] M. H. Moradi, M. Eskandari, and S. M. Hosseinian, “Cooperative control
+strategy of energy storage systems and micro sources for stabilizing
+microgrids in different operation modes,” Int. J. Elect. Power Energy
+Syst., vol. 78, pp. 390–400, Jun. 2016.
+[37] M. Eskandari, L. Li, M. H. Moradi, and P. Siano, “A nodal
+approach based state-space model of droop-based autonomous net-
+worked microgrid,” Sustain. Energy Grids Netw. , vol. 18, Jun. 2019,
+Art. no. 100216.
+[38] M. Eskandari and L. Li, “Microgrid operation improvement by adap-
+tive virtual impedance,” I E TR e n e w .P o w e rG e n e r ., vol. 13, no. 2,
+pp. 296–307, Feb. 2019.
+[39] P. Monshizadeh, N. Monshizadeh, C. De Persis, and A. van der Schaft,
+“Output impedance diffusion into lossy power lines,” IEEE Trans. Power
+Syst., vol. 34, no. 3, pp. 1659–1668, May 2019.
+[40] H. K. Khalil and J. W. Grizzle, Nonlinear Systems. Upper Saddle River,
+NJ, USA: Prentice-Hall, 2002.
+[41] M. Eskandari, L. Li, M. H. Moradi, P. Siano, and F. Blaabjerg, “Optimal
+voltage regulator for inverter interfaced distributed generation units
+part I: Control system,” IEEE Trans. Sustain. Energy , vol. 11, no. 4,
+pp. 2813–2824, Oct. 2020.
+[42] T. Morstyn, A. V . Savkin, B. Hredzak, and V . G. Agelidis, “Multi-
+agent sliding mode control for state of charge balancing between battery
+energy storage systems distributed in a DC microgrid,” IEEE Trans.
+Smart Grid, vol. 9, no. 5, pp. 4735–4743, Sep. 2018.
+[43] IEEE Trial-Use Recommended Practice for Voltage Sag and Short
+Interruption Ride-Through Testing for End-Use Electrical Equipment
+Rated Less Than 1000V , IEEE Standard Association P1668-2014,
+2014.
+[44] K. W. Jones, P. Pourbeik, and G. Kobet, “Impact of inverter-
+based generation on bulk power system dynamics and short-
+circuit performance,” NERC Task Force Short-Circuit Syst. Perform.
+Impact Inverter Based Gener., Atlanta, GA, USA, Rep. PESTR68,
+2018.
+[45] M. Pesin and J. Paladino, “Impact of IEEE 1547 standard on
+smart inverters,” IEEE PES, Piscataway, NJ, USA, Rep. PES-TR67,
+2018.
+Authorized licensed use limited to: VinUni. Downloaded on August 24,2026 at 06:54:06 UTC from IEEE Xplore.  Restrictions apply. 
