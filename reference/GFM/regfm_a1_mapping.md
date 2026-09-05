@@ -32,7 +32,7 @@ Không cần dựng gì thêm. Đây là phần tiết kiệm công sức lớn 
 
 ---
 
-## 2. ⚠️ Hai phát hiện làm thay đổi kết quả T20
+## 2. ⚠️ Ba phát hiện làm thay đổi kết quả T20
 
 ### 2.1 `I_max = 1.20` nằm **dưới đáy dải** của đặc tả
 
@@ -64,6 +64,51 @@ Bản đặc tả nói thẳng về mục đích của Q-V droop:
 
 Nghĩa là hiện tượng bạn quan sát được chính là thứ khối này sinh ra để ngăn — và nó không hoạt động vì cả ba lý do trên.
 
+### 2.3 `KPplim = 5` nằm **5× trên đỉnh dải** — và nó nằm trên đường droop
+
+Bổ sung từ T30/T31/T32. PNNL-35110 cho `kppmax` = 0,01 pu, dải bình thường **0,005–0,05**.
+
+**⚠️ Phải quy đổi thứ nguyên trước khi so.** Sơ đồ P của REGFM_A1 cộng nhánh
+`kppmax + kipmax/s` **thẳng vào ω**, cùng điểm với `mp` — nên `kppmax` có thứ nguyên
+ω-trên-công-suất, giống `mp` (và đặc tả cho hai tham số này *cùng* dải 0,005–0,05). REGF1 thì
+`PIplim_y` là **công suất**, chỉ nhân `w0·wdrp` về sau, nên `KPplim` **vô thứ nguyên**. Đại
+lượng so được là
+
+$$k_{ppmax}^{eff}=m_p\cdot K_{Pplim}=R\cdot K_{Pplim}=0{,}05\,K_{Pplim}$$
+
+| `KPplim` | 0,05 | 0,1 | **0,2** | 0,5 | 1,0 | 2,0 | **5,0** |
+|---|---|---|---|---|---|---|---|
+| $k_{ppmax}^{eff}$ | 0,0025 | 0,005 | **0,010** | 0,025 | 0,050 | 0,100 | **0,250** |
+| vs dải 0,005–0,05 | 2× dưới | đáy dải ✅ | **ví dụ đặc tả** ✅ | ✅ | đỉnh dải ✅ | 2× trên | **5× trên** ❌ |
+
+Cửa sổ đúng đặc tả là `KPplim` ∈ **[0,1 – 1,0]**, ví dụ đặc tả là **0,2**. Giá trị 5,0 đang
+dùng là mặc định ANDES, lệch **5×** (không phải 100× — bản sửa đầu của mục này so sai thứ
+nguyên).
+
+Điều khiến nó nghiêm trọng hơn `KIplim`: đầu vào droop của REGF1 là `PIplim_y − Psen_y`, nên
+bộ PI giới hạn P nằm trên **đường thuận của droop kể cả khi không máy nào bão hoà**. Hàm
+truyền dẫn xuất (`src/analytical/regf1_droop.py`):
+
+$$\frac{\Delta\omega}{\Delta P_e}=-\,\omega_0 w_{drp}\cdot\frac{1+K_{Iplim}T_{pm}+s\,T_{pm}(1+K_{Pplim})}{(1+sT_r)(1+sT_{pm})}$$
+
+Với `KIplim = 0`, zero nằm ở $-1/(T_{pm}(1+K_{Pplim}))$:
+
+| `KPplim` | 0,1 (đáy dải) | **0,2 (ví dụ đặc tả)** | 1,0 (đỉnh dải) | 5 (mặc định ANDES) |
+|---|---|---|---|---|
+| zero [rad/s] | −36,4 | **−33,3** | −20,0 | **−6,67** |
+| so với pole −40 | lệch 9% | lệch 17% | thấp hơn 2× | **thấp hơn cả hai pole** |
+
+Zero chỉ triệt tiêu pole $-1/T_{pm}$ ở giới hạn $K_{Pplim}\to0$, tức **dưới** dải đặc tả. Trong
+cửa sổ đặc tả nó vẫn là lead-lag nhẹ — nhưng ANDES đo $\kappa_{os}$ = 1,003–1,006 ở cả cửa sổ,
+tức **vị trí zero hở mạch không dự đoán được ngưỡng overshoot**; ngưỡng nằm giữa `KPplim` = 2
+và 5 và là tương tác vòng trong × đường droop (T32 §2③). Tại mặc định 5,0, overshoot đo được
+22,7% — một đại lượng mọi mô hình GFM rút gọn dự đoán bằng 0.
+
+$\kappa_{os}$ và RoCoF đều là hàm của `KPplim`, nên $\Delta P_{\max}=1{,}1851$ MW ứng với một
+mặc định công cụ lệch 5× khỏi đặc tả. Phép tách cơ chế:
+`experiments/t31_kpplim_mechanism.py`; bản đồ ổn định: `experiments/t32_eig_map.py`.
+Chi tiết: `artifacts/T30_ducoin_crosscheck/README.md`, `artifacts/T32_eig_map/README.md`.
+
 ---
 
 ## 3. Bảng đối chiếu đầy đủ
@@ -75,7 +120,8 @@ Nghĩa là hiện tượng bạn quan sát được chính là thứ khối này
 | Q–V droop | `m_q` = 0,05 (0–0,20) | `Qdrp` (mặc định 0,045) | 0,045 | ✅ |
 | Bộ điều khiển điện áp | `k_pv` = 0 (0–0,01), `k_iv` = 5,86 pu/s (3–15) | `KPv` (3), `KIv` (10) | KPv 3,0 / KIv 10,0 | ⚠️ `KPv` = 3 vs đặc tả 0–0,01 — cần kiểm |
 | Giới hạn đầu ra vòng áp | `E_max` = 1,15 / `E_min` = 0 | — (không có giới hạn E tường minh) | — | ⚠️ thiếu |
-| Giới hạn P + overload mitigation | `P_max` = 0,9 / `P_min` **âm cho BESS**; `k_ppmax` = 0,01, `k_ipmax` = 0,1 pu/s | `Pmax`/`Pmin`, `KPplim`/`KIplim` (5 / 30) | Pmax 1,0 / Pmin −1,0; KPplim 5, **KIplim 0** | ✅ / ⚠️ `KIplim = 0` là lựa chọn của bạn (xem ghi chú `_wdrp`) |
+| Giới hạn P + overload mitigation | `P_max` = 0,9 / `P_min` **âm cho BESS**; `k_ppmax` = 0,01 (dải **0,005–0,05**), `k_ipmax` = 0,1 pu/s (dải 0,05–0,2) | `Pmax`/`Pmin`, `KPplim`/`KIplim` (5 / 30) | Pmax 1,0 / Pmin −1,0; **KPplim 5**, **KIplim 0** | ❌ **so đúng thứ nguyên: $k_{ppmax}^{eff}=m_p K_{Pplim}=0{,}05\times5=0{,}25$, nằm 5× trên đỉnh dải** — xem §2.3 |
+| Bộ điều khiển điện áp (thứ nguyên) | `k_pv`, `k_iv` lái thẳng `E_droop` (**áp→áp**, vô thứ nguyên) | `KPv`/`KIv` lái `Idref` (**áp→dòng**, dẫn nạp) | KPv 3,0 / KIv 10,0 | ⛔ **không so được** — REGFM_A1 là biến thể *không có vòng dòng trong*; hai gain tham số hoá hai plant khác nhau. Cờ "cần kiểm" ở hàng dưới đã giải quyết theo nghĩa này, không phải sai lệch |
 | Giới hạn Q | `Q_max/Q_min` = **±0,44** (±0,44…±1); `k_pqmax` = 3, `k_iqmax` = 20 pu/s | `Qmax`/`Qmin`, `KPqlim` (0,1) / `KIqlim` (1,5) | **±1,0** | ⚠️ xem §2.2(c) |
 | Lọc đo P/Q/V | `T_Pf`/`T_Qf`/`T_Vf` = 0,01 s (0,01–0,1) | `Tr` (0,005), `Tpm` (0,025) | Tpm 0,025 | ✅ trong dải |
 | Quy đổi base | `S_base/M_base` (eq. 4–6) | `Sn` + `gammap`/`gammaq` | có | ✅ |

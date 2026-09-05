@@ -154,22 +154,60 @@ class CaseSpec:
     # *linearly unstable*: six units on a 4.16 kV feeder give ten eigenvalues with
     # Re > 0 at 92-260 Hz and zeta about -0.03 to -0.05, and every time-domain run
     # then collapses ~0.25 s after any event. The instability is in the current
-    # loop, not the voltage loop -- holding KPv/KIv at their defaults and slowing
-    # only KPi/KIi restores Re(lambda) <= 0 for every deployment (2/5/6 GFM), every
-    # headroom, xf in [0.05, 0.20], R in [0.02, 0.05] and both load models.
-    # Modes above ~100 Hz are outside the validity of a positive-sequence model
-    # anyway, so the retune moves the converter dynamics into the band this
-    # platform can actually represent. It must be re-derived, not reused, when the
-    # EMT model of T3 sets the real gains.
-    kp_i: float = 0.20
-    ki_i: float = 5.0
+    # loop, not the voltage loop, so KPv/KIv stay at their defaults and only
+    # KPi/KIi are slowed. Modes above ~100 Hz are outside the validity of a
+    # positive-sequence model anyway, so the retune moves the converter dynamics
+    # into the band this platform can actually represent. It must be re-derived,
+    # not reused, when the EMT model of T3 sets the real gains.
+    #
+    # These are NOT independent of `kp_plim`: the P limiter sits in the droop's
+    # forward path, so stability is a property of the pair. T33 swept 81 cells
+    # (2/5/6 GFM x xf in [0.05, 0.20] x R in [0.02, 0.05] x both load models, plus
+    # a headroom axis) for four candidate pairs. (0.20, 5.0) with KPplim = 1.0 is
+    # stable in only 24 of them; (0.10, 3.0) with KPplim = 0.2 in 40; the pair
+    # below in 77, against 75 for the (0.20, 5.0) + KPplim = 5.0 that shipped
+    # before. Do not move one of the three without re-running that sweep.
+    #
+    # Known gap, and it predates this pair: Re(lambda) > 0 at the corner
+    # xf = 0.05, R = 0.02 -- 5gfm and 6gfm here (max Re +3.4), all three
+    # deployments and max Re +5.1 for the configuration that shipped before. An
+    # earlier version of this comment claimed the whole box was stable; it was
+    # wrong at that corner. See `artifacts/T33_inner_revalidation/README.md`.
+    kp_i: float = 0.10
+    ki_i: float = 3.0
+    # REGFM_A1 specifies `kpv`/`kiv` for a variant with *no inner current loop*:
+    # they drive E_droop directly (voltage->voltage), while REGF1's KPv/KIv drive
+    # Idref (voltage->current, an admittance). The two are not numerically
+    # comparable and the specification's 0-0.01 range does not apply here. What is
+    # measurable is the sensitivity: below KPv ~ 1.0 the fleet is violently
+    # unstable (max Re ~ +11), and KIv barely matters over 5.86-15 once KPv >= 2.
     kp_v: float = 3.0
     ki_v: float = 10.0
 
     # P limiter loop. REGF1 ships KIplim = 30, which is *not* used here: see
     # `_wdrp` for why it silently stiffens the droop by 75%, and for the measurement
     # showing the ceiling still binds without it.
-    kp_plim: float = 5.0
+    #
+    # `kp_plim` is not a limiter-only parameter. REGF1's droop input is
+    # `PIplim_y - Psen_y`, so this PI is in the droop's forward path whether or
+    # not anything is saturated (`src/analytical/regf1_droop.py` has the closed
+    # form). At REGF1's shipped KPplim = 5 the fleet overshoots its own droop
+    # steady state by 22.7% -- a quantity every reduced GFM model predicts to be
+    # exactly zero -- and that overshoot sets the RoCoF, hence dP_max.
+    #
+    # Conformance needs a unit conversion. REGFM_A1 sums its overload branch
+    # straight into omega alongside `mp`, so `kppmax` is a frequency-per-power
+    # gain; REGF1 sums into power and multiplies by `w0*wdrp` afterwards, so
+    # KPplim is dimensionless. The comparable quantity is
+    # `kppmax_eff = m_p * KPplim = droop_r * KPplim`. PNNL-35110 gives kppmax =
+    # 0.01, normal range 0.005-0.05, so the conformant window at R = 0.05 is
+    # KPplim in [0.1, 1.0]. The 5.0 that shipped before is 5x above it.
+    #
+    # 1.0 is the top of that window, and T33 shows it is also the only conformant
+    # value whose stability box contains the one that shipped before (77/81 cells
+    # against 75/81). The specification's own example value (KPplim = 0.2) is
+    # conformant but fails that sweep at 40/81. See the inner-loop note above.
+    kp_plim: float = 1.0
     ki_plim: float = 0.0
     t_pm: float = 0.025
     p_head_mw: float | None = None   # total upward headroom; None = full BESS rating

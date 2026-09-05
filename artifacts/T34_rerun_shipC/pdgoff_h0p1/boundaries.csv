@@ -1,0 +1,2 @@
+quantity,event,dP_mw,P_dg_pre_mw,bracket_lo,bracket_hi,found,value,x_secure,x_insecure,tol,n_eval,monotone,note,kappa
+P_DG_off_max_mw,gen_trip,,,0.0,1.4,True,1.2960937499999998,1.290625,1.3015625,0.02,13,True,"bracketed on [0, 1.4]",
