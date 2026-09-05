@@ -1,0 +1,80 @@
+[
+  {
+    "label": "E1",
+    "open_elements": [
+      "s5",
+      "s6",
+      "s7",
+      "s8",
+      "s9"
+    ],
+    "event_bus": "1",
+    "d_elec_pu": 0,
+    "source": "event-location sweep"
+  },
+  {
+    "label": "E76",
+    "open_elements": [
+      "s5",
+      "s6",
+      "s7",
+      "s8",
+      "s9"
+    ],
+    "event_bus": "76",
+    "d_elec_pu": 0.0056039321206723496,
+    "source": "event-location sweep"
+  },
+  {
+    "label": "E102",
+    "open_elements": [
+      "s5",
+      "s6",
+      "s7",
+      "s8",
+      "s9"
+    ],
+    "event_bus": "102",
+    "d_elec_pu": 0.005898875916497211,
+    "source": "event-location sweep"
+  },
+  {
+    "label": "E41",
+    "open_elements": [
+      "s5",
+      "s6",
+      "s7",
+      "s8",
+      "s9"
+    ],
+    "event_bus": "41",
+    "d_elec_pu": 0.01209269562881928,
+    "source": "event-location sweep"
+  },
+  {
+    "label": "E88",
+    "open_elements": [
+      "s5",
+      "s6",
+      "s7",
+      "s8",
+      "s9"
+    ],
+    "event_bus": "88",
+    "d_elec_pu": 0.02123595329938996,
+    "source": "event-location sweep"
+  },
+  {
+    "label": "E33",
+    "open_elements": [
+      "s5",
+      "s6",
+      "s7",
+      "s8",
+      "s9"
+    ],
+    "event_bus": "33",
+    "d_elec_pu": 0.03863763825305672,
+    "source": "event-location sweep"
+  }
+]
