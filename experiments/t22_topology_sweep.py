@@ -353,7 +353,9 @@ def main() -> None:
     ap.add_argument("--verify", type=int, default=6)
     ap.add_argument("--f-band", type=float, default=1.0)
     ap.add_argument("--rocof-max", type=float, default=2.0)
-    ap.add_argument("--v-min", type=float, default=0.90)
+    ap.add_argument("--v-min", type=float, default=0.88,
+                    help="IEEE 1547-2018 Cat III Continuous Operation floor; "
+                         "see reference/security_band_provenance.md")
     args = ap.parse_args()
     args.out = args.out.resolve()
     args.placement = args.placement.resolve()

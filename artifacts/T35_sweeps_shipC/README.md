@@ -66,3 +66,17 @@ lượng thật thì phải **siết dung sai bisection xuống dưới tản ma
 ---
 
 `experiments/t35_rerun_sweeps_ship_c.sh` · `topology/` (4 case) · `event_loc/` (6 case)
+
+---
+
+## Phụ chú (T39, 2026-09-05) — nhãn `binding = v` là điều kiện theo ngưỡng
+
+Mọi số trong tài liệu này chạy ở `v_min_pu` = 0,90, một ngưỡng **không có nguồn** — xem
+`reference/security_band_provenance.md`. Ngưỡng ship nay là **0,88 pu** (IEEE 1547-2018
+Cat III Continuous Operation), và ở đó cả 10 case đổi `binding` từ `v` sang **`nadir`**.
+
+**Kết luận của tài liệu này không đổi**, và §3 mạnh thêm: bất biến topology/vị trí nay đã
+đứng dưới **ba** tiêu chí siết khác nhau — `rocof` (cấu hình công bố), `v` (ngưỡng 0,90),
+`nadir` (ngưỡng 0,88). Đó chính là luận điểm §3: bất biến với *việc cái gì đang siết*.
+
+Chưa chạy lại vì kết luận không đổi; chỉ nhãn tiêu chí là điều kiện.

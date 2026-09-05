@@ -42,10 +42,28 @@ F_NOM_HZ = 60.0
 class SecurityBand:
     """Omega_dyn. Voltage and reactive coordinates are in from the start, not bolted on."""
 
+    # `v_min_pu` is the lower edge of the Continuous Operation region for a DER
+    # under IEEE 1547-2018 Category III (0.88-1.00 pu, held for 5 s and 120 s),
+    # the region IEEE 1547.1-2020 exists to test compliance against. That is the
+    # question this band is asking -- the voltage a DER must ride through -- and
+    # not the question ANSI C84.1 answers, which is the voltage delivered to a
+    # load. The 0.90 that shipped here before was ANSI utilization Range A
+    # (108 V on 120 V) and had no recorded provenance at all.
+    #
+    # The choice is not cosmetic: it selects which coordinate binds. At 0.90 the
+    # voltage criterion crossed 0.56% before the nadir one, so the campaign read
+    # as voltage-limited on a margin thinner than anything else it measured; at
+    # 0.88 the nadir criterion binds and the voltage one sits 16% out. See
+    # `reference/security_band_provenance.md` for the measurement and the
+    # citations.
+    #
+    # `f_min_hz`, `f_max_hz` and `rocof_max_hz_s` still have no such provenance.
+    # With v_min at 0.88 the nadir criterion is what sets dP_max, so `f_min_hz`
+    # now needs the citation `v_min_pu` just got, and does not have it.
     f_min_hz: float = 59.0
     f_max_hz: float = 61.0
     rocof_max_hz_s: float = 2.0
-    v_min_pu: float = 0.90
+    v_min_pu: float = 0.88
     v_max_pu: float = 1.10
     mu_i_max: float = 1.0        # relative to ImaxF, not to the continuous rating
     # A settled endpoint is part of security: a run that is still moving at t_end
