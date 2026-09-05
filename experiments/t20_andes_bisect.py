@@ -455,7 +455,10 @@ def main() -> None:
                          "closer to a real prime mover")
     ap.add_argument("--tol", type=float, default=0.02)
     ap.add_argument("--verify", type=int, default=6)
-    ap.add_argument("--f-band", type=float, default=1.0, help="+/- Hz around 60")
+    ap.add_argument("--f-band", type=float, default=0.5,
+                    help="+/- Hz around 60; 0.5 is the band islanded-microgrid "
+                         "scheduling uses, anchored above the first UFLS stage. "
+                         "See reference/security_band_provenance.md")
     ap.add_argument("--rocof-max", type=float, default=2.0)
     ap.add_argument("--v-min", type=float, default=0.88,
                     help="IEEE 1547-2018 Cat III Continuous Operation floor; "

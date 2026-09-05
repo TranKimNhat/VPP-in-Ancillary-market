@@ -57,13 +57,33 @@ class SecurityBand:
     # `reference/security_band_provenance.md` for the measurement and the
     # citations.
     #
-    # `f_min_hz`, `f_max_hz` and `rocof_max_hz_s` still have no such provenance.
-    # With v_min at 0.88 the nadir criterion is what sets dP_max, so `f_min_hz`
-    # now needs the citation `v_min_pu` just got, and does not have it.
-    f_min_hz: float = 59.0
-    f_max_hz: float = 61.0
+    # `f_min_hz`/`f_max_hz` are a +/-0.5 Hz band. Islanded-microgrid scheduling
+    # work does not use the DER trip setting (IEEE 1547-2018 defaults to 57.0 Hz,
+    # set by the area EPS operator and coordinated with wide-area UFLS) as a
+    # criterion; it uses a deviation band anchored on staying above the first UFLS
+    # stage, so that a secure schedule sheds no load. 0.5 Hz is the most common
+    # value in that literature. The 1.0 Hz used here before was looser than any of
+    # it and had no recorded provenance.
+    #
+    # `rocof_max_hz_s` = 2.0 is the IEEE 1547-2018 limit as the microgrid
+    # literature cites it. An earlier note here claimed 2.0 was a Category II
+    # value inconsistent with the Category III voltage floor and should be raised
+    # to 3.0; that was wrong. The 2/3 Hz/s pair are device ride-through *test*
+    # settings in IEEE 1547.1, not the criterion a scheduling study applies.
+    #
+    # Because kappa_os = 1.005 at the ship configuration, the nadir criterion is
+    # algebraic and dP_max is linear in this band: dP_max = 1.447 * f_band [MW],
+    # valid while f_band < 1.039 Hz (beyond that RoCoF binds at 1.504 MW, and
+    # beyond 1.194 Hz v_min binds at 1.727 MW). Report the coefficient and its
+    # validity region rather than a point value -- that way the band is a stated
+    # input, not a hidden choice. See `reference/security_band_provenance.md`.
+    f_min_hz: float = 59.5
+    f_max_hz: float = 60.5
     rocof_max_hz_s: float = 2.0
     v_min_pu: float = 0.88
+    # Not checked to the standard `v_min_pu` was held to. It does not bind in
+    # load-increase events, so it does not affect dP_max here, but it would in a
+    # load-rejection case.
     v_max_pu: float = 1.10
     mu_i_max: float = 1.0        # relative to ImaxF, not to the continuous rating
     # A settled endpoint is part of security: a run that is still moving at t_end

@@ -351,7 +351,8 @@ def main() -> None:
     ap.add_argument("--dp-hi", type=float, default=3.0)
     ap.add_argument("--tol", type=float, default=0.02)
     ap.add_argument("--verify", type=int, default=6)
-    ap.add_argument("--f-band", type=float, default=1.0)
+    ap.add_argument("--f-band", type=float, default=0.5,
+                    help="+/- Hz around 60; see reference/security_band_provenance.md")
     ap.add_argument("--rocof-max", type=float, default=2.0)
     ap.add_argument("--v-min", type=float, default=0.88,
                     help="IEEE 1547-2018 Cat III Continuous Operation floor; "

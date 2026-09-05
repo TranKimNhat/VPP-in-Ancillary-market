@@ -106,136 +106,156 @@ nó cho con số.
 
 ---
 
----
+# Phần II — `f_min_hz` và `rocof_max_hz_s`: **đã chốt** (2026-09-05)
 
-# Phần II — `f_min_hz` và `rocof_max_hz_s`: **quyết định đang mở**, ảnh hưởng 2,4×
+Với $V_{\min}$ = 0,88, nadir thành toạ độ siết, nên `f_min_hz` đặt trực tiếp $\Delta P_{\max}$.
+Hai vòng tra cứu Consensus cho ba kết quả, một trong đó **bác một cảnh báo tôi đã nêu**.
 
-Với $V_{\min}$ = 0,88, **nadir thành toạ độ siết**, nên `f_min_hz` giờ đặt trực tiếp
-$\Delta P_{\max}$. Tra cứu (2026-09-05) cho ba phát hiện, mỗi cái nặng hơn cái trước.
+## II.1 ❌ RÚT: "dải trộn Category II với Category III"
 
-## II.1 Dải hiện tại **không nhất quán về category**
+Bản trước của mục này cảnh báo rằng dùng $V_{\min}$ = 0,88 (Cat III) cùng RoCoF = 2,0 (Cat II)
+là trộn category, và đề nghị nâng RoCoF lên 3,0. **Rút.**
 
-IEEE 1547-2018 gán ngưỡng RoCoF theo category DER: **2 Hz/s cho Category II, 3 Hz/s cho
-Category III**. Ta đang dùng:
+Văn liệu microgrid dùng **2 Hz/s như chính là** giới hạn IEEE 1547-2018. Ali et al. (2024) phát
+biểu thẳng cho microgrid converter-interfaced: đảm bảo RoCoF *"remains within the limit of
+**2 Hz/s according to IEEE Standard 1547–2018**"*, đặt cạnh giới hạn mất cân bằng áp 2% theo
+IEC 61000-3-13. Con số 2,0 hiện dùng **có nguồn và giữ nguyên**.
 
-| | ta dùng | category tương ứng |
+Cặp 2 Hz/s (Cat II) / 3 Hz/s (Cat III) là ngưỡng **thử ride-through thiết bị** trong quy trình
+IEEE 1547.1. Nó không phải là ngưỡng mà một nghiên cứu điều độ microgrid dùng làm tiêu chí —
+và khi các nghiên cứu đó trích IEEE 1547-2018 cho RoCoF, con số họ trích là 2 Hz/s.
+
+## II.2 `f_min` — neo đúng là **UFLS**, không phải ngưỡng cắt DER
+
+Không nghiên cứu điều độ microgrid ốc đảo nào dùng ngưỡng cắt thiết bị (57,0 Hz) làm tiêu chí.
+Tất cả dùng **dải lệch tần**, và neo vật lý là **kích hoạt UFLS tầng đầu**: nadir phải ở trên
+đó thì mới không sa thải tải nào.
+
+Rebollal et al. (2021) xây FCUC cho microgrid ốc đảo với mục tiêu tường minh là *giảm thiểu
+kích hoạt UFLS*, và ghi rằng microgrid ốc đảo nhỏ đặc biệt nhạy vì thiếu quán tính. Xu et al.
+(2023) thiết kế UFLS cho microgrid ốc đảo **chỉ có một nguồn grid-forming** — đúng cấu hình
+của ta. Amraee et al. (2018) cho xung đột giữa rơ-le RoCoF của DG và nadir UFLS, tức lý do hai
+ngưỡng phải đặt phối hợp.
+
+Dải mà văn liệu này thực sự dùng:
+
+| nghiên cứu | dải lệch | quy về 60 Hz |
 |---|---|---|
-| $V_{\min}$ = 0,88 | dải Continuous Operation LVRT | **Category III** |
-| RoCoF = 2,0 Hz/s | ngưỡng ride-through | **Category II** ❌ |
+| Gao et al. (2025), IEEE Access | ±0,4 Hz | 59,6 |
+| **Song et al. (2025), Energies** | **0,5 Hz** | **59,5** |
+| Gao et al. (2025), AEET | 49,2 trên nền 50 Hz | 59,2 |
+| ~~ta, trước~~ | ~~1,0 Hz~~ | ~~59,0~~ ← **lỏng hơn tất cả** |
 
-Trộn hai category. Đây là khiếm khuyết độc lập với mọi thứ khác, và phải sửa dù chọn gì.
+## II.3 ✅ QUYẾT ĐỊNH: `f_min_hz` = **59,5** (`f_max_hz` = 60,5), dải ±0,5 Hz
 
-## II.2 `f_min` = 59,0 **không có đối ứng** trong IEEE 1547
+Lý do:
 
-Con số của 1547 là **ngưỡng cắt** (underfrequency trip), mặc định **57,0 Hz**, do area EPS
-operator chỉnh và phải phối hợp với sơ đồ UFLS diện rộng. 59,0 không phải một mốc của tiêu
-chuẩn này.
+1. **Trong dải văn liệu**, và là giá trị phổ biến nhất trong đó (Song et al. 2025).
+2. **Bảo thủ.** 1,0 Hz nằm ngoài dải, về phía lỏng — điểm reviewer sẽ đánh với một bài an ninh.
+3. **Nhất quán với cách chọn $V_{\min}$**: cả hai là ngưỡng *vận hành liên tục*, không phải
+   điểm cắt thiết bị.
+4. Giữ nadir trên mọi sơ đồ UFLS tầng đầu hợp lý cho hệ 60 Hz.
 
-Với voltage ta chọn **sàn vùng vận hành liên tục** (0,88), không chọn điểm cắt. Đối ứng tần số
-của "sàn vận hành liên tục" là **59,5 Hz** — nhưng nguồn hiện có nêu dải 59,5–60,5 Hz là
-*"implied by trip ranges"*, tức **suy ra, không phải trích trực tiếp**. Chưa đủ để dùng.
+## II.4 Hệ quả — và cách công bố xoá được tính tuỳ tiện
 
-## II.3 Hệ quả định lượng — dải 2,4×
+Vì $\kappa_{os}$ = 1,0046 (T36), ràng buộc nadir là **đại số thuần**:
 
-Khớp tuyến tính trên 11 điểm chưa bão hoà của `T39_vmin088` (ΔP 0,05–1,52):
+$$\Delta P_{\max} = \frac{\Delta f_{band}\sum S_g}{\kappa_{os}\,f_0 R} = \mathbf{1{,}447\,\Delta f_{band}}\ \text{[MW, } \Delta f_{band}\text{ tính bằng Hz]}$$
 
-```
-f_nadir = -0.6922*dP + 60.0011      rocof = 1.3229*dP + 0.0109
-v_min   = -0.0691*dP +  0.9994      mu_I  = 0.2823*dP + 0.3104
-```
+Kiểm: $\Delta f$ = 1,0 → 1,447 (đo 1,450 ✓); $\Delta f$ = 0,5 → **0,724**.
 
-ΔP mà từng tiêu chí siết:
+**Miền hiệu lực** (cấu hình ship C, khớp tuyến tính 11 điểm T39):
 
-| tiêu chí | ngưỡng | nguồn | ΔP siết [MW] |
-|---|---|---|---:|
-| f_nadir | 59,5 | sàn vận hành liên tục *(suy ra)* | **0,724** |
-| f_nadir | **59,0** | **không có nguồn** | **1,446** |
-| f_nadir | 57,0 | IEEE 1547 mặc định UF trip | 4,336 |
-| RoCoF | 2,0 | IEEE 1547 **Cat II** | 1,504 |
-| RoCoF | 3,0 | IEEE 1547 **Cat III** | 2,260 |
-| $V_{\min}$ | 0,88 | IEEE 1547 Cat III cont. op ✅ | 1,727 |
-| $\mu_I$ | 1,0 | ImaxF = 2,0 (REGFM_A1 ví dụ) | 2,443 |
+| $\Delta f_{band}$ | toạ độ siết | $\Delta P_{\max}$ |
+|---|---|---|
+| < 1,039 Hz | **nadir** | $1{,}447\,\Delta f_{band}$ |
+| 1,039 – 1,194 Hz | RoCoF (2,0 Hz/s) | 1,504 (cố định) |
+| > 1,194 Hz | $V_{\min}$ (0,88) | 1,727 (cố định) |
 
-Ba bộ ngưỡng **tự nhất quán**, và chúng cho ba bài báo khác nhau:
+**Công bố hệ số, không công bố điểm.** Bài nên đưa quan hệ tuyến tính cộng miền hiệu lực chứ
+không đưa một con số — như vậy không phải bảo vệ một lựa chọn ngưỡng, và người đọc đọc ra con
+số ở bất kỳ dải nào họ dùng. Tại dải đã chốt: $\Delta P_{\max}$ = **0,724 MW**.
 
-| bộ | $\Delta P_{\max}$ | siết bởi |
-|---|---:|---|
-| hiện tại (f 59,0 + RoCoF 2,0 CatII + V 0,88 CatIII) | **1,446** | nadir |
-| toàn Cat III, gốc trip (f 57,0 + RoCoF 3,0 + V 0,88) | **1,727** | $V_{\min}$ |
-| gốc vận-hành-liên-tục (f 59,5 + RoCoF 3,0 + V 0,88) | **0,724** | nadir |
+## II.5 Bảng nguồn cho **cả bộ** — dùng để cite
 
-**2,4× giữa cao nhất và thấp nhất.** Lớn hơn mọi hiệu ứng vật lý đo được trong chiến dịch này.
+| ngưỡng | giá trị | nguồn | loại |
+|---|---|---|---|
+| `v_min_pu` | **0,88** | IEEE 1547-2018 Cat III, sàn Continuous Operation (0,88–1,00, giữ 5 s và 120 s); thử theo IEEE 1547.1-2020 | `ninad2021`, `mahmud2022` |
+| `v_max_pu` | 1,10 | ⚠️ **chưa kiểm** — cần cùng mức 0,88 | — |
+| `rocof_max_hz_s` | **2,0** | IEEE 1547-2018, như văn liệu microgrid trích | `ali2024rocof` |
+| `rocof_window_s` | 0,5 | đầu dài nhất dải 100–500 ms; lựa chọn bảo thủ theo hướng làm RoCoF khó siết | `brogan2019`, `amraee2018` |
+| `f_min_hz` | **59,5** | dải ±0,5 Hz, phổ biến nhất trong điều độ microgrid ốc đảo; neo: trên UFLS tầng đầu | `song2025`, `rebollal2021`, `xu2023ufls` |
+| `f_max_hz` | 60,5 | đối xứng | như trên |
+| `mu_i_max` | 1,0 vs `ImaxF` | REGFM_A1 (PNNL-35110): `ImaxF` ví dụ 2,0, dải 1,5–3,0 | `du2023regfm` |
+| `settle_tol/window` | 0,01 Hz / 2 s | tiêu chí hội tụ số học nội bộ, **không phải chuẩn** — khai báo như vậy | — |
 
-## II.4 Chất vấn phải trả lời trước khi chọn
-
-Ngưỡng ride-through của DER trả lời câu *"khi nào một thiết bị **được phép** ngắt"*. Nó **không**
-trả lời *"trạng thái vận hành nào chấp nhận được cho một microgrid ốc đảo"*.
-
-57 Hz trên một feeder ốc đảo không phải điểm vận hành chấp nhận được bất kể inverter chịu được
-bao nhiêu — chết máy động cơ, UFLS, phối hợp bảo vệ đều tác động trước đó rất lâu. Nên **IEEE
-1547 có thể là họ tiêu chuẩn sai cho `f_min`**: neo đúng là một tiêu chí **vận hành/quy hoạch**
-(dải tần khẩn cấp trong grid code, hoặc chính sơ đồ UFLS của microgrid), không phải một ngưỡng
-ride-through thiết bị.
-
-$V_{\min}$ = 0,88 không dính vấn đề này vì nó là **sàn vận hành liên tục**, tức trạng thái
-thiết bị phải *chịu được liên tục* — gần với một tiêu chí vận hành hơn là một điểm cắt.
-
-**Chưa chọn. Chưa đổi code.** `f_min_hz` = 59,0 và `rocof_max_hz_s` = 2,0 giữ nguyên cho tới
-khi có quyết định, và mọi con số $\Delta P_{\max}$ công bố phải kèm bộ ngưỡng đã dùng.
-
-## II.5 Trích dẫn bổ sung
+## II.6 Trích dẫn Phần II
 
 ```bibtex
-@inproceedings{ninad2023mil,
-  author    = {Ninad, Nayeem and Couture, E. D.},
-  title     = {Assessment of a {DER} Inverter Model for {IEEE} 1547 Ride-Through
-               Requirements Using a Model in the Loop Testbed},
-  booktitle = {2023 IEEE 50th Photovoltaic Specialists Conference (PVSC)},
-  pages     = {1--6}, year = {2023},
-  doi       = {10.1109/pvsc48320.2023.10359898}
+@article{ali2024rocof,
+  author  = {Ali, Nada and others},
+  title   = {Real-time validation of {RoCoF} -- Enhancing advanced coordinated control
+             strategy for voltage unbalance mitigation implementing demand side management},
+  journal = {Electric Power Systems Research}, year = {2024},
+  doi     = {10.1016/j.epsr.2023.110100}
 }
 
-@article{amraee2018ufls,
-  author  = {Amraee, Turaj and Darebaghi, M. G. and Soroudi, Alireza and Keane, Andrew},
-  title   = {Probabilistic Under Frequency Load Shedding Considering {RoCoF} Relays
-             of Distributed Generators},
-  journal = {IEEE Transactions on Power Systems}, volume = {33}, pages = {3587--3598},
-  year    = {2018}, doi = {10.1109/tpwrs.2017.2787861}
+@article{song2025projection,
+  author  = {Song, Xin and others},
+  title   = {Projection-Based Coordinated Scheduling of Distribution--Microgrid Systems
+             Considering Frequency Security Constraints},
+  journal = {Energies}, volume = {18}, number = {21}, pages = {5707}, year = {2025},
+  doi     = {10.3390/en18215707}
 }
 
-@article{brogan2019bess,
-  author  = {Brogan, P. and Best, R. and Morrow, D. and McKinley, K. and Kubik, M.},
-  title   = {Effect of {BESS} Response on Frequency and {RoCoF} During Underfrequency
-             Transients},
-  journal = {IEEE Transactions on Power Systems}, volume = {34}, pages = {575--583},
-  year    = {2019}, doi = {10.1109/tpwrs.2018.2862147}
+@article{rebollal2021endogenous,
+  author  = {Rebollal, David and others},
+  title   = {Endogenous Approach of a Frequency-Constrained Unit Commitment in Islanded
+             Microgrid Systems},
+  journal = {Energies}, volume = {14}, number = {19}, pages = {6290}, year = {2021},
+  doi     = {10.3390/en14196290}
 }
 
-@article{xu2021support,
-  author  = {Xu, Sheng and Xue, Yaosuo and Chang, Liuchen},
-  title   = {Review of Power System Support Functions for Inverter-Based Distributed
-             Energy Resources -- Standards, Control Algorithms, and Trends},
-  journal = {IEEE Open Journal of Power Electronics}, volume = {2}, pages = {88--105},
-  year    = {2021}, doi = {10.1109/ojpel.2021.3056627}
+@article{xu2023ufls,
+  author  = {Xu, Bei and others},
+  title   = {Under-Frequency Load Shedding for Power Reserve Management in Islanded
+             Microgrids},
+  journal = {IEEE Transactions on Smart Grid}, year = {2023},
+  doi     = {10.1109/tsg.2024.3393426}
 }
 
-@inproceedings{ruban2019gridcodes,
-  author    = {Ruban, N. and Kinshin, A. and Gusev, A.},
-  title     = {Review of grid codes: Ranges of frequency variation},
-  booktitle = {HMTTSC 2019}, year = {2019}, doi = {10.1063/1.5120686}
+@article{gao2025dispatch,
+  author  = {Gao, Runsheng and others},
+  title   = {Coordinated Dispatch of Microgrids With Multi-Process Industrial Loads
+             Considering Frequency Security Under Unplanned Islanding},
+  journal = {IEEE Access}, year = {2025},
+  doi     = {10.1109/access.2025.3634672}
+}
+
+@article{javadi2021fscms,
+  author  = {Javadi, Masood and others},
+  title   = {Frequency Stability Constrained Microgrid Scheduling Considering Seamless
+             Islanding},
+  journal = {IEEE Transactions on Power Systems}, year = {2021},
+  doi     = {10.1109/tpwrs.2021.3086844}
 }
 ```
 
-Vai trò: **ninad2021** mang cặp RoCoF 2/3 Hz/s theo category và mặc định UF trip 57,0 Hz.
-**mahmud2022** cho việc UF/OF trip do EPS operator đặt và phải phối hợp UFLS — đây là nguồn cho
-lập luận §II.4. **ninad2023** cho việc f_min và RoCoF là hai tiêu chí **song song, không phân
-cấp**. **amraee2018** cho xung đột RoCoF-relay vs UFLS nadir — liên quan trực tiếp nếu chọn neo
-UFLS. **brogan2019** cho ảnh hưởng của BESS lên f và RoCoF trong quá độ thiếu tần. **ruban2019**
-cho dải grid code châu Âu (RoCoF 0,09–1 Hz/s; UF trip 47–48,5 Hz trên nền 50 Hz) — dùng khi cần
-đối chiếu quốc tế. **xu2021** cho việc một số grid code dùng RoCoF làm **tín hiệu kích hoạt bổ
-sung** cho điều khiển khẩn cấp, và cho nhận định 59 Hz là "biên mềm" trên hệ 60 Hz.
+Vai trò từng nguồn: **ali2024rocof** mang con số 2 Hz/s gắn với IEEE 1547-2018 cho microgrid —
+đây là trích dẫn cho `rocof_max_hz_s`. **song2025** mang dải 0,5 Hz cho điều độ
+distribution–microgrid, trích dẫn chính cho `f_min_hz`. **rebollal2021** cho việc neo tiêu chí
+tần số vào *giảm thiểu kích hoạt UFLS* trong microgrid ốc đảo — đây là lập luận, không phải con
+số. **xu2023ufls** cho UFLS trong microgrid ốc đảo **chỉ có một nguồn grid-forming**, tức đúng
+cấu hình này. **gao2025dispatch** cho một dải thứ hai (±0,4 Hz) khi cần cho thấy 0,5 nằm giữa
+dải chứ không ở mép. **javadi2021fscms** cho khung ba tiêu chí (RoCoF, nadir, overshoot) mà
+điều độ microgrid dùng — dùng khi dựng bối cảnh.
 
-⚠️ **Cửa sổ đo RoCoF quan trọng và ta đã chọn nó:** tài liệu nêu cửa sổ 100–500 ms, cửa sổ ngắn
-cho ước lượng nhiễu hơn, và **lựa chọn cửa sổ quyết định tiêu chí nào chạm trước**. Ta dùng
-`rocof_window_s` = 0,5 s (`metrics.extract`), tức **đầu dài nhất của dải**. Đó là lựa chọn bảo
-thủ theo hướng làm RoCoF *khó* siết hơn, và cũng cần khai báo.
+Xem thêm Phần I cho `ninad2021`, `mahmud2022`, `narang2021`, `ieee2800`, `ninad2023`,
+`amraee2018`, `brogan2019`, `xu2021`, `ruban2019`.
+
+## II.7 Việc còn mở
+
+- `v_max_pu` = 1,10 chưa được kiểm ở mức mà 0,88 vừa nhận. Trong các sự cố tăng tải nó không
+  siết, nên không ảnh hưởng $\Delta P_{\max}$ hiện tại — nhưng sẽ ảnh hưởng nếu có ca mất tải.
+- `settle_tol_hz` / `settle_window_s` là tiêu chí số học, phải phát biểu như vậy trong bài,
+  không được để người đọc hiểu là ngưỡng chuẩn.
