@@ -1,0 +1,34 @@
+[
+ {
+  "ok": true,
+  "position_spread_pp": 0.29975876048110583,
+  "rating_dev_pp": 12.060246915800455,
+  "ratio_rating_over_position": 40.23317582593429,
+  "steady_state_dev": 3.897568934263518e-10,
+  "config": "shipped        (x_f 0.15, current buses)"
+ },
+ {
+  "ok": true,
+  "position_spread_pp": 0.1430878793724638,
+  "rating_dev_pp": 15.547716789780644,
+  "ratio_rating_over_position": 108.65851711527067,
+  "steady_state_dev": 8.154016906125605e-10,
+  "config": "x_f 0.05 only"
+ },
+ {
+  "ok": true,
+  "position_spread_pp": 0.4608815548354156,
+  "rating_dev_pp": 11.924297597482855,
+  "ratio_rating_over_position": 25.872802832695516,
+  "steady_state_dev": 1.7875027014113698e-09,
+  "config": "max-sep only"
+ },
+ {
+  "ok": true,
+  "position_spread_pp": 0.174454102915797,
+  "rating_dev_pp": 15.548712121881753,
+  "ratio_rating_over_position": 89.12780990531694,
+  "steady_state_dev": 1.8090028641726263e-09,
+  "config": "x_f 0.05 + max-sep"
+ }
+]
