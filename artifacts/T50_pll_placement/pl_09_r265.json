@@ -1,0 +1,430 @@
+{
+ "version": "4.0-rescaled",
+ "algorithm": "Multi-objective Discrete-Continuous PSO (co-optimization)",
+ "objectives": [
+  "active_power_loss",
+  "voltage_deviation_index",
+  "zone_lmp_divergence"
+ ],
+ "weights": {
+  "w_loss": 0.4,
+  "w_volt": 0.4,
+  "w_lmp": 0.2,
+  "ahp_method": "equal_weight_3obj",
+  "CR": 0.0
+ },
+ "pso_params": {
+  "n_particles": 60,
+  "n_iter": 250,
+  "chi": 0.7298,
+  "c1": 1.4962,
+  "c2": 1.4962,
+  "seeds": [
+   42,
+   123,
+   777
+  ],
+  "reference": "Clerc & Kennedy, IEEE TEC, 2002"
+ },
+ "sizing_bounds": {
+  "evcs_pv_mw": [
+   0.05,
+   0.2
+  ],
+  "evcs_bess_mw": {
+   "z1": [
+    0.2,
+    0.45
+   ],
+   "z2": [
+    0.15,
+    0.4
+   ],
+   "z4": [
+    0.1,
+    0.35
+   ]
+  },
+  "evcs_v2g_caps_mw": {
+   "z12": 0.15,
+   "z4": 0.1
+  },
+  "dpv_mw": [
+   0.15,
+   0.4
+  ],
+  "wind_mw": 3.0,
+  "reference_bounds": "EVCS BESS tiers per PD v3.0; DPV: IEC 61727; Wind: IEC 61400-1 class II"
+ },
+ "gfm": {
+  "G1": {
+   "bus": 46,
+   "bess_mw": 1.138,
+   "bess_mwh": 2.2761,
+   "inverter_mva": 1.3277,
+   "mode": "VSG",
+   "justification": "Slack bus anchor for islanded operation"
+  },
+  "G2": {
+   "bus": 65,
+   "pv_mw": 0.3793,
+   "bess_mw": 0.569,
+   "bess_mwh": 1.138,
+   "inverter_mva": 0.7587,
+   "mode": "Droop",
+   "justification": "Bus 60 = 2/3-rule mid-feeder (Acharya 2006)"
+  },
+  "G3": {
+   "bus": 42,
+   "bess_mw": 0.569,
+   "bess_mwh": 1.138,
+   "inverter_mva": 0.7587,
+   "mode": "Droop",
+   "justification": "Co-located with Wind W2; empirically rescues 30/38 tie-switch reconfigurations previously rejected for connectivity_worse_than_base (isolates the 100-112 wind-corridor tail without a GFM anchor)"
+  },
+  "G4": {
+   "bus": 450,
+   "bess_mw": 0.2845,
+   "bess_mwh": 0.569,
+   "inverter_mva": 0.3793,
+   "mode": "Droop",
+   "justification": "Co-located with DPV PV6 (zone 2); empirically rescues the remaining 6/8 connectivity-rejected topologies not covered by G3 (isolates the 34-48 zone-2 cluster)"
+  },
+  "G5": {
+   "bus": 21,
+   "bess_mw": 0.569,
+   "bess_mwh": 1.138,
+   "inverter_mva": 0.7587,
+   "mode": "Droop",
+   "justification": "Co-located with Wind W1; empirically rescues the final 2/2 remaining connectivity-rejected topologies, completing 38/38 (100%) rescue of the tie-switch reconfiguration search space"
+  },
+  "G6": {
+   "bus": 67,
+   "bess_mw": 0.2845,
+   "bess_mwh": 0.569,
+   "inverter_mva": 0.3793,
+   "mode": "Droop",
+   "justification": "Co-located with EVCS E2 (zone 1) -- the only zone with no prior GFM anchor. Set-cover analysis on the pure tie-switch configuration phase (64 raw combinations of the 6 reconfigurable elements, N-1 line-contingency phase excluded) showed a single anchor at bus 1 rescues all 32/32 connectivity_worse_than_base rejections, raising valid topologies from 23/64 (35.9%) to the structural ceiling of 55/64 (85.9%; the remaining 9 are unfixable radiality/duplicate cases). Measured on the corrected 5-real-GFM model (no phantom substation ext_grid at bus 149, fixed 2026-09-01)."
+  }
+ },
+ "wind": [
+  {
+   "id": "W1",
+   "bus": 67,
+   "mw": 3.0,
+   "justification": "Zone 3 wind corridor; turbine class IEC 61400-1 II"
+  },
+  {
+   "id": "W2",
+   "bus": 105,
+   "mw": 3.0,
+   "justification": "Zone 3 wind corridor; turbine class IEC 61400-1 II"
+  },
+  {
+   "id": "W3",
+   "bus": 98,
+   "mw": 3.0,
+   "justification": "Zone 3 wind corridor; turbine class IEC 61400-1 II"
+  },
+  {
+   "id": "W4",
+   "bus": 101,
+   "mw": 3.0,
+   "justification": "Zone 3 wind corridor; turbine class IEC 61400-1 II"
+  }
+ ],
+ "evcs": [
+  {
+   "id": "E1",
+   "bus": 34,
+   "zone": 1,
+   "vpp": "VPP_1",
+   "pv_mw": 0.2,
+   "bess_mw": 0.325,
+   "bess_mwh": 0.65,
+   "v2g_mw": 0.1,
+   "inverter_mva": 0.41
+  },
+  {
+   "id": "E2",
+   "bus": 1,
+   "zone": 1,
+   "vpp": "VPP_1",
+   "pv_mw": 0.05,
+   "bess_mw": 0.325,
+   "bess_mwh": 0.65,
+   "v2g_mw": 0.1,
+   "inverter_mva": 0.41
+  },
+  {
+   "id": "E3",
+   "bus": 2,
+   "zone": 1,
+   "vpp": "VPP_1",
+   "pv_mw": 0.05,
+   "bess_mw": 0.325,
+   "bess_mwh": 0.65,
+   "v2g_mw": 0.1,
+   "inverter_mva": 0.41
+  },
+  {
+   "id": "E4",
+   "bus": 49,
+   "zone": 2,
+   "vpp": "VPP_2",
+   "pv_mw": 0.2,
+   "bess_mw": 0.275,
+   "bess_mwh": 0.55,
+   "v2g_mw": 0.1,
+   "inverter_mva": 0.34
+  },
+  {
+   "id": "E5",
+   "bus": 50,
+   "zone": 2,
+   "vpp": "VPP_2",
+   "pv_mw": 0.2,
+   "bess_mw": 0.275,
+   "bess_mwh": 0.55,
+   "v2g_mw": 0.1,
+   "inverter_mva": 0.34
+  },
+  {
+   "id": "E6",
+   "bus": 48,
+   "zone": 2,
+   "vpp": "VPP_2",
+   "pv_mw": 0.2,
+   "bess_mw": 0.275,
+   "bess_mwh": 0.55,
+   "v2g_mw": 0.1,
+   "inverter_mva": 0.34
+  },
+  {
+   "id": "E7",
+   "bus": 52,
+   "zone": 4,
+   "vpp": "VPP_3",
+   "pv_mw": 0.2,
+   "bess_mw": 0.225,
+   "bess_mwh": 0.45,
+   "v2g_mw": 0.075,
+   "inverter_mva": 0.28
+  },
+  {
+   "id": "E8",
+   "bus": 53,
+   "zone": 4,
+   "vpp": "VPP_3",
+   "pv_mw": 0.158,
+   "bess_mw": 0.225,
+   "bess_mwh": 0.45,
+   "v2g_mw": 0.075,
+   "inverter_mva": 0.28
+  },
+  {
+   "id": "E9",
+   "bus": 66,
+   "zone": 4,
+   "vpp": "VPP_3",
+   "pv_mw": 0.2,
+   "bess_mw": 0.225,
+   "bess_mwh": 0.45,
+   "v2g_mw": 0.075,
+   "inverter_mva": 0.28
+  }
+ ],
+ "dpv": [
+  {
+   "id": "PV1",
+   "bus": 6,
+   "zone": 1,
+   "vpp": "VPP_1",
+   "mw": 0.275
+  },
+  {
+   "id": "PV2",
+   "bus": 17,
+   "zone": 1,
+   "vpp": "VPP_1",
+   "mw": 0.275
+  },
+  {
+   "id": "PV3",
+   "bus": 3,
+   "zone": 1,
+   "vpp": "VPP_1",
+   "mw": 0.275
+  },
+  {
+   "id": "PV4",
+   "bus": 4,
+   "zone": 1,
+   "vpp": "VPP_1",
+   "mw": 0.275
+  },
+  {
+   "id": "PV5",
+   "bus": 43,
+   "zone": 2,
+   "vpp": "VPP_2",
+   "mw": 0.275
+  },
+  {
+   "id": "PV6",
+   "bus": 27,
+   "zone": 2,
+   "vpp": "VPP_2",
+   "mw": 0.275
+  },
+  {
+   "id": "PV7",
+   "bus": 47,
+   "zone": 2,
+   "vpp": "VPP_2",
+   "mw": 0.275
+  },
+  {
+   "id": "PV8",
+   "bus": 30,
+   "zone": 2,
+   "vpp": "VPP_2",
+   "mw": 0.275
+  },
+  {
+   "id": "PV9",
+   "bus": 18,
+   "zone": 2,
+   "vpp": "VPP_2",
+   "mw": 0.275
+  },
+  {
+   "id": "PV10",
+   "bus": 45,
+   "zone": 2,
+   "vpp": "VPP_2",
+   "mw": 0.275
+  },
+  {
+   "id": "PV11",
+   "bus": 54,
+   "zone": 4,
+   "vpp": "VPP_3",
+   "mw": 0.275
+  },
+  {
+   "id": "PV12",
+   "bus": 96,
+   "zone": 4,
+   "vpp": "VPP_3",
+   "mw": 0.275
+  },
+  {
+   "id": "PV13",
+   "bus": 55,
+   "zone": 4,
+   "vpp": "VPP_3",
+   "mw": 0.275
+  },
+  {
+   "id": "PV14",
+   "bus": 56,
+   "zone": 4,
+   "vpp": "VPP_3",
+   "mw": 0.275
+  }
+ ],
+ "best_fitness": 0.25595728304044413,
+ "metrics": {
+  "F_composite": 0.25595728304044413,
+  "p_loss_mw": 0.05450291967915342,
+  "p_loss_reduction_pct": 51.990249025363156,
+  "vdi": 2.2579178418341233e-05,
+  "vdi_improvement_pct": 85.56184300394014,
+  "v_min": 0.993704499297946,
+  "v_max": 1.0,
+  "v_violations": 0,
+  "total_cap_mw": 31.608,
+  "zone_lmp": {
+   "1": 5.032827247865236,
+   "2": 5.227123521167597,
+   "4": 5.410340541173342
+  },
+  "zone_net_mw": {
+   "1": -0.4,
+   "2": -2.7674999999999996,
+   "3": 10.110000000000003,
+   "4": -4.999999303723529
+  },
+  "load_scale_mw": 15.705
+ },
+ "zone_lmp_model": {
+  "type": "net_injection_approximate",
+  "alpha": 0.3,
+  "lambda_ref": 5.0
+ },
+ "multi_seed_summary": {
+  "p_loss_reduction_pct": {
+   "mean": 49.284980355034456,
+   "std": 1.9601765176504837,
+   "min": 47.4083431224296,
+   "max": 51.990249025363156
+  },
+  "vdi_improvement_pct": {
+   "mean": 85.78822540457936,
+   "std": 0.1692139213425798,
+   "min": 85.56184300394014,
+   "max": 85.96859757895275
+  },
+  "v_min": {
+   "mean": 0.9937384434355269,
+   "std": 4.286310462390505e-05,
+   "min": 0.993704499297946,
+   "max": 0.9937989093573303
+  },
+  "total_cap_mw": {
+   "mean": 22.463182220833488,
+   "std": 0.020249756051330482,
+   "min": 22.43454474119258,
+   "max": 22.47750122503142
+  },
+  "v_violations": {
+   "mean": 0.0,
+   "std": 0.0,
+   "min": 0,
+   "max": 0
+  }
+ },
+ "counts": {
+  "evcs": 9,
+  "dpv": 14,
+  "wind": 4,
+  "gfm": 6
+ },
+ "n_agents": 41,
+ "action_flat_dim": 73,
+ "particle_genes": 68,
+ "fix_log": [
+  "GFM rescaled: G1 6.0MW/12MWh, G2 3.0MW/6MWh+2.0MW PV (baseMVA=1 artefact removed)",
+  "2026-09-01: Added G3(bus105)/G4(bus47)/G5(bus67) GFM anchors, gfm count 2->5. Empirically set-cover-selected via src/opt/tie_switch_reconfig.py connectivity diagnostics: rescues all 38/38 tie-switch reconfigurations previously rejected as connectivity_worse_than_base (87/134 -> ~125/134 valid topologies). n_gfm change invalidates existing trained checkpoint architectures (obs/action dim depends on n_gfm) -- retraining required before reuse. NOT yet verified: tests/test_freq_dynamics_lti.py and data/tie_switch_cache.pkl regeneration.",
+  "2026-09-01: Fixed src/env/microgrid_env_dual.py _inject_assets -- from_mpc() was auto-creating an unconstrained (+-200MW) ext_grid at bus149 (MATPOWER REF bus), silently supplying 9-14% of load in every topology and masking real GFM-stranding failures. Now drops any non-GFM ext_grid before wiring GFM sources. Re-measured tie-switch reconfiguration purely on the switch/tie configuration phase (64 raw combinations of the 6 reconfigurable elements; N-1 line-contingency phase excluded from this count): valid dropped from a previously-inflated 87/134 to the corrected 23/64 (35.9%) with 5 GFM. Structural ceiling (radiality/duplicate, unfixable by GFM) is 9/64.",
+  "2026-09-01: Added G6(bus1), gfm count 5->6. Set-cover on the 32 configuration-phase connectivity_worse_than_base rejects (corrected 5-GFM model) showed bus 1 (zone 1, the only zone with no prior GFM) alone rescues all 32/32, raising valid configuration-phase topologies to the structural ceiling of 55/64 (85.9%). n_gfm change again invalidates existing trained checkpoints; retraining/re-certification required."
+ ],
+ "rescale": {
+  "date": "2026-09-03",
+  "source": "official_placement_v3.json",
+  "reason": "v3 sized the GFM fleet for the VPP/market study, not for frequency security: 23 MVA of converters on a 3.49 MW peak-load feeder leaves every unit at ~10% loading, so the headroom-scarce region is physically unreachable and every boundary metric saturates.",
+  "rule": "uniform scaling of all six units; pi_g, E/P and MVA/MW ratios preserved",
+  "peak_load_mw": 3.4899999999999998,
+  "target_ratio_inverter_mva_over_peak_load": 1.25,
+  "scale_factor": 0.18967391304347825,
+  "inverter_mva_total_before": 23.0,
+  "inverter_mva_total_after": 4.3625,
+  "unscaled_and_still_oversized": {
+   "note": "Only the GFM fleet is rescaled here. Wind, DPV and EVCS keep v3 sizing and remain far above feeder load; they set the disturbance magnitudes for the campaign and need a separate decision.",
+   "wind_mw": 12.0,
+   "dpv_mw": 3.8500000000000005,
+   "evcs_bess_mw": 2.475
+  }
+ }
+}

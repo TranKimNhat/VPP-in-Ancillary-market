@@ -232,6 +232,41 @@ class CaseSpec:
     load_p2z: float = 0.0        # 0 = constant power, 1 = constant impedance
     der_as_negative_load: bool = True
 
+    # Grid-following fleet. With `gfl_dynamic` off -- which is what everything
+    # from T1 to T49 ran -- the 16 sgen are negative constant-power PQ: they
+    # carry 2.88 MW against 3.49 MW of load, i.e. 82.5% of supply, with *no
+    # dynamics at all*. That is why placement was measurably irrelevant to every
+    # quantity this platform could compute (T41 0.000% spread on the boundary,
+    # T44 0.28 pp on transient sharing, T49 corr +0.14 against eigenvalues): the
+    # one published mechanism by which grid-forming placement is supposed to
+    # matter -- Yang, Xu, Zhang & Sun, IEEE TPWRS 2020, where a GFM raises the
+    # grid strength the *PLL-based* converters around it see -- was absent by
+    # construction.
+    #
+    # With it on, each sgen bus gets a PV static gen (Q pinned to the sgen's own
+    # q, which is zero for all 16, so the power flow solution is unchanged) plus
+    # REGCP1 + PLL1. REGCP1 is REGCA1 with the dq frame rotated by the PLL's
+    # angle error: vd = v*cos(a - am), vq = -v*sin(a - am), and Pe/Qe follow
+    # from those. That closes the loop the mechanism needs -- am -> Pe,Qe ->
+    # bus a,v -> am -- with a loop gain set by how far the bus angle moves per
+    # unit of injected power, which is the grid strength at that bus.
+    # Ipcmd/Iqcmd are constant-current at their initial values (no REECA1),
+    # which is the standard reduced model for PLL-driven weak-grid instability.
+    #
+    # PLL1's defaults (Kp = Ki = 0.1) put the loop at 2*pi*fn*Kp = 37.7 rad/s,
+    # about 6 Hz -- a slow, comfortable PLL. Yang's instability appears as the
+    # bandwidth rises, so `pll_kp` is the axis to sweep, not a value to trust.
+    gfl_dynamic: bool = False
+    pll_kp: float = 0.1
+    pll_ki: float = 0.1
+    pll_tf: float = 0.05
+    pll_tp: float = 0.05
+    # Converter reactance of a GFL unit, on its own base. Not the same device as
+    # the GFM: no step-up bus is added, the unit sits on the feeder bus the sgen
+    # sat on, so this is the only impedance between the current source and the
+    # network.
+    gfl_x_conv_pu: float = 0.10
+
     # solver
     t_end: float = 20.0
     t_step: float = 0.005
@@ -452,10 +487,39 @@ def build_system(spec: CaseSpec) -> tuple[andes.System, dict]:
             if b in hv:
                 continue
             der_mw += float(row.p_mw)
-            ss.add("PQ", dict(idx=f"DER_{b}", name=f"der_{net.bus.at[b, 'name']}",
-                              bus=pp_to_andes[b], Vn=V_BASE_KV,
-                              p0=-float(row.p_mw) / S_BASE_MVA,
-                              q0=-float(row.q_mvar) / S_BASE_MVA))
+            if spec.gfl_dynamic:
+                # Rated on apparent power with the same 1.25 headroom the GFM
+                # fleet is sized at, so the per-unit current command is inside
+                # REGCA1's limiters rather than pinned against them at t = 0.
+                s_mva = 1.25 * (float(row.p_mw) ** 2 + float(row.q_mvar) ** 2) ** 0.5
+                ss.add("PV", dict(
+                    idx=f"SG_GFL_{b}", name=f"gfl_{net.bus.at[b, 'name']}",
+                    bus=pp_to_andes[b], Sn=s_mva, Vn=V_BASE_KV,
+                    p0=float(row.p_mw) / S_BASE_MVA,
+                    q0=float(row.q_mvar) / S_BASE_MVA, v0=1.0,
+                    pmax=s_mva / S_BASE_MVA, pmin=0.0,
+                    # Pinned, not free: qmax = qmin = q0 makes the power flow
+                    # hold this bus at the sgen's own reactive output instead of
+                    # regulating voltage, so the operating point is bit-for-bit
+                    # the one the negative-load build solves and any eigenvalue
+                    # difference is the PLL, not a different power flow.
+                    qmax=float(row.q_mvar) / S_BASE_MVA,
+                    qmin=float(row.q_mvar) / S_BASE_MVA,
+                    ra=0.0, xs=spec.gfl_x_conv_pu))
+                ss.add("PLL1", dict(
+                    idx=f"PLL_{b}", name=f"pll_{net.bus.at[b, 'name']}",
+                    bus=pp_to_andes[b], fn=F_NOM_HZ,
+                    Kp=spec.pll_kp, Ki=spec.pll_ki,
+                    Tf=spec.pll_tf, Tp=spec.pll_tp))
+                ss.add("REGCP1", dict(
+                    idx=f"REGCP1_{b}", name=f"gfl_{net.bus.at[b, 'name']}",
+                    bus=pp_to_andes[b], gen=f"SG_GFL_{b}", Sn=s_mva,
+                    pll=f"PLL_{b}"))
+            else:
+                ss.add("PQ", dict(idx=f"DER_{b}", name=f"der_{net.bus.at[b, 'name']}",
+                                  bus=pp_to_andes[b], Vn=V_BASE_KV,
+                                  p0=-float(row.p_mw) / S_BASE_MVA,
+                                  q0=-float(row.q_mvar) / S_BASE_MVA))
 
     # --- dispatch -----------------------------------------------------------
     gfm = gfm_table(spec)
