@@ -1855,13 +1855,13 @@ anything to correct.
 
 ## Open but explicitly scheduled for resolution
 
-- **T29 — governor family on the `gen_loss` boundary.** `GAST` in place of `TGOV1` with the
-  diesel **online** through the event. T27 tested the diesel-off case, where the governor leaves
-  the system with the machine and therefore cannot influence the result; it has no power over
-  the diesel-online case. Until T29 is run, \(\kappa_{os}^{\mathrm{gen\_loss}}=1.2275\) — the
-  leading constant of Contribution I — sits inside the D2b un-cross-checked region. Same
-  13-point probe as T27, one scenario flag changed. **This is the highest-value outstanding
-  run.**
+- ~~**T29 — governor family on the `gen_loss` boundary.**~~ — **run 2026-09-06.** The families
+  differ by 0.842% (6.4 kW) with the diesel online, against T27's \(10^{-10}\) with it off, so
+  the structural-artefact reading of T27 is now measured. Pre-registered verdict
+  **inconclusive** (0.842% sits between the 0.5% and 2% thresholds). \(\kappa_{os}\) for the
+  `gen_loss` class therefore carries a stated 0.842% governor-family uncertainty rather than an
+  assumed zero. Full reading in §28 N7 and P10b. **What remains un-cross-checked is the
+  `GGOV1`/`DEGOV1` substitution of D2b, which T29 does not test.**
 - **Two bisection steps between \(P_{\mathrm{head}}=1.0881\) and \(1.1013\) MW**, to tighten the
   envelope/feasibility coincidence below the present 0.6% resolution (§14 H1(iv)).
 - the \(\epsilon\) convention in the §8 \(\bar A_{\mathrm{GFM}}\) formula — **newly blocking**, see §10;
@@ -1884,9 +1884,15 @@ anything to correct.
   against ~10 h for a grid sweep), and the boundary was measured monotone in every coordinate
   swept. Not closed until EMT run times are known;
 - the mechanism of the 3.2% \(\kappa_{os}\) gap between event classes (§28 N8);
-- the GFL fleet sizing: wind ≈12 MW, DPV ≈3.85 MW, EVCS ≈2.48 MW are still at v3 scale on a
-  3.49 MW feeder while the GFM fleet was rescaled by D6 to 4.362 MVA. These set the campaign's
-  \(\Delta P\) magnitudes and are internally inconsistent with the rescaled fleet;
+- ~~the GFL fleet sizing: wind ≈12 MW, DPV ≈3.85 MW, EVCS ≈2.48 MW~~ — **closed 2026-09-06, see
+  §28 N13.** The figures belong to the archived v3 RL layer
+  (`archive/src/env/microgrid_env.py:1045`), which no experiment from T20 onward imports. The
+  campaign's GFL fleet is 16 aggregated sgen totalling 2.8800 MW against 3.4900 MW of load and
+  4.3624 MVA of GFM — internally consistent. No rescale is required;
+- **the reactive ceiling under partitioning** — *newly opened 2026-09-06.* T52 measures 10 of 32
+  islands over `q_max_pu` at the pre-event operating point, with the count moving 17/10/3 across
+  the REGFM_A1 range. Which value ships is a modelling decision that is currently unmade, and it
+  changes a headline count by 5.7× (§28 N14);
 - whether the false-secure mechanism (`non_negative` ceiling substitution) is present in other
   positive-sequence platforms. Demonstrated in ANDES 2.0; the mechanism is generic to
   representing a bidirectional device with a unidirectional generator model, but **not verified
@@ -1899,9 +1905,9 @@ anything to correct.
 > answered more than it was expected to, and the binding constraint on the paper is now the
 > absence of any EMT run, not the absence of more phasor runs. The revised head of the queue:
 >
-> 1. **T29 — `GAST` vs `TGOV1` on the `gen_loss` boundary, diesel online.** Closes the only
->    conclusion in the campaign that rests on an un-cross-checked model choice. Cost: one
->    scenario flag, 13 probe points. Do this first.
+> 1. ~~**T29 — `GAST` vs `TGOV1` on the `gen_loss` boundary, diesel online.**~~ — **done
+>    2026-09-06**, verdict inconclusive at 0.842%; the governor family is now a stated
+>    uncertainty on the `gen_loss` boundary, not an assumed zero (§28 N7, P10b).
 > 2. **Single-device GFM EMT model + REGFM_A1 conformance.** Everything downstream of
 >    Contribution I is phasor-only until this exists. Tasks 3–6 of the old list, unchanged in
 >    substance and now the critical path.
@@ -1914,12 +1920,22 @@ anything to correct.
 >    both sides of its threshold". This is the single highest-leverage addition available to
 >    the paper and it is not currently scheduled anywhere. Decide explicitly whether to do it or
 >    to accept the single-system scope limit of §28 N2.
-> 5. **Rescale the GFL fleet** to be consistent with the D6 GFM rescale.
-> 6. **Repo hygiene before any code release:** archive the MAPPO/baseline/layer-2 trees; delete
->    `artifacts/_lyap_vsg.txt` (a false-positive CLF certificate: prints "CLF FOUND … QED" with
->    \(\eta=-0.0055\) and solver status `optimal_inaccurate`) and the two
->    `configs/training_config_*.yaml` (baseline/method differ only in entropy 0.0 vs 0.01);
->    add `raw/` to `.gitignore` (~38 MB of `*.npz`).
+> 5. ~~**Rescale the GFL fleet** to be consistent with the D6 GFM rescale.~~ — **dropped
+>    2026-09-06.** There is nothing to rescale: the figures that motivated the task belong to the
+>    archived RL layer, and the campaign's fleet is consistent. §28 N13 records the trace.
+> 5b. **Decide `q_max_pu`.** *(new, 2026-09-06)* The reactive ceiling is now a headline
+>    constraint — 10 of 32 partitions fail it — and the count moves 17/10/3 across the REGFM_A1
+>    range \([0.44,\,1.00]\). It cannot ship as an unexamined 0.60. Either justify the value on
+>    the device specification or report the band everywhere (§28 N14).
+> 5c. **Bisect the reactive boundary the way the frequency one was bisected.** *(new)* The
+>    frequency side has a closed form confirmed to 0.37% (P11–P13); the reactive side has only a
+>    pass/fail screen at the pre-event operating point. The obvious next quantity is the largest
+>    island a given GFM set can hold within its reactive ceiling, which is what actually decides
+>    partition viability (P15, P16) and is the coordinate no one in §23 has a criterion for.
+> 6. ~~**Repo hygiene before any code release**~~ — **done, verified 2026-09-06.** The MAPPO /
+>    baseline / layer-2 trees are under `archive/`; `artifacts/_lyap_vsg.txt` and both
+>    `configs/training_config_*.yaml` are gone; `.gitignore:24` carries `artifacts/*/raw/` and
+>    `git ls-files` tracks **0** `*.npz`.
 >
 > The original list follows, retained for the EMT-phase items which are unchanged.
 
@@ -2038,7 +2054,14 @@ alone.
 | P7 | The boundary is invariant to tie configuration, disturbance location and limiter setting, **and \(\Lambda\gg1\) explains why** | T22, T23 (84 runs), T24 | one feeder; see N2, N3 |
 | P8 | \(I_{\max F}^{\mathrm{crit}}=1.356\) pu lies below the REGFM_A1 parameter floor, so no compliant limiter binds | T24 + \(I_{\mathrm{dev}}(\Delta P)\) fit | this fleet; see N3 |
 | P9 | Tripping the last synchronous machine is 2.0% *easier* than an equal non-synchronous loss, with an exchange between bulk and local coordinates | T25, non-overlapping brackets | positive-sequence |
-| P10 | The diesel-off boundary is independent of the assumed \(H\) and of the governor family | T25b, T27 (\(10^{-10}\)) | diesel-off only; see N7, N10 |
+| P10 | The diesel-off boundary is independent of the assumed \(H\) and of the governor family | T25b, T27 (\(10^{-10}\)) | **diesel-off only** — with the diesel *online* the families differ by 0.842% (T29); see N7, N10 |
+| P10b | With the diesel online, the governor family shifts the `gen_loss` boundary by 0.842% (6.4 kW), splits the **transient** but not the steady state (nadir 1.8–5.2 mHz, \(f_{ss}\) 0.03–0.08 mHz), and the boundary does not depend on the pre-trip diesel loading | T29, 12 evals per arm, two loadings | pre-registered verdict **inconclusive**; report the number, not a verdict |
+| P11 | The closed form transfers across the partition space: \(\le0.37\%\) relative error, absolute residual \(\le2.65\) kW, over a 5.75× range in \(\sum_g S_g\) | T52, 14/14 islands bisected, all monotone; intact feeder as control (0.7261 against T21's 0.7241) | positive-sequence; islands of this feeder |
+| P12 | At fixed \(\sum_g S_g\) the boundary does not move with the **number** of GFM units (3/4/5) or the island load (1.49× range): spread \(\le2.6\) kW, i.e. the bisection resolution | T52, three fixed-\(\sum_g S_g\) groups (2.845, 3.604, 3.983 MVA) | as measured; this is a statement about the *functional form*, not only its accuracy |
+| P13 | \(\kappa_{os}=1.00338\pm0.00252\) (0.251% scatter, \(n=14\)) across the partition space | T52 | positive-sequence; supersedes the 1.005 used by the T51 screen |
+| P14 | **Partitioning** moves the security boundary where **routing** does not: 282% relative spread in the margin over 32 islands, 8 of which cannot survive the loss of their own largest DER block while all 32 have positive headroom | T51 (closed form over 92 valid switch states), pre-registered H1 \(\ge20\%\) | closed form; the 8 are a screen, not all bisected |
+| P15 | The binding constraint on which partitions exist is **reactive, not frequency**: 10/32 islands exceed the GFM reactive ceiling at the pre-event operating point, and only 4 of those are also frequency-insecure | T52 feasibility screen; 15/22/29 feasible at \(q_{\max}=0.44/0.60/1.00\) | must be reported as the band, not a point; see N14 |
+| P16 | Reactive demand per MVA of island GFM rating rises monotonically as the fleet fragments: mean 0.383 at 5 GFM → 0.768 at 1 GFM, peak 1.240 | T52, 32 islands | the *ordering* is independent of \(q_{\max}\); the pass/fail count is not |
 
 ## 28.2 Not claimable
 
@@ -2048,10 +2071,19 @@ closed form predicts the boundary to 0.26%. *Settled by:* T21, T26. *What replac
 validated-envelope statement, which §15 pre-committed to as Outcome B. The v3.1 title asserting
 the opposite is retired.
 
-**N2 — "Feeder reconfiguration or GFM spatial deployment shifts the security boundary."**
-*Why not:* measured 0.0000 MW dispersion across tie configurations and 0.07% physical across 84
-disturbance locations. *Settled by:* T22, T23. *What replaces it:* the invariance itself, plus
-\(\Lambda\) as the criterion predicting it. **Residual scope limit:** \(\Lambda\in[4,14]\) is
+**N2 — "Feeder reconfiguration shifts the security boundary."** — **AMENDED 2026-09-06. The
+prohibition holds for *routing* and is withdrawn for *partitioning*; the unqualified sentence
+is now the thing that must not be said, in either direction.**
+*Why not, for routing:* measured 0.0000 MW dispersion across tie configurations and 0.07%
+physical across 84 disturbance locations. *Settled by:* T22, T23. *What replaces it:* the
+invariance itself, plus \(\Lambda\) as the criterion predicting it. *Why the amendment:* T22/T23
+varied which path carries the power while holding the generator set of a single island fixed,
+and the closed form has no routing term — it has \(\sum_g S_g\). A switch state that **splits**
+the feeder changes \(\sum_g S_g\) per island directly, and the boundary then moves by
+construction: 0.0629 → 0.7234 MW across the 32 islands, confirmed in ANDES to \(\le0.37\%\)
+(P11, P14). *Required wording:* name the operation. "Routing is invariant, partitioning is not,
+and \(\Lambda\) explains the first while \(\sum_g S_g\) explains the second." Do not write
+"reconfiguration" unqualified anywhere in the manuscript. **Residual scope limit:** \(\Lambda\in[4,14]\) is
 measured on **one** feeder. The paper may present \(\Lambda\) as a screening criterion with a
 stated derivation and one supporting system; it may **not** present the range as an empirically
 general constant, and it may **not** claim the criterion has been tested on the \(\Lambda\lesssim1\)
@@ -2066,7 +2098,15 @@ the explicit statement that current is not binding here. Consequence: the REGFM_
 fault-current-limiter implementation is de-prioritised — it would refine a constraint measured
 not to bind.
 
-**N4 — "There is a nontrivial excess dynamic reserve requirement, \(\kappa-1>0\)."**
+**N4 — "There is a nontrivial excess dynamic reserve requirement, \(\kappa-1>0\)."** —
+**AMENDED 2026-09-06: still not claimable *for the intact fleet*, and the motivating sentence it
+governs is now claimable *under partitioning*.** T51 measures every one of the 32 islands to have
+positive headroom while 8 of them cannot survive the loss of their own largest DER block: the gap
+is 0.6% at fleet level and qualitative at island level, because partitioning shrinks
+\(\sum_g S_g\) while the block sizes stay fixed. So *"energy feasible \(\not\Rightarrow\)
+frequency secure"* may be used **only** with the partitioning mechanism named alongside it, and
+never as a statement about the intact feeder, where the measured gap is 0.6%. The headline
+metrics \(\kappa\) and \(P_{\mathrm{excess}}\) remain withdrawn.
 *Why not:* \(\kappa=1.006\pm0.002\); \(P_{\mathrm{excess}}\) is 4.7–5.3 kW. *Settled by:* T26.
 *Consequence:* \(\kappa\) and \(P_{\mathrm{excess}}\) are withdrawn as headline metrics
 (v3.1 §25 froze \(\kappa\) as "a primary nontrivial metric" — that freeze is lifted), Figure B
@@ -2099,9 +2139,40 @@ influence the outcome by construction. The agreement to \(10^{-10}\) is a conseq
 structure, not evidence about governor modelling. T27 has **no power** over any scenario in
 which the diesel stays online — and \(\kappa_{os}^{\mathrm{gen\_loss}}=1.2275\), the leading
 constant of Contribution I, is exactly such a scenario. *Claimable subset:* governor-family
-invariance **of the diesel-off boundary**. *Outstanding:* T29 (§26 revised task 1). Separately,
-`TGOV1`/`GAST` are phasor stand-ins for the `GGOV1`/`DEGOV1` selected in D2b; that substitution
-is unverified in either direction.
+invariance **of the diesel-off boundary**. Separately, `TGOV1`/`GAST` are phasor stand-ins for
+the `GGOV1`/`DEGOV1` selected in D2b; that substitution is unverified in either direction.
+
+**T29 has now run (2026-09-06) and the reasoning above is confirmed by measurement.** With the
+diesel **online** through a `gen_loss` event, the two families do not agree:
+
+| | TGOV1 | GAST | difference |
+|---|---|---|---|
+| \(\Delta P_{\max}\), diesel at 0.30 MW | 0.76514 MW | 0.77158 MW | **6.445 kW = 0.842%** |
+| \(\Delta P_{\max}\), diesel at 0.50 MW | 0.76514 MW | 0.77158 MW | 6.445 kW = 0.842% |
+
+*Pre-registered verdict: **inconclusive*** — 0.842% falls between H0 (\(\le0.5\%\)) and H1
+(\(>2\%\)) and must be reported as such, not rounded into either. It is nonetheless **3.2× the
+bisection half-bracket**, so the difference is resolved, not noise, and it is seven orders of
+magnitude away from T27's \(10^{-10}\). The structural-artefact reading of T27 is therefore
+measured, not merely argued.
+
+Three further readings, all from the 11 matched probe points:
+
+- the split is **transient, not steady-state**: \(f_{ss}\) differs by 0.03–0.08 mHz (the droop is
+  the same in both), while the nadir differs by 1.8–5.2 mHz and the gap grows monotonically with
+  \(\Delta P\). GAST gives the *higher* nadir throughout;
+- the boundary is **independent of the pre-trip diesel loading** — 0.30 and 0.50 MW give
+  identical values to five digits — so what the machine contributes here is its presence and its
+  droop, not its dispatch;
+- **beyond** the boundary the families diverge violently: at \(\Delta P=1.4\) MW the nadirs are
+  58.018 and 59.077 Hz, a **1.06 Hz** gap. Nothing stated in the insecure region transfers
+  between governor families.
+
+*Consequence for Contribution I:* the governor family is an uncertainty of **0.842%** on the
+`gen_loss` boundary — 3.4× the 0.251% scatter of \(\kappa_{os}\) across the partition space
+(P13). It must be carried as a stated uncertainty rather than assumed zero. It does not
+invalidate the contribution; it bounds it. *Still outstanding:* the `GGOV1`/`DEGOV1`
+substitution of D2b, which this run says nothing about.
 
 **N8 — "The 3.2% gap between the two \(\kappa_{os}\) values is explained."**
 *Why not:* no mechanism is established. Two candidates have been eliminated by measurement —
@@ -2146,12 +2217,48 @@ correction lines in the log). That is a regression check, not an independent ver
 *What does support \(\Delta P_{\max}\):* the four invariance measurements plus the 0.26%
 closed-form agreement.
 
-**N13 — Any result depending on the GFL fleet magnitudes as currently configured.**
-*Why not:* wind ≈12 MW, DPV ≈3.85 MW and EVCS ≈2.48 MW remain at v3 scale on a 3.49 MW feeder
-while the GFM fleet was rescaled by D6 to 4.362 MVA. The configuration is internally
-inconsistent and these sources set the campaign's \(\Delta P\) magnitudes. Boundary values are
-reported in MW and are unaffected; any statement of the form *"a credible wind loss of X MW"* is
-not currently supportable.
+**N13 — Any result depending on the GFL fleet magnitudes as currently configured.** —
+**RESOLVED 2026-09-06 by tracing the figures, not by rescaling anything.**
+*What the entry asserted:* wind ≈12 MW, DPV ≈3.85 MW and EVCS ≈2.48 MW remain at v3 scale on a
+3.49 MW feeder while the GFM fleet was rescaled by D6 to 4.362 MVA.
+*What is actually in the campaign:* the phasor case is built by
+`build_ieee123_net(mode="feeder123", source_mode="publish")`, whose GFL fleet is **16 aggregated
+sgen totalling 2.8800 MW** — 14 × 0.20 MW PV, 0.05 MW wind, 0.03 MW storage — against 3.4900 MW
+of load and 4.3624 MVA of GFM. That is GFM at **60.2% of installed converter capacity** and GFL
+at **82.5% of energy supply**, and it is internally consistent.
+*Where the 12 MW came from:* the only `12.0` wind cap in the tree is
+`archive/src/env/microgrid_env.py:1045` and `archive/src/opt/precompute.py:133` — the **archived
+v3 RL layer**, which no experiment from T20 onward imports. The 3.85 and 2.48 figures appear
+nowhere in code or configuration, only in this document.
+*Consequence:* no T20–T52 result depends on the magnitudes the entry names, and §26 revised task
+5 ("rescale the GFL fleet") is dropped as unnecessary. **What survives:** the largest single GFL
+block is 0.20 MW, an artefact of the aggregation granularity rather than a physical unit, so a
+statement of the form *"a credible DER loss of 0.20 MW"* still needs that granularity declared —
+which is why T51 also reports the aggregation-free critical trip fraction (P14).
+
+**N14 — "10 of 32 partitions are reactive-infeasible."** *(the count, not the finding)*
+*Why not as a point value:* \(\mu_Q>1\) is measured against `q_max_pu = 0.60`, a **choice** inside
+the REGFM_A1 admissible range \([0.44,\,1.00]\). The count moves to **17 / 10 / 3** at
+\(q_{\max}=0.44/0.60/1.00\). *Required wording:* report the band and name the parameter every
+time. *What is claimable regardless:* the monotone ordering of P16, and the fact that the
+reactive criterion and the frequency criterion select different island sets (P15).
+*Two further scope limits on the same measurement:* the Slack GFM is deliberately unlimited in
+the power flow, so \(\mu_Q\) compares **required Q against the declared ceiling** — the violation
+surfaces at TDS initialisation, not as a non-converged power flow; and the fleet was sized and
+placed for the intact feeder, so this is a statement about **sizing under reconfiguration**, not
+about grid-forming converters in general.
+
+**N15 — Any island result produced before 2026-09-06.**
+*Why not:* `build_system` computed the GFM dispatch from the whole feeder's load while loading
+only the buses present in the case. Identical for every topology up to T50, where the dropped
+buses are the zero-load tie ends (measured \(\Delta=0.00\mathrm{e}{+}00\) on G0), and wrong the
+moment a switch state leaves a populated section outside the case: non-slack units were pinned at
+an impossible \(p_0\) and the slack was driven into over-frequency and over-current at \(t=0\).
+*Consequence:* a first reading of T52 that reported a third failure mode ("current limit at
+\(\Delta P=0\)", \(\mu_I=1.25{-}3.96\)) was an artefact of that bug and is withdrawn; after the
+fix, **22/22 reactive-feasible islands are operable at \(\Delta P=0\)** with \(\mu_I\in[0.049,
+0.358]\). There are two failure modes, not three. *Fixed in:* `build_case.py:526`,
+`impact(build_system, upstream)` = LOW, commit `fd5047f`.
 
 ## 28.3 Standing rule
 

@@ -226,7 +226,14 @@ def extract(ss, index: dict, status: dict, spec, band: SecurityBand,
     m.p_gfm_pre_mw = float(pe[0].sum())                 # system base is 1 MVA
     m.p_gfm_post_mw = float(pe[tail].mean(axis=0).sum())
     m.dp_delivered_mw = m.p_gfm_post_mw - m.p_gfm_pre_mw
-    m.settled = bool(np.ptp(f_hz[tail]) <= band.settle_tol_hz)
+    # `tail` selects nothing when the run stopped before `t_evt` -- an island whose
+    # TDS dies at initialisation, say. Every other post-event reduction above then
+    # yields NaN and carries on, but `np.ptp` raises on an empty array, so a
+    # degenerate run used to abort the caller instead of returning a verdict. An
+    # unreached event is by definition not settled, and `tds_converged` is already
+    # False, so the run is insecure on both readings. Where `tail` is non-empty --
+    # every run up to T50 -- the expression is unchanged.
+    m.settled = bool(tail.any() and np.ptp(f_hz[tail]) <= band.settle_tol_hz)
 
     # --- verdict ------------------------------------------------------------
     why: list[str] = []
