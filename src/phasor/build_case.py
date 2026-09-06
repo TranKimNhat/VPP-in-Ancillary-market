@@ -523,7 +523,16 @@ def build_system(spec: CaseSpec) -> tuple[andes.System, dict]:
 
     # --- dispatch -----------------------------------------------------------
     gfm = gfm_table(spec)
-    p_net_mw = spec.load_scale * float(net.load.p_mw.sum()) - der_mw
+    # Loads on dropped buses are not in the case, so they must not be in the
+    # dispatch either. Identical to `net.load.p_mw.sum()` for every topology run
+    # up to T50, where the only dropped buses are the zero-load tie ends 251/350/
+    # 451. It stops being identical the moment a switch state leaves a *populated*
+    # section outside the case, which is what island studies do: the GFM units
+    # were then dispatched for the whole feeder inside one section of it, pinning
+    # every non-slack unit at an impossible p0 and driving the slack into
+    # over-frequency and over-current at t = 0.
+    p_net_mw = spec.load_scale * float(
+        net.load.p_mw[~net.load.bus.isin(hv)].sum()) - der_mw
     p_diesel_mw = spec.diesel.p_mw if spec.diesel else 0.0
     p_lost_mw = spec.disturbance.step_mw if spec.disturbance.kind == "gen_loss" else 0.0
     p_gfm_mw = p_net_mw - p_diesel_mw - p_lost_mw   # losses land on the slack GFM
