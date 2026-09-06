@@ -1889,6 +1889,11 @@ anything to correct.
   (`archive/src/env/microgrid_env.py:1045`), which no experiment from T20 onward imports. The
   campaign's GFL fleet is 16 aggregated sgen totalling 2.8800 MW against 3.4900 MW of load and
   4.3624 MVA of GFM — internally consistent. No rescale is required;
+- **the location of the interior capability optimum** — *newly opened 2026-09-06.* P19
+  establishes that one exists; computing it needs the partition MILP, which does not yet
+  exist. This is now the shortest path from a set of measurements to a contribution;
+- **the \(\zeta\) threshold and the compliant droop range** for the T53 envelope (§28 N16
+  items 1 and 2) — both are cheap sweeps and both are load-bearing for P17/P18;
 - **the reactive ceiling under partitioning** — *newly opened 2026-09-06.* T52 measures 10 of 32
   islands over `q_max_pu` at the pre-event operating point, with the count moving 17/10/3 across
   the REGFM_A1 range. Which value ships is a modelling decision that is currently unmade, and it
@@ -2062,6 +2067,9 @@ alone.
 | P14 | **Partitioning** moves the security boundary where **routing** does not: 282% relative spread in the margin over 32 islands, 8 of which cannot survive the loss of their own largest DER block while all 32 have positive headroom | T51 (closed form over 92 valid switch states), pre-registered H1 \(\ge20\%\) | closed form; the 8 are a screen, not all bisected |
 | P15 | The binding constraint on which partitions exist is **reactive, not frequency**: 10/32 islands exceed the GFM reactive ceiling at the pre-event operating point, and only 4 of those are also frequency-insecure | T52 feasibility screen; 15/22/29 feasible at \(q_{\max}=0.44/0.60/1.00\) | must be reported as the band, not a point; see N14 |
 | P16 | Reactive demand per MVA of island GFM rating rises monotonically as the fleet fragments: mean 0.383 at 5 GFM → 0.768 at 1 GFM, peak 1.240 | T52, 32 islands | the *ordering* is independent of \(q_{\max}\); the pass/fail count is not |
+| P17 | The droop gain is bounded below by a small-signal stability floor that **scales with the capacity it is applied to**: \(R_{\min}\propto(\sum_g S_g)^{0.388}\), so certified capability grows only as \(C_{\max}\propto(\sum_g S_g)^{0.612}\) — a 3.83× increase in assigned converter capacity returns **2.18×** capability | T53, 13 bracketed islands, \(R^2=0.911/0.962\), max fit error 11.3%; exponents sum to 1.000 by construction | positive-sequence small-signal; \(\zeta_{\min}\ge0.02\); see N16 |
+| P18 | An island anchored on a **single** GFM unit is not on that curve: it sustains \(\zeta=0.614\) at the stiffest droop swept, never destabilises, and delivers **1.77×** the capability the law predicts | T53; every multi-unit island fails through an oscillatory mode whose violence grows with fleet size (\(\max\mathrm{Re}\) 0.19 → 2.79) | this quantifies, as a droop floor, the parallel-voltage-source interaction that Häberle (TSG 2024) requires qualitatively; the single-unit point is a **lower bound**, see N16 |
+| P19 | Fragmenting the GFM fleet **relaxes** the droop stability floor and **tightens** the reactive ceiling; the two mechanisms oppose, so the capability optimum is interior to the configuration space | P16 + P17/P18 | the existence of an interior optimum; its *location* is not yet computed |
 
 ## 28.2 Not claimable
 
@@ -2259,6 +2267,25 @@ an impossible \(p_0\) and the slack was driven into over-frequency and over-curr
 fix, **22/22 reactive-feasible islands are operable at \(\Delta P=0\)** with \(\mu_I\in[0.049,
 0.358]\). There are two failure modes, not three. *Fixed in:* `build_case.py:526`,
 `impact(build_system, upstream)` = LOW, commit `fd5047f`.
+
+**N16 — "The capability envelope of T53 is the envelope."** *(the numbers, not the law)*
+Three qualifications, all of which must travel with P17/P18:
+1. **The floor is defined against a chosen damping threshold.** \(R_{\min}\) is where
+   \(\zeta_{\min}\) crosses **0.02**; the sensitivity of the exponents to that choice is
+   **not measured**. The exponents are reported with the threshold beside them or not at all.
+2. **The envelope has not been intersected with the specification-admissible droop range.**
+   The single-GFM island is still stable at \(R=0.006\) — a 0.6% droop, outside ordinary
+   grid-forming practice — and its \(R_{\min}\) is the **bottom of the swept grid, not a
+   measured floor**, so its 8.33× and 1.77× are **lower bounds**. For small islands the
+   binding ceiling may be the specification rather than stability, and that has not been
+   checked.
+3. **29% of the probes (42/143) emitted TDS-initialisation warnings** from the reactive
+   limiter at small \(R\). The \(R_{\min}\) brackets themselves have clean spectra on **both**
+   sides — positive damping above, \(\max\mathrm{Re}>0\) and \(\zeta<0\) below — so the
+   brackets stand; the warning is recorded because it means the sweep passes through a region
+   where the reactive limiter is active, which is the same limiter P15 measures.
+*What is claimable regardless:* the direction and the mechanism — the floor rises with
+capacity, the single-unit island escapes it, and the two mechanisms of P19 oppose.
 
 ## 28.3 Standing rule
 
